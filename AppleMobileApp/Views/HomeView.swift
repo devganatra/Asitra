@@ -10,13 +10,19 @@ struct HomeView: View {
     @Environment(AppModel.self) private var model
     @State private var selectedDate = Date.now
     @State private var showingAddEntry = false
+    @State private var quickInput = ""
+    @State private var detailsDraft = ""
+    @State private var calendarExpanded = false
+    @FocusState private var quickCaptureFocused: Bool
 
     private var entries: [LogEntry] { model.entries(on: selectedDate) }
+    private var quickSuggestion: SmartCapture { SmartCapture(text: quickInput) }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 dateHeader
+                quickCapture
                 summary
                 timeline
             }
@@ -25,46 +31,74 @@ struct HomeView: View {
             .frame(maxWidth: .infinity)
         }
         .navigationTitle(Calendar.current.isDateInToday(selectedDate) ? "Today" : selectedDate.formatted(date: .abbreviated, time: .omitted))
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    showingAddEntry = true
-                } label: {
-                    Label("Add entry", systemImage: "plus")
-                }
-            }
-        }
         .sheet(isPresented: $showingAddEntry) {
-            AddEntryView(defaultDate: selectedDate)
+            AddEntryView(defaultDate: selectedDate, initialText: detailsDraft) {
+                quickInput = ""
+            }
                 .environment(model)
         }
+#if os(macOS)
+        .onAppear { quickCaptureFocused = true }
+#endif
+    }
+
+    private var quickCapture: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Quick capture", systemImage: "sparkles")
+                .font(.headline)
+
+            TextField(
+                "Log anything — “walked 30 minutes”, “spent €18”, or “remind me tomorrow at 6pm”…",
+                text: $quickInput,
+                axis: .vertical
+            )
+            .lineLimit(2...5)
+            .font(.title3)
+            .textFieldStyle(.plain)
+            .focused($quickCaptureFocused)
+            .onSubmit(addQuickEntry)
+
+            Divider()
+
+            HStack(spacing: 12) {
+                Label(quickSuggestion.category.displayName, systemImage: quickSuggestion.category.systemImage)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                if let kind = quickSuggestion.listKind,
+                   let list = model.suggestedList(for: quickInput, kind: kind) {
+                    Label(list.name, systemImage: list.access.systemImage)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(list.access == .shared ? .blue : .secondary)
+                }
+
+                Spacer()
+
+                Button("More details") {
+                    detailsDraft = quickInput
+                    showingAddEntry = true
+                }
+                .buttonStyle(.borderless)
+
+                Button("Add", action: addQuickEntry)
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.return, modifiers: [.command])
+                    .disabled(quickInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private func addQuickEntry() {
+        guard !quickInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        model.addCapturedText(quickInput, on: selectedDate)
+        quickInput = ""
+        quickCaptureFocused = true
     }
 
     private var dateHeader: some View {
-        HStack {
-            Button {
-                selectedDate = Calendar.current.date(byAdding: .day, value: -1, to: selectedDate) ?? selectedDate
-            } label: {
-                Image(systemName: "chevron.left")
-            }
-
-            DatePicker("Day", selection: $selectedDate, displayedComponents: .date)
-                .labelsHidden()
-
-            Button {
-                selectedDate = Calendar.current.date(byAdding: .day, value: 1, to: selectedDate) ?? selectedDate
-            } label: {
-                Image(systemName: "chevron.right")
-            }
-            .disabled(Calendar.current.isDateInToday(selectedDate))
-
-            Spacer()
-
-            if !Calendar.current.isDateInToday(selectedDate) {
-                Button("Today") { selectedDate = .now }
-            }
-        }
-        .buttonStyle(.bordered)
+        ElegantCalendar(selectedDate: $selectedDate, isExpanded: $calendarExpanded)
     }
 
     private var summary: some View {
@@ -102,7 +136,7 @@ struct HomeView: View {
                 } description: {
                     Text("Add the first moment from this day.")
                 } actions: {
-                    Button("Add entry") { showingAddEntry = true }
+                    Button("Start typing") { quickCaptureFocused = true }
                         .buttonStyle(.borderedProminent)
                 }
                 .frame(maxWidth: .infinity, minHeight: 280)
@@ -118,6 +152,224 @@ struct HomeView: View {
 
     private var currencyCode: String {
         Locale.current.currency?.identifier ?? "EUR"
+    }
+}
+
+private struct ElegantCalendar: View {
+    @Binding var selectedDate: Date
+    @Binding var isExpanded: Bool
+    @State private var displayedMonth = Date.now
+
+    private let calendar = Calendar.current
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 7)
+
+    var body: some View {
+        VStack(spacing: 14) {
+            HStack(spacing: 12) {
+                Button {
+                    displayedMonth = monthStart(for: selectedDate)
+                    withAnimation(.snappy) { isExpanded.toggle() }
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "calendar")
+                            .font(.headline)
+                            .foregroundStyle(.blue)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(calendar.isDateInToday(selectedDate) ? "Today" : selectedDate.formatted(.dateTime.weekday(.wide)))
+                                .font(.headline)
+                            Text(selectedDate.formatted(.dateTime.day().month(.wide).year()))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isExpanded ? "Close calendar" : "Open calendar")
+
+                Spacer()
+
+                if !calendar.isDateInToday(selectedDate) {
+                    Button("Today") { select(.now) }
+                        .buttonStyle(.borderless)
+                }
+
+                Button {
+                    displayedMonth = monthStart(for: selectedDate)
+                    withAnimation(.snappy) { isExpanded.toggle() }
+                } label: {
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel(isExpanded ? "Close calendar" : "Open calendar")
+            }
+
+            weekStrip
+
+            if isExpanded {
+                Divider()
+                monthGrid
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private var weekStrip: some View {
+        HStack(spacing: 6) {
+            ForEach(weekDates, id: \.self) { date in
+                let selected = calendar.isDate(date, inSameDayAs: selectedDate)
+                let future = date > calendar.startOfDay(for: .now)
+
+                Button {
+                    select(date)
+                } label: {
+                    VStack(spacing: 7) {
+                        Text(date.formatted(.dateTime.weekday(.narrow)))
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(selected ? .primary : .secondary)
+                        Text(date.formatted(.dateTime.day()))
+                            .font(.subheadline.weight(.semibold))
+                            .frame(width: 32, height: 32)
+                            .background(selected ? Color.primary : .clear, in: Circle())
+                            .foregroundStyle(selected ? selectedForeground : .primary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(future)
+                .opacity(future ? 0.35 : 1)
+                .accessibilityLabel(date.formatted(date: .complete, time: .omitted))
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+    }
+
+    private var monthGrid: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Button {
+                    shiftMonth(-1)
+                } label: {
+                    Image(systemName: "chevron.left")
+                }
+                .buttonStyle(.borderless)
+
+                Spacer()
+                Text(displayedMonth.formatted(.dateTime.month(.wide).year()))
+                    .font(.headline)
+                Spacer()
+
+                Button {
+                    shiftMonth(1)
+                } label: {
+                    Image(systemName: "chevron.right")
+                }
+                .buttonStyle(.borderless)
+                .disabled(!canMoveForward)
+            }
+
+            LazyVGrid(columns: columns, spacing: 8) {
+                ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, symbol in
+                    Text(symbol)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                }
+
+                ForEach(Array(monthDays.enumerated()), id: \.offset) { _, date in
+                    if let date {
+                        monthDay(date)
+                    } else {
+                        Color.clear.frame(height: 34)
+                    }
+                }
+            }
+        }
+    }
+
+    private func monthDay(_ date: Date) -> some View {
+        let selected = calendar.isDate(date, inSameDayAs: selectedDate)
+        let today = calendar.isDateInToday(date)
+        let future = date > calendar.startOfDay(for: .now)
+
+        return Button {
+            select(date)
+            withAnimation(.snappy) { isExpanded = false }
+        } label: {
+            Text(date.formatted(.dateTime.day()))
+                .font(.subheadline.weight(selected ? .semibold : .regular))
+                .frame(maxWidth: .infinity, minHeight: 34)
+                .background(selected ? Color.primary : .clear, in: Circle())
+                .foregroundStyle(selected ? selectedForeground : .primary)
+                .overlay {
+                    if today && !selected {
+                        Circle().stroke(Color.blue, lineWidth: 1.5)
+                            .frame(width: 32, height: 32)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .disabled(future)
+        .opacity(future ? 0.28 : 1)
+        .accessibilityLabel(date.formatted(date: .complete, time: .omitted))
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private var weekDates: [Date] {
+        let start = calendar.dateInterval(of: .weekOfYear, for: selectedDate)?.start
+            ?? calendar.startOfDay(for: selectedDate)
+        return (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: start) }
+    }
+
+    private var weekdaySymbols: [String] {
+        let symbols = calendar.veryShortStandaloneWeekdaySymbols
+        let offset = max(0, calendar.firstWeekday - 1)
+        return Array(symbols[offset...] + symbols[..<offset])
+    }
+
+    private var monthDays: [Date?] {
+        let start = monthStart(for: displayedMonth)
+        guard let range = calendar.range(of: .day, in: .month, for: start) else { return [] }
+        let weekday = calendar.component(.weekday, from: start)
+        let leading = (weekday - calendar.firstWeekday + 7) % 7
+        let blanks = Array<Date?>(repeating: nil, count: leading)
+        let days = range.compactMap { day -> Date? in
+            calendar.date(byAdding: .day, value: day - 1, to: start)
+        }
+        return blanks + days.map(Optional.some)
+    }
+
+    private var canMoveForward: Bool {
+        monthStart(for: displayedMonth) < monthStart(for: .now)
+    }
+
+    private var selectedForeground: Color {
+#if os(macOS)
+        Color(NSColor.windowBackgroundColor)
+#else
+        Color(UIColor.systemBackground)
+#endif
+    }
+
+    private func monthStart(for date: Date) -> Date {
+        let components = calendar.dateComponents([.year, .month], from: date)
+        return calendar.date(from: components) ?? date
+    }
+
+    private func shiftMonth(_ value: Int) {
+        guard let next = calendar.date(byAdding: .month, value: value, to: displayedMonth) else { return }
+        displayedMonth = monthStart(for: min(next, .now))
+    }
+
+    private func select(_ date: Date) {
+        selectedDate = min(date, .now)
+        displayedMonth = monthStart(for: selectedDate)
     }
 }
 
@@ -289,7 +541,7 @@ private struct AddEntryView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
 
-    @State private var input = ""
+    @State private var input: String
     @State private var selectedCategory: LogCategory?
     @State private var note = ""
     @State private var timestamp: Date
@@ -301,16 +553,23 @@ private struct AddEntryView: View {
     @State private var selectedLifeArea: LifeArea?
     @State private var selectedDevice: DeviceSource?
     @State private var selectedListKind: ListKind?
+    @State private var selectedListID: UUID?
     @State private var hasDueDate = false
     @State private var dueDate = Date.now
+    private let onSaved: () -> Void
 
     private var suggestion: SmartCapture { SmartCapture(text: input) }
     private var category: LogCategory { selectedCategory ?? suggestion.category }
     private var lifeArea: LifeArea { selectedLifeArea ?? suggestion.lifeArea }
     private var deviceSource: DeviceSource? { selectedDevice ?? suggestion.deviceSource }
     private var listKind: ListKind { selectedListKind ?? suggestion.listKind ?? .task }
+    private var destinationList: SakhyaList? {
+        model.list(withID: selectedListID) ?? model.suggestedList(for: input, kind: listKind)
+    }
 
-    init(defaultDate: Date) {
+    init(defaultDate: Date, initialText: String = "", onSaved: @escaping () -> Void = {}) {
+        _input = State(initialValue: initialText)
+        self.onSaved = onSaved
         let calendar = Calendar.current
         if calendar.isDateInToday(defaultDate) {
             _timestamp = State(initialValue: .now)
@@ -405,12 +664,24 @@ private struct AddEntryView: View {
                 if category == .list {
                     Section("Save to list") {
                         Picker("List", selection: Binding(
-                            get: { listKind },
-                            set: { selectedListKind = $0 }
-                        )) {
-                            ForEach(ListKind.allCases) { kind in
-                                Label(kind.displayName, systemImage: kind.systemImage).tag(kind)
+                            get: { destinationList?.id },
+                            set: { id in
+                                selectedListID = id
+                                if let list = model.list(withID: id) {
+                                    selectedListKind = list.kind
+                                }
                             }
+                        )) {
+                            ForEach(model.lists) { list in
+                                Label(list.name, systemImage: list.access.systemImage)
+                                    .tag(Optional(list.id))
+                            }
+                        }
+
+                        if destinationList?.access == .shared {
+                            Label("Everyone with edit access will see this item.", systemImage: "person.2.fill")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
 
                         Toggle("Remind me", isOn: $hasDueDate)
@@ -460,6 +731,13 @@ private struct AddEntryView: View {
                     hasDueDate = true
                 }
             }
+            .onAppear {
+                if let suggestedStatus = suggestion.status { status = suggestedStatus }
+                if let suggestedDate = suggestion.dueDate {
+                    dueDate = suggestedDate
+                    hasDueDate = true
+                }
+            }
         }
         .frame(minWidth: 360, minHeight: 480)
     }
@@ -477,9 +755,11 @@ private struct AddEntryView: View {
             status: (category == .book || category == .movie) ? status : nil,
             lifeArea: lifeArea,
             deviceSource: deviceSource,
-            listKind: category == .list ? listKind : nil,
+            listKind: category == .list ? destinationList?.kind ?? listKind : nil,
+            listID: category == .list ? destinationList?.id : nil,
             dueDate: category == .list && hasDueDate ? dueDate : nil
         ), photoData: photoData)
+        onSaved()
         dismiss()
     }
 }

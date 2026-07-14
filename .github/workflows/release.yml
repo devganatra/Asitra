@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-release:
+    name: Validate and create prerelease
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate tag and project version
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          expected_version="${tag%%-*}"
+          project_version="$(sed -n 's/.*MARKETING_VERSION = \([^;]*\);/\1/p' AppleMobileApp.xcodeproj/project.pbxproj | head -1)"
+          test "$expected_version" = "$project_version"
+
+      - name: Build Sakhya for Mac
+        run: >-
+          xcodebuild
+          -project AppleMobileApp.xcodeproj
+          -scheme AppleMobileApp
+          -configuration Release
+          -destination 'platform=macOS'
+          CODE_SIGNING_ALLOWED=NO
+          build
+
+      - name: Build Sakhya for iPhone and iPad Simulator
+        run: >-
+          xcodebuild
+          -project AppleMobileApp.xcodeproj
+          -scheme AppleMobileApp
+          -configuration Release
+          -destination 'generic/platform=iOS Simulator'
+          CODE_SIGNING_ALLOWED=NO
+          build
+
+      - name: Create GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          --prerelease
+          --verify-tag
+          --generate-notes
+          --title "Sakhya ${GITHUB_REF_NAME#v}"

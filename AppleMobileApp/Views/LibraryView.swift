@@ -3,28 +3,87 @@ import SwiftUI
 
 struct ListsView: View {
     @Environment(AppModel.self) private var model
-    @State private var selectedKind: ListKind?
+    @State private var selectedListID: UUID?
+    @State private var showingNewList = false
+    @State private var listToManage: SakhyaList?
 
     private var listEntries: [LogEntry] {
         model.entries.filter {
-            $0.category == .list && (selectedKind == nil || $0.listKind == selectedKind)
+            $0.category == .list && (selectedListID == nil || $0.listID == selectedListID)
         }
     }
+
+    private var selectedList: SakhyaList? { model.list(withID: selectedListID) }
 
     private var pending: [LogEntry] { listEntries.filter { !$0.isCompleted } }
     private var completed: [LogEntry] { listEntries.filter { $0.isCompleted } }
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("List", selection: $selectedKind) {
-                Text("All").tag(ListKind?.none)
-                ForEach(ListKind.allCases) { kind in
-                    Label(kind.displayName, systemImage: kind.systemImage)
-                        .tag(ListKind?.some(kind))
+            HStack(spacing: 12) {
+                Menu {
+                    Button {
+                        selectedListID = nil
+                    } label: {
+                        Label("All lists", systemImage: "square.stack.3d.up")
+                    }
+
+                    Divider()
+
+                    ForEach(model.lists) { list in
+                        Button {
+                            selectedListID = list.id
+                        } label: {
+                            Label(list.name, systemImage: list.access.systemImage)
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: selectedList?.access.systemImage ?? "square.stack.3d.up")
+                            .foregroundStyle(selectedList?.access == .shared ? .blue : .secondary)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(selectedList?.name ?? "All lists")
+                                .font(.headline)
+                            Text(selectedList.map { $0.access.rawValue } ?? "Private and shared")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Image(systemName: "chevron.down")
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
                 }
+
+                Spacer()
+
+                if let selectedList {
+                    Button {
+                        listToManage = selectedList
+                    } label: {
+                        Label("Manage", systemImage: "person.2.badge.gearshape")
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                Button {
+                    showingNewList = true
+                } label: {
+                    Label("New list", systemImage: "plus")
+                }
+                .buttonStyle(.borderedProminent)
             }
-            .pickerStyle(.segmented)
             .padding()
+
+            if let selectedList, selectedList.access == .shared {
+                SharedListBanner(list: selectedList) {
+                    listToManage = selectedList
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 8)
+            }
 
             if listEntries.isEmpty {
                 ContentUnavailableView {
@@ -57,6 +116,16 @@ struct ListsView: View {
             }
         }
         .navigationTitle("Lists")
+        .sheet(isPresented: $showingNewList) {
+            NewListView { id in selectedListID = id }
+        }
+        .sheet(item: $listToManage, onDismiss: {
+            if let selectedListID, model.list(withID: selectedListID) == nil {
+                self.selectedListID = nil
+            }
+        }) { list in
+            ManageListView(list: list)
+        }
     }
 
     @ViewBuilder
@@ -76,8 +145,8 @@ struct ListsView: View {
                     .foregroundStyle(entry.isCompleted ? .secondary : .primary)
 
                 HStack(spacing: 10) {
-                    if let kind = entry.listKind {
-                        Label(kind.displayName, systemImage: kind.systemImage)
+                    if let list = model.list(withID: entry.listID) {
+                        Label(list.name, systemImage: list.access.systemImage)
                     }
                     if let dueDate = entry.dueDate {
                         Label(dueDate.formatted(date: .abbreviated, time: .shortened), systemImage: "bell")
@@ -95,6 +164,185 @@ struct ListsView: View {
         .contextMenu {
             Button("Delete", role: .destructive) { model.delete(entry) }
         }
+    }
+}
+
+private struct SharedListBanner: View {
+    let list: SakhyaList
+    let manage: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: list.isCloudConnected ? "person.2.fill" : "icloud.slash")
+                .font(.title3)
+                .foregroundStyle(list.isCloudConnected ? .blue : .orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(list.isCloudConnected ? "Shared with (list.members.count) people" : "Ready for iCloud sharing")
+                    .font(.subheadline.bold())
+                Text(list.isCloudConnected
+                    ? "Changes from everyone appear here and in the timeline."
+                    : "Connect Sakhya to its CloudKit container before sending invitations.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Details", action: manage)
+                .buttonStyle(.borderless)
+        }
+        .padding(12)
+        .background(.orange.opacity(list.isCloudConnected ? 0 : 0.09), in: RoundedRectangle(cornerRadius: 14))
+    }
+}
+
+private struct NewListView: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var kind: ListKind = .shopping
+    @State private var access: ListAccess = .privateList
+    let onCreated: (UUID) -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("List") {
+                    TextField("Name", text: $name, prompt: Text("Weekend shopping"))
+                    Picker("Type", selection: $kind) {
+                        ForEach(ListKind.allCases) { kind in
+                            Label(kind.displayName, systemImage: kind.systemImage).tag(kind)
+                        }
+                    }
+                }
+
+                Section("Who can see it?") {
+                    Picker("Access", selection: $access) {
+                        ForEach(ListAccess.allCases) { access in
+                            Label(access.rawValue, systemImage: access.systemImage).tag(access)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Label(
+                        access == .privateList
+                            ? "Only you can see and change this list."
+                            : "Invite up to three people. Give each person edit or view-only access.",
+                        systemImage: access.systemImage
+                    )
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                }
+            }
+            .formStyle(.grouped)
+            .navigationTitle("New List")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Create") {
+                        let fallback = kind.displayName
+                        let id = model.createList(name: name.isEmpty ? fallback : name, kind: kind, access: access)
+                        onCreated(id)
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .frame(minWidth: 390, minHeight: 360)
+    }
+}
+
+private struct ManageListView: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft: SakhyaList
+    @State private var showingCloudKitNotice = false
+
+    init(list: SakhyaList) {
+        _draft = State(initialValue: list)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("List details") {
+                    TextField("Name", text: $draft.name)
+                    Picker("Type", selection: $draft.kind) {
+                        ForEach(ListKind.allCases) { kind in
+                            Label(kind.displayName, systemImage: kind.systemImage).tag(kind)
+                        }
+                    }
+                    Picker("Access", selection: $draft.access) {
+                        ForEach(ListAccess.allCases) { access in
+                            Label(access.rawValue, systemImage: access.systemImage).tag(access)
+                        }
+                    }
+                }
+
+                if draft.access == .shared {
+                    Section {
+                        LabeledContent("Owner", value: draft.ownerName)
+                        ForEach($draft.members) { $member in
+                            HStack {
+                                Text(member.displayName)
+                                Spacer()
+                                Picker("Permission", selection: $member.permission) {
+                                    ForEach(ListPermission.allCases) { permission in
+                                        Text(permission.rawValue).tag(permission)
+                                    }
+                                }
+                                .labelsHidden()
+                            }
+                        }
+
+                        Button {
+                            showingCloudKitNotice = true
+                        } label: {
+                            Label("Invite people with iCloud", systemImage: "person.badge.plus")
+                        }
+                        .disabled(draft.members.count >= 3)
+                    } header: {
+                        Text("People")
+                    } footer: {
+                        Text("Only this list is shared. Journal entries, health data, expenses, and other lists stay private.")
+                    }
+                }
+
+                if !draft.isDefault {
+                    Section {
+                        Button("Delete List", role: .destructive) {
+                            model.deleteList(draft)
+                            dismiss()
+                        }
+                    }
+                }
+            }
+            .formStyle(.grouped)
+            .navigationTitle("Manage List")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        if draft.access == .privateList {
+                            draft.members = []
+                            draft.cloudShareRecordName = nil
+                            draft.collaborationStatus = .preparing
+                        }
+                        model.updateList(draft)
+                        dismiss()
+                    }
+                    .disabled(draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .alert("iCloud setup required", isPresented: $showingCloudKitNotice) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("The collaboration flow is ready, but invitations need Sakhya’s CloudKit container and Apple Developer signing to be configured first.")
+            }
+        }
+        .frame(minWidth: 420, minHeight: 480)
     }
 }
 
