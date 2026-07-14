@@ -8,20 +8,33 @@ final class AppModel {
     var selectedSection: AppSection? = .today
     var notificationsEnabled = true
     var syncEnabled = false
-    var appleRemindersEnabled = true
+    var appleRemindersEnabled = UserDefaults.standard.object(forKey: "sakhya.apple-reminders.enabled") as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(appleRemindersEnabled, forKey: "sakhya.apple-reminders.enabled")
+        }
+    }
     private(set) var appleRemindersStatus = "Not connected"
     private(set) var appleRemindersError: String?
     var isImportingFitness = false
     private(set) var lastFitnessImport: Date?
     private(set) var entries: [LogEntry] = []
+    private(set) var lists: [SakhyaList] = []
 
     private let storageKey = "daily-log.entries.v2"
+    private let listsStorageKey = "sakhya.lists.v1"
     private let legacyStorageKey = "daily-log.entries.v1"
     private let lastFitnessImportKey = "sakhya.fitness.last-import"
     private let legacyFitnessImportKey = "sakha.fitness.last-import"
 
     init() {
         let defaults = UserDefaults.standard
+        if let data = defaults.data(forKey: listsStorageKey),
+           let savedLists = try? JSONDecoder().decode([SakhyaList].self, from: data),
+           !savedLists.isEmpty {
+            lists = savedLists
+        } else {
+            lists = SakhyaList.defaults
+        }
         lastFitnessImport = (defaults.object(forKey: lastFitnessImportKey)
             ?? defaults.object(forKey: legacyFitnessImportKey)) as? Date
         let storedData = defaults.data(forKey: storageKey) ?? defaults.data(forKey: legacyStorageKey)
@@ -31,12 +44,16 @@ final class AppModel {
         } else {
             entries = LogEntry.examples
         }
+        migrateListAssignments()
         save()
         appleRemindersStatus = AppleReminderService.shared.statusDescription
     }
 
     func add(_ entry: LogEntry, photoData: Data? = nil) {
         var storedEntry = entry
+        if storedEntry.category == .list, storedEntry.listID == nil {
+            storedEntry.listID = defaultList(for: storedEntry.listKind ?? .task)?.id
+        }
         if let photoData {
             storedEntry.attachmentFilename = saveAttachment(photoData, id: entry.id)
         }
@@ -48,6 +65,99 @@ final class AppModel {
         } else if storedEntry.category == .list, let dueDate = storedEntry.dueDate {
             scheduleNotification(for: storedEntry, at: dueDate)
         }
+    }
+
+    func addCapturedText(_ text: String, on date: Date = .now) {
+        let title = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return }
+
+        let suggestion = SmartCapture(text: title)
+        let destination: SakhyaList?
+        if let kind = suggestion.listKind {
+            destination = suggestedList(for: title, kind: kind)
+        } else {
+            destination = nil
+        }
+        let calendar = Calendar.current
+        let timestamp: Date
+        if calendar.isDateInToday(date) {
+            timestamp = .now
+        } else {
+            let time = calendar.dateComponents([.hour, .minute], from: .now)
+            timestamp = calendar.date(
+                bySettingHour: time.hour ?? 12,
+                minute: time.minute ?? 0,
+                second: 0,
+                of: date
+            ) ?? date
+        }
+
+        add(LogEntry(
+            timestamp: timestamp,
+            category: suggestion.category,
+            title: title,
+            amount: suggestion.amount,
+            durationMinutes: suggestion.durationMinutes,
+            status: suggestion.status,
+            lifeArea: suggestion.lifeArea,
+            deviceSource: suggestion.deviceSource ?? currentDeviceSource,
+            listKind: destination?.kind ?? suggestion.listKind,
+            listID: destination?.id,
+            dueDate: suggestion.dueDate
+        ))
+    }
+
+    func defaultList(for kind: ListKind) -> SakhyaList? {
+        lists.first { $0.kind == kind && $0.isDefault } ?? lists.first { $0.kind == kind }
+    }
+
+    func suggestedList(for text: String, kind: ListKind) -> SakhyaList? {
+        let normalized = text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        if let namedList = lists.first(where: { list in
+            guard list.kind == kind, !list.isDefault else { return false }
+            let name = list.name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            return normalized.localizedStandardContains(name)
+        }) {
+            return namedList
+        }
+        return defaultList(for: kind)
+    }
+
+    func list(withID id: UUID?) -> SakhyaList? {
+        guard let id else { return nil }
+        return lists.first { $0.id == id }
+    }
+
+    @discardableResult
+    func createList(name: String, kind: ListKind, access: ListAccess) -> UUID {
+        let list = SakhyaList(
+            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+            kind: kind,
+            access: access
+        )
+        lists.append(list)
+        save()
+        return list.id
+    }
+
+    func updateList(_ list: SakhyaList) {
+        guard let index = lists.firstIndex(where: { $0.id == list.id }) else { return }
+        lists[index] = list
+        for entryIndex in entries.indices where entries[entryIndex].listID == list.id {
+            entries[entryIndex].listKind = list.kind
+        }
+        save()
+    }
+
+    func deleteList(_ list: SakhyaList) {
+        guard !list.isDefault else { return }
+        let fallbackID = defaultList(for: list.kind)?.id
+        for index in entries.indices where entries[index].listID == list.id {
+            entries[index].listID = fallbackID
+            entries[index].listKind = list.kind
+        }
+        lists.removeAll { $0.id == list.id }
+        save()
     }
 
     func toggleCompleted(_ entry: LogEntry) {
@@ -226,8 +336,21 @@ final class AppModel {
     }
 
     private func save() {
-        guard let data = try? JSONEncoder().encode(entries) else { return }
-        UserDefaults.standard.set(data, forKey: storageKey)
+        let encoder = JSONEncoder()
+        if let data = try? encoder.encode(entries) {
+            UserDefaults.standard.set(data, forKey: storageKey)
+        }
+        if let data = try? encoder.encode(lists) {
+            UserDefaults.standard.set(data, forKey: listsStorageKey)
+        }
+    }
+
+    private func migrateListAssignments() {
+        for index in entries.indices where entries[index].category == .list && entries[index].listID == nil {
+            let kind = entries[index].listKind ?? .task
+            entries[index].listKind = kind
+            entries[index].listID = defaultList(for: kind)?.id
+        }
     }
 
     private func scheduleNotification(for entry: LogEntry, at date: Date) {
@@ -420,6 +543,53 @@ enum ListKind: String, CaseIterable, Codable, Identifiable {
     }
 }
 
+enum ListAccess: String, CaseIterable, Codable, Identifiable {
+    case privateList = "Private"
+    case shared = "Shared"
+
+    var id: Self { self }
+    var systemImage: String { self == .privateList ? "lock.fill" : "person.2.fill" }
+}
+
+enum ListPermission: String, CaseIterable, Codable, Identifiable {
+    case canEdit = "Can edit"
+    case viewOnly = "View only"
+
+    var id: Self { self }
+}
+
+enum CollaborationStatus: String, Codable {
+    case preparing
+    case active
+}
+
+struct ListMember: Identifiable, Codable, Hashable {
+    var id = UUID()
+    var displayName: String
+    var permission: ListPermission
+    var isOwner = false
+}
+
+struct SakhyaList: Identifiable, Codable, Hashable {
+    var id = UUID()
+    var name: String
+    var kind: ListKind
+    var access: ListAccess = .privateList
+    var ownerName = "You"
+    var members: [ListMember] = []
+    var collaborationStatus: CollaborationStatus = .preparing
+    var cloudShareRecordName: String?
+    var isDefault = false
+
+    var isCloudConnected: Bool {
+        access == .shared && collaborationStatus == .active && cloudShareRecordName != nil
+    }
+
+    static let defaults: [SakhyaList] = ListKind.allCases.map { kind in
+        SakhyaList(name: kind.displayName, kind: kind, isDefault: true)
+    }
+}
+
 struct LogEntry: Identifiable, Codable, Hashable {
     var id = UUID()
     var timestamp: Date
@@ -434,6 +604,7 @@ struct LogEntry: Identifiable, Codable, Hashable {
     var lifeArea: LifeArea?
     var deviceSource: DeviceSource?
     var listKind: ListKind?
+    var listID: UUID?
     var dueDate: Date?
     var completed: Bool?
     var fitnessSource: String?

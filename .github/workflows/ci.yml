@@ -1,0 +1,43 @@
+name: Build
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "codex/**"
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: macOS
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Sakhya for Mac
+        run: >-
+          xcodebuild
+          -project AppleMobileApp.xcodeproj
+          -scheme AppleMobileApp
+          -configuration Release
+          -destination 'platform=macOS'
+          CODE_SIGNING_ALLOWED=NO
+          build
+
+  ios:
+    name: iOS Simulator
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Sakhya for iPhone and iPad Simulator
+        run: >-
+          xcodebuild
+          -project AppleMobileApp.xcodeproj
+          -scheme AppleMobileApp
+          -configuration Release
+          -destination 'generic/platform=iOS Simulator'
+          CODE_SIGNING_ALLOWED=NO
+          build

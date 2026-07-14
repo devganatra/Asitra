@@ -10,6 +10,12 @@ A daily companion for iPhone, iPad, and Mac. Write naturally in one capture box 
 
 Before installing on a physical device, select the app target and choose your Apple Developer team under **Signing & Capabilities**.
 
+## Install Beta 1 on iPhone or iPad
+
+The current beta is version **0.1.0 (1)**.
+
+For your own device, connect the iPhone or iPad to the Mac, select it as the run destination in Xcode, choose your signing team, and press Run. For distribution to other people, archive the iOS app and upload it to TestFlight through Xcode Organizer. See [RELEASING.md](RELEASING.md) for the complete checklist.
+
 ## Current features
 
 - Natural-language smart capture with an editable category suggestion
@@ -29,6 +35,8 @@ Before installing on a physical device, select the app target and choose your Ap
 - Browse and add entries on previous dates
 - Local persistence between launches
 - Adaptive navigation shared across all platforms
+- Private and shared-list architecture with list-level ownership and edit or view-only permissions
+- Custom lists that remain connected to Quick Capture and the daily timeline
 
 ## Architecture
 
@@ -43,3 +51,9 @@ The deployment targets are iOS/iPadOS 17 and macOS 14.
 
 - Automatic per-app Screen Time needs Apple’s Family Controls distribution entitlement plus a Device Activity report extension.
 - Cross-device data and photo synchronization needs a private CloudKit container, signing team, and migration from local persistence.
+
+## Release automation
+
+- Pull requests and release branches build the Mac and iOS Simulator variants in GitHub Actions.
+- Tags such as `v0.1.0-beta.1` run release validation and create a GitHub prerelease.
+- TestFlight uploads remain an explicit signed step in Xcode so Apple credentials are never stored in the repository.
