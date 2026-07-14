@@ -1,6 +1,6 @@
-# Dayline
+# Sakhya
 
-A daily everything-log for iPhone, iPad, and Mac. Write naturally in one capture box and Dayline organizes routines, work, purchases, exercise, meals, mindset, journal entries, ideas, books, and movies into one chronological timeline.
+A daily companion for iPhone, iPad, and Mac. Write naturally in one capture box and Sakhya organizes routines, work, purchases, exercise, meals, mindset, journal entries, ideas, books, movies, shopping lists, and reminders into one chronological timeline.
 
 ## Open and run
 
@@ -20,6 +20,12 @@ Before installing on a physical device, select the app target and choose your Ap
 - Seven-day spending, activity, food, habit, mindset, and journal analysis
 - Work, personal, rest, and screen-time attribution by phone, tablet, Mac, web, or offline activity
 - A seven-day work-life balance dashboard and guidance
+- Checkable grocery, shopping, reminder, and task lists generated from natural input
+- Local notifications for reminders with a detected or selected date and time
+- Apple Health import for workouts and sleep, including source attribution for WHOOP, Apple Watch, and other Health-compatible apps
+- One event pipeline: manual, app, and sensor entries share the same timeline and automatically update category trackers
+- Reading and watching activity resolves into one list item with a current status and full timeline history
+- Native Apple Reminders export with due dates, alerts, completion, and deletion synchronization
 - Browse and add entries on previous dates
 - Local persistence between launches
 - Adaptive navigation shared across all platforms

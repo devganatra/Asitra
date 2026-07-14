@@ -11,7 +11,7 @@ struct RootView: View {
                 Label(section.rawValue, systemImage: section.systemImage)
                     .tag(section)
             }
-            .navigationTitle("Dayline")
+            .navigationTitle("Sakhya")
         } detail: {
             destination(for: model.selectedSection ?? .today)
         }
@@ -23,6 +23,8 @@ struct RootView: View {
         switch section {
         case .today:
             HomeView()
+        case .lists:
+            ListsView()
         case .balance:
             BalanceView()
         case .collections:

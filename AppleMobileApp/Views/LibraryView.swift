@@ -1,17 +1,122 @@
 import Charts
 import SwiftUI
 
+struct ListsView: View {
+    @Environment(AppModel.self) private var model
+    @State private var selectedKind: ListKind?
+
+    private var listEntries: [LogEntry] {
+        model.entries.filter {
+            $0.category == .list && (selectedKind == nil || $0.listKind == selectedKind)
+        }
+    }
+
+    private var pending: [LogEntry] { listEntries.filter { !$0.isCompleted } }
+    private var completed: [LogEntry] { listEntries.filter { $0.isCompleted } }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Picker("List", selection: $selectedKind) {
+                Text("All").tag(ListKind?.none)
+                ForEach(ListKind.allCases) { kind in
+                    Label(kind.displayName, systemImage: kind.systemImage)
+                        .tag(ListKind?.some(kind))
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding()
+
+            if listEntries.isEmpty {
+                ContentUnavailableView {
+                    Label("Your lists are empty", systemImage: "checklist")
+                } description: {
+                    Text("From Today, log “buy milk” or “remind me to call tomorrow at 6pm.”")
+                } actions: {
+                    Button("Go to Today") { model.selectedSection = .today }
+                        .buttonStyle(.borderedProminent)
+                }
+                .frame(maxHeight: .infinity)
+            } else {
+                List {
+                    if !pending.isEmpty {
+                        Section("Open") {
+                            ForEach(pending) { entry in
+                                ListEntryRow(entry: entry)
+                            }
+                        }
+                    }
+
+                    if !completed.isEmpty {
+                        Section("Completed") {
+                            ForEach(completed) { entry in
+                                ListEntryRow(entry: entry)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Lists")
+    }
+
+    @ViewBuilder
+    private func ListEntryRow(entry: LogEntry) -> some View {
+        HStack(spacing: 12) {
+            Button {
+                model.toggleCompleted(entry)
+            } label: {
+                Image(systemName: entry.isCompleted ? "checkmark.circle.fill" : "circle")
+                    .font(.title2)
+            }
+            .buttonStyle(.plain)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(entry.title)
+                    .strikethrough(entry.isCompleted)
+                    .foregroundStyle(entry.isCompleted ? .secondary : .primary)
+
+                HStack(spacing: 10) {
+                    if let kind = entry.listKind {
+                        Label(kind.displayName, systemImage: kind.systemImage)
+                    }
+                    if let dueDate = entry.dueDate {
+                        Label(dueDate.formatted(date: .abbreviated, time: .shortened), systemImage: "bell")
+                            .foregroundStyle(!entry.isCompleted && dueDate < .now ? .red : .secondary)
+                    }
+                    if entry.appleReminderIdentifier != nil {
+                        Label("Apple Reminders", systemImage: "checkmark.icloud")
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
+        .contextMenu {
+            Button("Delete", role: .destructive) { model.delete(entry) }
+        }
+    }
+}
+
 struct LibraryView: View {
     @Environment(AppModel.self) private var model
     @State private var collection: CollectionKind = .books
     @State private var statusFilter: EntryStatus?
 
-    private var entries: [LogEntry] {
-        model.entries.filter { entry in
-            let matchesCollection = entry.category == collection.category
-            let matchesStatus = statusFilter == nil || entry.status == statusFilter
-            return matchesCollection && matchesStatus
+    private var items: [TrackedCollectionItem] {
+        let matchingEntries = model.entries.filter { $0.category == collection.category }
+        let grouped = Dictionary(grouping: matchingEntries, by: { $0.collectionKey })
+        return grouped.compactMap { key, events in
+            guard let latest = events.max(by: { $0.timestamp < $1.timestamp }) else { return nil }
+            return TrackedCollectionItem(
+                id: key,
+                title: latest.collectionDisplayTitle,
+                latest: latest,
+                eventCount: events.count
+            )
         }
+        .filter { statusFilter == nil || $0.latest.status == statusFilter }
+        .sorted { $0.latest.timestamp > $1.latest.timestamp }
     }
 
     var body: some View {
@@ -22,7 +127,7 @@ struct LibraryView: View {
                         .tag(collection)
                 }
             }
-            .pickerStyle(.segmented)
+            .pickerStyle(.menu)
             .padding()
 
             if collection.supportsStatus {
@@ -37,7 +142,7 @@ struct LibraryView: View {
                 .padding(.bottom)
             }
 
-            if entries.isEmpty {
+            if items.isEmpty {
                 ContentUnavailableView(
                     "No \(collection.rawValue.lowercased()) yet",
                     systemImage: collection.systemImage,
@@ -45,71 +150,145 @@ struct LibraryView: View {
                 )
                 .frame(maxHeight: .infinity)
             } else {
-                List(entries) { entry in
+                List(items) { item in
                     HStack(spacing: 14) {
-                        Image(systemName: entry.category.systemImage)
+                        Image(systemName: item.latest.category.systemImage)
                             .font(.title2)
                             .foregroundStyle(collection.color)
                             .frame(width: 38, height: 38)
                             .background(collection.color.opacity(0.12), in: Circle())
 
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(entry.title)
+                            Text(item.title)
                                 .font(.headline)
                             HStack {
-                                if let status = entry.status {
-                                    Text(status.rawValue)
+                                if let status = item.latest.status {
+                                    Menu {
+                                        ForEach(EntryStatus.allCases) { newStatus in
+                                            Button(newStatus.rawValue) {
+                                                model.recordCollectionStatus(
+                                                    for: item.latest,
+                                                    title: item.title,
+                                                    status: newStatus
+                                                )
+                                            }
+                                        }
+                                    } label: {
+                                        Label(status.rawValue, systemImage: "arrow.triangle.2.circlepath")
+                                    }
                                 }
-                                Text(entry.timestamp, format: .dateTime.day().month(.abbreviated).year())
+                                Text(item.latest.timestamp, format: .dateTime.day().month(.abbreviated).year())
+                                if item.eventCount > 1 {
+                                    Text("\(item.eventCount) timeline events")
+                                }
                             }
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                            if !entry.note.isEmpty {
-                                Text(entry.note)
+                            if !item.latest.note.isEmpty {
+                                Text(item.latest.note)
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(2)
                             }
+                            HStack(spacing: 12) {
+                                if let amount = item.latest.amount {
+                                    Label(
+                                        amount.formatted(.currency(code: Locale.current.currency?.identifier ?? "EUR")),
+                                        systemImage: "creditcard"
+                                    )
+                                }
+                                if let minutes = item.latest.durationMinutes {
+                                    Label("\(minutes) min", systemImage: "clock")
+                                }
+                                if let source = item.latest.fitnessSource {
+                                    Label(source, systemImage: "sensor")
+                                }
+                            }
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                         }
                     }
                     .padding(.vertical, 5)
                 }
             }
         }
-        .navigationTitle("Collections")
+        .navigationTitle("Trackers")
         .onChange(of: collection) { _, newValue in
             if !newValue.supportsStatus { statusFilter = nil }
         }
     }
 }
 
+private struct TrackedCollectionItem: Identifiable {
+    let id: String
+    let title: String
+    let latest: LogEntry
+    let eventCount: Int
+}
+
 private enum CollectionKind: String, CaseIterable, Identifiable {
     case books = "Books"
     case movies = "Movies"
+    case habits = "Habits"
+    case meals = "Food"
+    case fitness = "Fitness"
+    case sleep = "Sleep"
+    case mindset = "Mindset"
+    case journal = "Journal"
     case ideas = "Ideas"
+    case expenses = "Expenses"
+    case work = "Work"
+    case screenTime = "Screen Time"
 
     var id: Self { self }
     var category: LogCategory {
         switch self {
         case .books: .book
         case .movies: .movie
+        case .habits: .routine
+        case .meals: .food
+        case .fitness: .fitness
+        case .sleep: .sleep
+        case .mindset: .mood
+        case .journal: .journal
         case .ideas: .idea
+        case .expenses: .expense
+        case .work: .work
+        case .screenTime: .screenTime
         }
     }
     var systemImage: String { category.systemImage }
-    var supportsStatus: Bool { self != .ideas }
+    var supportsStatus: Bool { self == .books || self == .movies }
     var color: Color {
         switch self {
         case .books: .indigo
         case .movies: .red
+        case .habits: .blue
+        case .meals: .pink
+        case .fitness: .green
+        case .sleep: .indigo
+        case .mindset: .purple
+        case .journal: .teal
         case .ideas: .yellow
+        case .expenses: .orange
+        case .work: .blue
+        case .screenTime: .cyan
         }
     }
     var emptyMessage: String {
         switch self {
         case .books: "Log “want to read…” or “finished…” to build your reading list."
         case .movies: "Log “want to watch…” or “watched…” to build your watchlist."
-        case .ideas: "Start an entry with “idea” and Dayline will collect it here."
+        case .habits: "Routine entries from the timeline appear here automatically."
+        case .meals: "Meals and food entries from the timeline appear here automatically."
+        case .fitness: "Manual workouts and connected fitness sources appear here."
+        case .sleep: "Sleep imported from wearables or entered manually appears here."
+        case .mindset: "Mood and mindset entries from the timeline appear here."
+        case .journal: "Your journal entries remain organized here."
+        case .ideas: "Start an entry with “idea” and Sakhya will collect it here."
+        case .expenses: "Purchases and spending entries from the timeline appear here."
+        case .work: "Work sessions and events from the timeline appear here."
+        case .screenTime: "Phone and computer usage entries appear here."
         }
     }
 }
@@ -253,6 +432,7 @@ struct InsightsView: View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
                     InsightCard(title: "Spending", value: weekExpense.formatted(.currency(code: currencyCode)), icon: "creditcard", color: .orange)
                     InsightCard(title: "Activity", value: "\(weekActiveMinutes) min", icon: "figure.walk", color: .green)
+                    InsightCard(title: "Sleep", value: formatSleep(), icon: "bed.double", color: .indigo)
                     InsightCard(title: "Meals", value: "\(count(.food))", icon: "fork.knife", color: .pink)
                     InsightCard(title: "Habits", value: "\(count(.routine))", icon: "checkmark.circle", color: .blue)
                     InsightCard(title: "Mindset", value: "\(count(.mood))", icon: "brain.head.profile", color: .purple)
@@ -293,6 +473,13 @@ struct InsightsView: View {
 
     private func count(_ category: LogCategory) -> Int {
         recentEntries.filter { $0.category == category }.count
+    }
+
+    private func formatSleep() -> String {
+        let minutes = days.map(model.sleepMinutes(on:)).reduce(0, +)
+        let hours = minutes / 60
+        let remainder = minutes % 60
+        return hours > 0 ? "\(hours)h \(remainder)m" : "\(remainder)m"
     }
 
     private func chartSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {

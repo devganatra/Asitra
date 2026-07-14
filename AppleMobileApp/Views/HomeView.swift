@@ -203,6 +203,26 @@ private struct TimelineRow: View {
                     .foregroundStyle(.secondary)
                 }
 
+                if let source = entry.fitnessSource {
+                    Label(source, systemImage: "heart.text.square")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let listKind = entry.listKind {
+                    HStack(spacing: 10) {
+                        Label(listKind.displayName, systemImage: listKind.systemImage)
+                        if let dueDate = entry.dueDate {
+                            Label(dueDate.formatted(date: .abbreviated, time: .shortened), systemImage: "calendar")
+                        }
+                        if entry.appleReminderIdentifier != nil {
+                            Label("Apple Reminders", systemImage: "checkmark.icloud")
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+
                 if !entry.note.isEmpty {
                     Text(entry.note)
                         .font(.subheadline)
@@ -231,9 +251,11 @@ private struct TimelineRow: View {
         case .work: .blue
         case .expense: .orange
         case .fitness: .green
+        case .sleep: .indigo
         case .food: .pink
         case .mood: .purple
         case .screenTime: .cyan
+        case .list: .mint
         case .book: .indigo
         case .movie: .red
         case .journal: .teal
@@ -278,11 +300,15 @@ private struct AddEntryView: View {
     @State private var photoData: Data?
     @State private var selectedLifeArea: LifeArea?
     @State private var selectedDevice: DeviceSource?
+    @State private var selectedListKind: ListKind?
+    @State private var hasDueDate = false
+    @State private var dueDate = Date.now
 
     private var suggestion: SmartCapture { SmartCapture(text: input) }
     private var category: LogCategory { selectedCategory ?? suggestion.category }
     private var lifeArea: LifeArea { selectedLifeArea ?? suggestion.lifeArea }
     private var deviceSource: DeviceSource? { selectedDevice ?? suggestion.deviceSource }
+    private var listKind: ListKind { selectedListKind ?? suggestion.listKind ?? .task }
 
     init(defaultDate: Date) {
         let calendar = Calendar.current
@@ -334,7 +360,7 @@ private struct AddEntryView: View {
                     }
                 }
 
-                if category == .fitness || category == .work || category == .screenTime || category == .routine {
+                if category == .fitness || category == .sleep || category == .work || category == .screenTime || category == .routine {
                     Section(category == .screenTime ? "Screen time" : "Time tracked") {
                         TextField("Duration in minutes", text: $duration, prompt: suggestion.durationMinutes.map { Text("\($0)") })
 #if os(iOS)
@@ -376,6 +402,24 @@ private struct AddEntryView: View {
                     }
                 }
 
+                if category == .list {
+                    Section("Save to list") {
+                        Picker("List", selection: Binding(
+                            get: { listKind },
+                            set: { selectedListKind = $0 }
+                        )) {
+                            ForEach(ListKind.allCases) { kind in
+                                Label(kind.displayName, systemImage: kind.systemImage).tag(kind)
+                            }
+                        }
+
+                        Toggle("Remind me", isOn: $hasDueDate)
+                        if hasDueDate {
+                            DatePicker("Date and time", selection: $dueDate)
+                        }
+                    }
+                }
+
                 Section("Journal details") {
                     TextField("Optional reflection or details", text: $note, axis: .vertical)
                         .lineLimit(3...8)
@@ -410,6 +454,12 @@ private struct AddEntryView: View {
                     photoData = try? await newItem?.loadTransferable(type: Data.self)
                 }
             }
+            .onChange(of: suggestion.dueDate) { _, suggestedDate in
+                if let suggestedDate {
+                    dueDate = suggestedDate
+                    hasDueDate = true
+                }
+            }
         }
         .frame(minWidth: 360, minHeight: 480)
     }
@@ -426,7 +476,9 @@ private struct AddEntryView: View {
             durationMinutes: Int(duration) ?? suggestion.durationMinutes,
             status: (category == .book || category == .movie) ? status : nil,
             lifeArea: lifeArea,
-            deviceSource: deviceSource
+            deviceSource: deviceSource,
+            listKind: category == .list ? listKind : nil,
+            dueDate: category == .list && hasDueDate ? dueDate : nil
         ), photoData: photoData)
         dismiss()
     }
