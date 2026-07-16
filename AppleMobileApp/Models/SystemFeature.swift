@@ -205,6 +205,130 @@ struct FinanceWorkspace: Codable, Hashable {
     static let empty = FinanceWorkspace(monthlyBudget: nil, savingPlans: [], trips: [])
 }
 
+enum TrackerFamily: String, Codable, CaseIterable, Identifiable {
+    case money = "Money"
+    case booksMedia = "Books & Media"
+    case habits = "Habits"
+    case things = "Things"
+
+    var id: Self { self }
+
+    var subtitle: String {
+        switch self {
+        case .money: "Spending, saving and trips"
+        case .booksMedia: "Books, novels and things to watch"
+        case .habits: "Small actions you want to repeat"
+        case .things: "Wish lists, checklists and reminders"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .money: "wallet.bifold"
+        case .booksMedia: "books.vertical"
+        case .habits: "repeat.circle"
+        case .things: "checklist"
+        }
+    }
+}
+
+enum TrackerTemplate: String, Codable, CaseIterable, Identifiable {
+    case spending = "Spending"
+    case saving = "Saving goal"
+    case trip = "Trip spending"
+    case books = "Books"
+    case novels = "Novels"
+    case documentaries = "Documentaries"
+    case movies = "Movies & series"
+    case dailyHabit = "Daily habit"
+    case weeklyHabit = "Weekly habit"
+    case wishlist = "Wish list"
+    case checklist = "Checklist"
+    case reminders = "Reminders"
+
+    var id: Self { self }
+
+    var family: TrackerFamily {
+        switch self {
+        case .spending, .saving, .trip: .money
+        case .books, .novels, .documentaries, .movies: .booksMedia
+        case .dailyHabit, .weeklyHabit: .habits
+        case .wishlist, .checklist, .reminders: .things
+        }
+    }
+
+    var category: LogCategory {
+        switch self {
+        case .spending, .trip: .expense
+        case .saving: .note
+        case .books, .novels: .book
+        case .documentaries, .movies: .movie
+        case .dailyHabit, .weeklyHabit: .routine
+        case .wishlist, .checklist, .reminders: .list
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .spending: "creditcard"
+        case .saving: "banknote"
+        case .trip: "airplane"
+        case .books: "book.closed"
+        case .novels: "text.book.closed"
+        case .documentaries: "play.rectangle"
+        case .movies: "film"
+        case .dailyHabit: "sun.max"
+        case .weeklyHabit: "calendar.badge.checkmark"
+        case .wishlist: "heart"
+        case .checklist: "checklist"
+        case .reminders: "bell"
+        }
+    }
+
+    var prompt: String {
+        switch self {
+        case .spending: "Record an expense and amount"
+        case .saving: "Add money without counting it as spending"
+        case .trip: "Keep travel costs together"
+        case .books: "Build a reading list and update progress"
+        case .novels: "Keep novels separate from other books"
+        case .documentaries: "Plan and record documentaries"
+        case .movies: "Keep a watch list"
+        case .dailyHabit: "Tick off one action each day"
+        case .weeklyHabit: "Build consistency across the week"
+        case .wishlist: "Save things you may want to buy"
+        case .checklist: "Keep a simple list of things to do"
+        case .reminders: "Add something with a due date"
+        }
+    }
+
+    var usesAmount: Bool {
+        self == .spending || self == .saving || self == .trip
+    }
+
+    var usesStatus: Bool {
+        family == .booksMedia
+    }
+
+    var usesDuration: Bool {
+        family == .habits
+    }
+
+    var usesDueDate: Bool {
+        family == .things
+    }
+}
+
+struct TrackerDefinition: Identifiable, Codable, Hashable {
+    var id = UUID()
+    var name: String
+    var template: TrackerTemplate
+    var isStarter = false
+    var createdAt = Date.now
+
+    var family: TrackerFamily { template.family }
+}
+
 struct SystemWorkspace: Codable {
     var goals: [SystemGoal]
     var systems: [PersonalSystem]
@@ -213,8 +337,9 @@ struct SystemWorkspace: Codable {
     var reviews: [SystemReview]
     var dashboardLayout: [DashboardWidgetConfiguration]?
     var financeWorkspace: FinanceWorkspace?
+    var trackers: [TrackerDefinition]?
 
-    static let empty = SystemWorkspace(goals: [], systems: [], processes: [], actions: [], reviews: [], dashboardLayout: nil, financeWorkspace: nil)
+    static let empty = SystemWorkspace(goals: [], systems: [], processes: [], actions: [], reviews: [], dashboardLayout: nil, financeWorkspace: nil, trackers: nil)
 }
 
 @Model
@@ -343,6 +468,10 @@ final class SystemFeatureModel {
             workspace = Self.starterWorkspace()
             try? repository.save(workspace)
         }
+        if workspace.trackers == nil {
+            workspace.trackers = Self.starterTrackers()
+            try? repository.save(workspace)
+        }
     }
 
     func snapshot(on date: Date, timeline: [LogEntry]) -> TodaySystemSnapshot {
@@ -359,6 +488,20 @@ final class SystemFeatureModel {
 
     var financeWorkspace: FinanceWorkspace {
         workspace.financeWorkspace ?? .empty
+    }
+
+    var trackers: [TrackerDefinition] {
+        workspace.trackers ?? []
+    }
+
+    func addTracker(name: String, template: TrackerTemplate) -> TrackerDefinition {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let tracker = TrackerDefinition(name: trimmedName.isEmpty ? template.rawValue : trimmedName, template: template)
+        var current = trackers
+        current.append(tracker)
+        workspace.trackers = current
+        persist()
+        return tracker
     }
 
     func setMonthlyBudget(_ amount: Double?) {
@@ -541,7 +684,17 @@ final class SystemFeatureModel {
             ],
             reviews: [],
             dashboardLayout: DashboardWidgetConfiguration.defaults,
-            financeWorkspace: .empty
+            financeWorkspace: .empty,
+            trackers: starterTrackers()
         )
+    }
+
+    private static func starterTrackers() -> [TrackerDefinition] {
+        [
+            TrackerDefinition(name: "Everyday spending", template: .spending, isStarter: true),
+            TrackerDefinition(name: "Books", template: .books, isStarter: true),
+            TrackerDefinition(name: "Daily habits", template: .dailyHabit, isStarter: true),
+            TrackerDefinition(name: "Things to buy", template: .wishlist, isStarter: true)
+        ]
     }
 }

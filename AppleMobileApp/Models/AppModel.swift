@@ -468,7 +468,7 @@ final class AppModel {
         Array(Set(entries.compactMap(\.fitnessSource))).sorted()
     }
 
-    private var currentDeviceSource: DeviceSource {
+    var currentDeviceSource: DeviceSource {
 #if os(macOS)
         .mac
 #else
@@ -994,6 +994,7 @@ struct LogEntry: Identifiable, Codable, Hashable {
     var calendarLocation: String?
     var reminderLeadMinutes: Int?
     var appleCalendarEventIdentifier: String?
+    var trackerID: UUID?
 
     var isCompleted: Bool {
         get { completed ?? false }
