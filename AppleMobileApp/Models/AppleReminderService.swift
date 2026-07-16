@@ -115,6 +115,47 @@ final class AppleReminderService {
         try store.remove(event, span: .thisEvent, commit: true)
     }
 
+    func updateCalendarEvent(
+        identifier: String,
+        title: String,
+        location: String?,
+        notes: String,
+        startDate: Date,
+        endDate: Date,
+        reminderLeadMinutes: Int?
+    ) throws {
+        guard let event = store.event(withIdentifier: identifier) else {
+            throw AppleReminderError.calendarEventNotFound
+        }
+        event.title = title
+        event.location = location
+        event.notes = notes
+        event.startDate = startDate
+        event.endDate = max(endDate, startDate.addingTimeInterval(60))
+        event.alarms?.forEach(event.removeAlarm)
+        if let minutes = reminderLeadMinutes {
+            event.addAlarm(EKAlarm(relativeOffset: TimeInterval(-minutes * 60)))
+        }
+        try store.save(event, span: .thisEvent, commit: true)
+    }
+
+    func updateReminder(identifier: String, title: String, notes: String, dueDate: Date?) throws {
+        guard let reminder = store.calendarItem(withIdentifier: identifier) as? EKReminder else {
+            throw AppleReminderError.reminderNotFound
+        }
+        reminder.title = title
+        reminder.notes = notes
+        reminder.dueDateComponents = dueDate.map {
+            Calendar.current.dateComponents(
+                [.calendar, .timeZone, .year, .month, .day, .hour, .minute],
+                from: $0
+            )
+        }
+        reminder.alarms?.forEach(reminder.removeAlarm)
+        if let dueDate { reminder.addAlarm(EKAlarm(absoluteDate: dueDate)) }
+        try store.save(reminder, commit: true)
+    }
+
     func setCompleted(_ completed: Bool, identifier: String) throws {
         guard let reminder = store.calendarItem(withIdentifier: identifier) as? EKReminder else {
             throw AppleReminderError.reminderNotFound
@@ -136,6 +177,7 @@ enum AppleReminderError: LocalizedError {
     case reminderNotFound
     case calendarAccessDenied
     case noDefaultCalendar
+    case calendarEventNotFound
 
     var errorDescription: String? {
         switch self {
@@ -144,6 +186,7 @@ enum AppleReminderError: LocalizedError {
         case .reminderNotFound: "The linked Apple reminder could not be found."
         case .calendarAccessDenied: "Apple Calendar access was not granted."
         case .noDefaultCalendar: "Apple Calendar has no default writable calendar."
+        case .calendarEventNotFound: "The linked Apple Calendar event could not be found."
         }
     }
 }
