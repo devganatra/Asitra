@@ -17,6 +17,16 @@ final class AppleReminderService {
         }
     }
 
+    var calendarStatusDescription: String {
+        switch EKEventStore.authorizationStatus(for: .event) {
+        case .fullAccess: "Connected"
+        case .writeOnly: "Write-only access"
+        case .denied, .restricted: "Access denied"
+        case .notDetermined: "Not connected"
+        @unknown default: "Unknown"
+        }
+    }
+
     func requestAccess() async throws -> Bool {
         if EKEventStore.authorizationStatus(for: .reminder) == .fullAccess {
             return true
@@ -54,6 +64,57 @@ final class AppleReminderService {
         return reminder.calendarItemIdentifier
     }
 
+    func requestCalendarAccess() async throws -> Bool {
+        if EKEventStore.authorizationStatus(for: .event) == .fullAccess { return true }
+        return try await withCheckedThrowingContinuation { continuation in
+            store.requestFullAccessToEvents { granted, error in
+                if let error { continuation.resume(throwing: error) }
+                else { continuation.resume(returning: granted) }
+            }
+        }
+    }
+
+    func createCalendarEvent(
+        title: String,
+        location: String?,
+        notes: String,
+        startDate: Date,
+        endDate: Date,
+        reminderLeadMinutes: Int?
+    ) async throws -> String {
+        guard try await requestCalendarAccess() else { throw AppleReminderError.calendarAccessDenied }
+        guard let calendar = store.defaultCalendarForNewEvents else { throw AppleReminderError.noDefaultCalendar }
+        let event = EKEvent(eventStore: store)
+        event.calendar = calendar
+        event.title = title
+        event.location = location
+        event.notes = notes
+        event.startDate = startDate
+        event.endDate = max(endDate, startDate.addingTimeInterval(60))
+        if let minutes = reminderLeadMinutes {
+            event.addAlarm(EKAlarm(relativeOffset: TimeInterval(-minutes * 60)))
+        }
+        try store.save(event, span: .thisEvent, commit: true)
+        return event.eventIdentifier
+    }
+
+    func calendarAgenda(on date: Date) -> [CalendarAgendaItem] {
+        guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else { return [] }
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: date)
+        let end = calendar.date(byAdding: .day, value: 1, to: start) ?? date
+        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
+        return store.events(matching: predicate)
+            .filter { !$0.isAllDay }
+            .map { CalendarAgendaItem(title: $0.title ?? "Untitled event", startDate: $0.startDate, endDate: $0.endDate) }
+            .sorted { $0.startDate < $1.startDate }
+    }
+
+    func deleteCalendarEvent(identifier: String) throws {
+        guard let event = store.event(withIdentifier: identifier) else { return }
+        try store.remove(event, span: .thisEvent, commit: true)
+    }
+
     func setCompleted(_ completed: Bool, identifier: String) throws {
         guard let reminder = store.calendarItem(withIdentifier: identifier) as? EKReminder else {
             throw AppleReminderError.reminderNotFound
@@ -73,12 +134,22 @@ enum AppleReminderError: LocalizedError {
     case accessDenied
     case noDefaultList
     case reminderNotFound
+    case calendarAccessDenied
+    case noDefaultCalendar
 
     var errorDescription: String? {
         switch self {
         case .accessDenied: "Apple Reminders access was not granted."
         case .noDefaultList: "Apple Reminders has no default list available."
         case .reminderNotFound: "The linked Apple reminder could not be found."
+        case .calendarAccessDenied: "Apple Calendar access was not granted."
+        case .noDefaultCalendar: "Apple Calendar has no default writable calendar."
         }
     }
+}
+
+struct CalendarAgendaItem: Sendable, Hashable {
+    let title: String
+    let startDate: Date
+    let endDate: Date
 }

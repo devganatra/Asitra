@@ -14,66 +14,68 @@ struct ListsView: View {
     }
 
     private var selectedList: SakhyaList? { model.list(withID: selectedListID) }
+    private var allListEntryCount: Int { model.entries.filter { $0.category == .list }.count }
 
     private var pending: [LogEntry] { listEntries.filter { !$0.isCompleted } }
     private var completed: [LogEntry] { listEntries.filter { $0.isCompleted } }
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Menu {
-                    Button {
-                        selectedListID = nil
-                    } label: {
-                        Label("All lists", systemImage: "square.stack.3d.up")
-                    }
-
-                    Divider()
-
-                    ForEach(model.lists) { list in
-                        Button {
-                            selectedListID = list.id
-                        } label: {
-                            Label(list.name, systemImage: list.access.systemImage)
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: selectedList?.access.systemImage ?? "square.stack.3d.up")
-                            .foregroundStyle(selectedList?.access == .shared ? .blue : .secondary)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(selectedList?.name ?? "All lists")
-                                .font(.headline)
-                            Text(selectedList.map { $0.access.rawValue } ?? "Private and shared")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Image(systemName: "chevron.down")
-                            .font(.caption.bold())
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Your lists")
+                            .font(.title2.bold())
+                        Text("Choose a space without leaving the page")
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
-                }
-
-                Spacer()
-
-                if let selectedList {
-                    Button {
-                        listToManage = selectedList
-                    } label: {
-                        Label("Manage", systemImage: "person.2.badge.gearshape")
+                    Spacer()
+                    if let selectedList {
+                        Button {
+                            listToManage = selectedList
+                        } label: {
+                            Label("Manage", systemImage: "slider.horizontal.3")
+                        }
+                        .buttonStyle(.bordered)
                     }
-                    .buttonStyle(.bordered)
+                    Button {
+                        showingNewList = true
+                    } label: {
+                        Label("New list", systemImage: "plus")
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
 
-                Button {
-                    showingNewList = true
-                } label: {
-                    Label("New list", systemImage: "plus")
+                ScrollView(.horizontal) {
+                    HStack(spacing: 12) {
+                        ListSelectionCard(
+                            title: "All lists",
+                            subtitle: "Private and shared",
+                            icon: "square.stack.3d.up.fill",
+                            count: allListEntryCount,
+                            isShared: false,
+                            isSelected: selectedListID == nil
+                        ) {
+                            withAnimation(.snappy) { selectedListID = nil }
+                        }
+
+                        ForEach(model.lists) { list in
+                            ListSelectionCard(
+                                title: list.name,
+                                subtitle: list.access.rawValue,
+                                icon: list.kind.systemImage,
+                                count: model.entries.filter { $0.category == .list && $0.listID == list.id }.count,
+                                isShared: list.access == .shared,
+                                isSelected: selectedListID == list.id
+                            ) {
+                                withAnimation(.snappy) { selectedListID = list.id }
+                            }
+                        }
+                    }
+                    .padding(.vertical, 2)
                 }
-                .buttonStyle(.borderedProminent)
+                .scrollIndicators(.hidden)
             }
             .padding()
 
@@ -167,6 +169,59 @@ struct ListsView: View {
     }
 }
 
+private struct ListSelectionCard: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    let count: Int
+    let isShared: Bool
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Image(systemName: icon)
+                        .font(.title3.weight(.semibold))
+                    Spacer()
+                    if isShared {
+                        Image(systemName: "person.2.fill")
+                            .font(.caption)
+                    }
+                }
+                Text(title)
+                    .font(.headline)
+                    .lineLimit(1)
+                HStack {
+                    Text(subtitle)
+                        .lineLimit(1)
+                    Spacer()
+                    Text("\(count)")
+                        .fontWeight(.semibold)
+                }
+                .font(.caption)
+                .opacity(0.78)
+            }
+            .foregroundStyle(isSelected ? Color.white : Color.primary)
+            .padding(14)
+            .frame(width: 178, alignment: .leading)
+            .background {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(isSelected ? Color.accentColor : Color.secondary.opacity(0.08))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(isSelected ? Color.clear : Color.secondary.opacity(0.12))
+            }
+            .shadow(color: isSelected ? Color.accentColor.opacity(0.2) : .clear, radius: 12, y: 5)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(title), \(count) items")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
 private struct SharedListBanner: View {
     let list: SakhyaList
     let manage: () -> Void
@@ -257,6 +312,8 @@ private struct ManageListView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var draft: SakhyaList
     @State private var showingCloudKitNotice = false
+    @State private var sharingError: String?
+    @State private var isPreparingShare = false
 
     init(list: SakhyaList) {
         _draft = State(initialValue: list)
@@ -296,11 +353,28 @@ private struct ManageListView: View {
                         }
 
                         Button {
-                            showingCloudKitNotice = true
+                            guard model.syncEnabled else {
+                                showingCloudKitNotice = true
+                                return
+                            }
+                            isPreparingShare = true
+                            Task {
+                                defer { isPreparingShare = false }
+                                do {
+                                    try await model.prepareSharing(for: draft)
+                                    if let updated = model.list(withID: draft.id) { draft = updated }
+                                } catch {
+                                    sharingError = error.localizedDescription
+                                }
+                            }
                         } label: {
-                            Label("Invite people with iCloud", systemImage: "person.badge.plus")
+                            if isPreparingShare {
+                                ProgressView()
+                            } else {
+                                Label("Invite people with iCloud", systemImage: "person.badge.plus")
+                            }
                         }
-                        .disabled(draft.members.count >= 3)
+                        .disabled(draft.members.count >= 3 || isPreparingShare)
                     } header: {
                         Text("People")
                     } footer: {
@@ -341,6 +415,14 @@ private struct ManageListView: View {
             } message: {
                 Text("The collaboration flow is ready, but invitations need Sakhya’s CloudKit container and Apple Developer signing to be configured first.")
             }
+            .alert("Sharing unavailable", isPresented: Binding(
+                get: { sharingError != nil },
+                set: { if !$0 { sharingError = nil } }
+            )) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(sharingError ?? "Please try again.")
+            }
         }
         .frame(minWidth: 420, minHeight: 480)
     }
@@ -369,13 +451,30 @@ struct LibraryView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("Collection", selection: $collection) {
-                ForEach(CollectionKind.allCases) { collection in
-                    Label(collection.rawValue, systemImage: collection.systemImage)
-                        .tag(collection)
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Collections")
+                        .font(.title2.bold())
+                    Text("Everything Sakhya has organized from your timeline")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
+
+                ScrollView(.horizontal) {
+                    LazyHGrid(rows: [GridItem(.fixed(46)), GridItem(.fixed(46))], spacing: 10) {
+                        ForEach(CollectionKind.allCases) { option in
+                            CollectionSelectionChip(
+                                collection: option,
+                                isSelected: collection == option
+                            ) {
+                                withAnimation(.snappy) { collection = option }
+                            }
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                .scrollIndicators(.hidden)
             }
-            .pickerStyle(.menu)
             .padding()
 
             if collection.supportsStatus {
@@ -464,6 +563,42 @@ struct LibraryView: View {
         .onChange(of: collection) { _, newValue in
             if !newValue.supportsStatus { statusFilter = nil }
         }
+    }
+}
+
+private struct CollectionSelectionChip: View {
+    let collection: CollectionKind
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                Image(systemName: collection.systemImage)
+                    .font(.subheadline.weight(.semibold))
+                    .frame(width: 28, height: 28)
+                    .background(
+                        isSelected ? Color.white.opacity(0.2) : collection.color.opacity(0.14),
+                        in: Circle()
+                    )
+                Text(collection.rawValue)
+                    .font(.subheadline.weight(.semibold))
+            }
+            .foregroundStyle(isSelected ? Color.white : Color.primary)
+            .padding(.leading, 9)
+            .padding(.trailing, 14)
+            .frame(height: 42)
+            .background {
+                Capsule()
+                    .fill(isSelected ? collection.color : Color.secondary.opacity(0.08))
+            }
+            .overlay {
+                Capsule()
+                    .stroke(isSelected ? Color.clear : Color.secondary.opacity(0.12))
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 

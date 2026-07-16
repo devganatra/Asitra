@@ -18,10 +18,22 @@ For your own device, connect the iPhone or iPad to the Mac, select it as the run
 
 ## Current features
 
+- “Today’s System” home dashboard with a current action, next actions, daily completion, process steps, and weekly system progress
+- Customizable in-app widget canvas with drag-to-reorder, content-specific compact/standard/expanded designs, hide/restore, responsive iPhone stacking, and persistent layout
+- Always-visible capture placed before the movable dashboard so manual, voice, and photo input remain immediate
+- Persistent goals, personal systems, repeatable processes, scheduled actions, and morning/evening reviews
+- Completing a system action writes evidence back to the daily timeline without creating an unrelated calendar event
 - Natural-language smart capture with an editable category suggestion
+- Voice notes with live speech transcription and timeline playback
+- On-device photo interpretation for text, receipts, book covers, meals, and general image labels
+- A floating private AI assistant for asking natural-language questions about personal statistics
 - Eleven categories covering daily life, journaling, ideas, books, and movies
-- Photo attachments stored as local files
+- Thirty days of realistic sample data across every major tracker, removable independently from personal entries
+- Private iCloud/CloudKit synchronization for entries, lists, photos, and voice notes
+- Recently Deleted with restore, permanent-delete, keep-iCloud, and delete-everywhere controls
 - Expense amounts and fitness durations roll into automatic totals
+- Dedicated beginner-friendly Money page with monthly spending plans, automatic everyday categories, savings goals with contribution history, and trip-budget tracking
+- Expenses added from Money or a trip are written back to the shared timeline; savings contributions remain separate from spending totals
 - Reading lists and movie watchlists with planned, in-progress, and completed states
 - Seven-day spending, activity, food, habit, mindset, and journal analysis
 - Work, personal, rest, and screen-time attribution by phone, tablet, Mac, web, or offline activity
@@ -32,25 +44,45 @@ For your own device, connect the iPhone or iPad to the Mac, select it as the run
 - One event pipeline: manual, app, and sensor entries share the same timeline and automatically update category trackers
 - Reading and watching activity resolves into one list item with a current status and full timeline history
 - Native Apple Reminders export with due dates, alerts, completion, and deletion synchronization
+- Automatic Apple Calendar mirroring for every new personal entry, with exact detected time ranges and optional linked reminders
+- “Tell me my today” assistant summaries combining the Sakhya timeline, due reminders, and connected Apple Calendar events
 - Browse and add entries on previous dates
-- Local persistence between launches
+- Local persistence between launches, with an offline working copy on every device
 - Adaptive navigation shared across all platforms
 - Private and shared-list architecture with list-level ownership and edit or view-only permissions
 - Custom lists that remain connected to Quick Capture and the daily timeline
 
 ## Architecture
 
-- `AppModel` owns the timeline and local persistence.
+- `AppEnvironment` is the composition root. It injects repositories, providers, and use cases instead of constructing infrastructure in views.
+- `SystemFeatureModel` and `TodaySystemEngine` keep goals, systems, processes, actions, reviews, prioritization, and progress outside the compatibility coordinator.
+- `AppModel` remains a temporary compatibility coordinator while feature state moves into `TimelineFeatureModel`, `CalendarFeatureModel`, and `HealthFeatureModel`.
+- `TimelineRepository`, `ListRepository`, `CalendarRepository`, `HealthRepository`, and `SharedListRepository` isolate persistence and Apple-framework integrations.
+- Typed SwiftData records are the offline source of truth. Records include revision, device, and modification metadata, and a durable outbox records unsynchronized mutations.
+- CloudKit receives per-entry and per-list outbox mutations. The snapshot path is retained temporarily for incoming compatibility while record-level change-token fetching is completed.
+- Shared lists use a private CloudKit root record and `CKShare`; CloudKit is initialized only when sharing is requested so unsigned local builds stay usable.
+- `Packages/SakhyaContracts` is a local Swift package containing the stable AI and wearable integration contracts.
+- On-device and remote AI providers, plus HTTP wearable providers, are replaceable adapters. Tokens are supplied at runtime and are never embedded in the app.
 - `RootView` provides adaptive split navigation.
 - `HomeView` is the daily timeline and entry flow.
 - `LibraryView` presents insights and charts.
 
 The deployment targets are iOS/iPadOS 17 and macOS 14.
 
+## Data storage
+
+- Entries, lists, and Recently Deleted metadata are stored in SwiftData under `Application Support/Sakhya/Database`.
+- On the first SwiftData launch, legacy JSON records are copied from UserDefaults. The legacy copy is retained as a non-destructive migration fallback.
+- Photos and voice notes are stored in the app's private `Application Support/Sakhya/Attachments` folder. Older `Dayline/Attachments` files remain readable and are not removed during migration.
+- When iCloud sync is enabled, record-level mutations are sent from the durable outbox and the compatibility snapshot continues to carry metadata and attachment assets. Shared lists have dedicated CloudKit records and `CKShare` metadata.
+- Settings → Data Management shows local usage and gives separate controls for sample data, Recently Deleted, clearing only this device, or deleting both the iCloud and local copies.
+
+To activate CloudKit, select your Apple Developer team in Xcode, add the `iCloud.com.devganatra.sakhya` container to the App ID, and enable the iCloud/CloudKit capability for the target. Xcode will then attach the included platform entitlement configuration to the signed app. It is intentionally not attached to unsigned Mac builds, so the app continues to build and work locally before developer signing is configured.
+
 ## Platform integrations still requiring developer configuration
 
 - Automatic per-app Screen Time needs Apple’s Family Controls distribution entitlement plus a Device Activity report extension.
-- Cross-device data and photo synchronization needs a private CloudKit container, signing team, and migration from local persistence.
+- CloudKit synchronization code and entitlements are included; the Apple Developer team must create/assign the container before live sync can authenticate.
 
 ## Release automation
 
