@@ -14,6 +14,7 @@ struct AppEnvironment {
     let todaySystemEngine: TodaySystemEngine
     let aiProvider: AIProvider
     let wearableProviders: [WearableProvider]
+    let financialDataProvider: any FinancialDataProvider
     let captureEntry: CaptureTimelineEntryUseCase
     let importHealth: ImportHealthEntriesUseCase
 
@@ -29,6 +30,7 @@ struct AppEnvironment {
             todaySystemEngine: TodaySystemEngine(),
             aiProvider: OnDeviceCaptureAIProvider(),
             wearableProviders: [],
+            financialDataProvider: FinancialDataProviderFactory.live,
             captureEntry: CaptureTimelineEntryUseCase(),
             importHealth: ImportHealthEntriesUseCase()
         )

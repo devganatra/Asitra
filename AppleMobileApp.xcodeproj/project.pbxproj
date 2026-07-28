@@ -205,6 +205,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Sakhya;
 				INFOPLIST_KEY_CFBundleName = Sakhya;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSFinancialDataUsageDescription = "Sakhya reads financial accounts and transactions you choose to share from Apple Wallet to organize spending by card and improve your private money analysis.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Sakhya reads workouts and sleep so fitness data can appear in your private daily timeline.";
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Sakhya adds meetings you describe to Apple Calendar and reads your schedule when you ask about your day.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Sakhya records voice notes that you choose to add to your private timeline.";
@@ -241,6 +242,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Sakhya;
 				INFOPLIST_KEY_CFBundleName = Sakhya;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSFinancialDataUsageDescription = "Sakhya reads financial accounts and transactions you choose to share from Apple Wallet to organize spending by card and improve your private money analysis.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Sakhya reads workouts and sleep so fitness data can appear in your private daily timeline.";
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Sakhya adds meetings you describe to Apple Calendar and reads your schedule when you ask about your day.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Sakhya records voice notes that you choose to add to your private timeline.";

@@ -12,6 +12,7 @@ struct ExpensesView: View {
     @State private var showingSavingPlan = false
     @State private var contributionPlan: SavingPlan?
     @State private var showingTrip = false
+    @State private var showingWalletRequirements = false
 
     private var currencyCode: String { Locale.current.currency?.identifier ?? "EUR" }
     private var finance: FinanceWorkspace { systemFeature.financeWorkspace }
@@ -23,6 +24,9 @@ struct ExpensesView: View {
         model.entries.filter { $0.category == .expense && monthInterval.contains($0.timestamp) }
     }
     private var monthlySpent: Double { monthlyExpenses.compactMap(\.amount).reduce(0, +) }
+    private var walletExpenses: [LogEntry] {
+        monthlyExpenses.filter { $0.financialAccountID != nil }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -81,6 +85,11 @@ struct ExpensesView: View {
         .sheet(isPresented: $showingTrip) {
             NewTripSheet { systemFeature.addTrip($0) }
         }
+        .alert("Apple Wallet connection", isPresented: $showingWalletRequirements) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Sakhya uses Apple FinanceKit—not unrestricted Apple Pay history. It works on supported iPhones after Apple grants Sakhya the managed FinanceKit entitlement, and you choose which eligible Wallet accounts and date range to share.")
+        }
     }
 
     private var moneyHeader: some View {
@@ -107,8 +116,12 @@ struct ExpensesView: View {
     private var monthlyView: some View {
         VStack(alignment: .leading, spacing: 18) {
             monthSelector
+            walletConnectionCard
             budgetHero
             if !monthlyExpenses.isEmpty {
+                if !walletExpenses.isEmpty {
+                    cardBreakdown
+                }
                 categoryBreakdown
                 recentExpenses
             } else {
@@ -123,6 +136,54 @@ struct ExpensesView: View {
                 .frame(maxWidth: .infinity, minHeight: 240)
             }
         }
+    }
+
+    private var walletConnectionCard: some View {
+        HStack(spacing: 16) {
+            Image(systemName: "apple.logo")
+                .font(.title2.weight(.semibold))
+                .frame(width: 46, height: 46)
+                .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Apple Wallet spending")
+                    .font(.headline)
+                Text(model.financialDataStatus)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                if let lastImport = model.lastFinancialImport {
+                    Text("Last checked \(lastImport.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            Spacer()
+            Button {
+                if model.isFinancialDataAvailable {
+                    Task { await model.importAppleWalletSpending() }
+                } else {
+                    showingWalletRequirements = true
+                }
+            } label: {
+                if model.isImportingFinancialData {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Label(model.lastFinancialImport == nil ? "Connect" : "Refresh", systemImage: "arrow.triangle.2.circlepath")
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(model.isImportingFinancialData)
+
+            Button {
+                showingWalletRequirements = true
+            } label: {
+                Image(systemName: "info.circle")
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Apple Wallet requirements")
+        }
+        .padding(18)
+        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     private var monthSelector: some View {
@@ -190,7 +251,7 @@ struct ExpensesView: View {
     }
 
     private var categoryBreakdown: some View {
-        let groups = Dictionary(grouping: monthlyExpenses, by: { SimpleExpenseCategory.category(for: $0.title) })
+        let groups = Dictionary(grouping: monthlyExpenses, by: SimpleExpenseCategory.category)
         let totals = groups.map { category, entries in
             ExpenseCategoryTotal(category: category, amount: entries.compactMap(\.amount).reduce(0, +))
         }.sorted { $0.amount > $1.amount }
@@ -212,13 +273,71 @@ struct ExpensesView: View {
         .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
+    private var cardBreakdown: some View {
+        let grouped = Dictionary(grouping: walletExpenses) {
+            $0.financialAccountID ?? UUID()
+        }
+        let totals = grouped.compactMap { _, entries -> CardExpenseTotal? in
+            guard let first = entries.first else { return nil }
+            return CardExpenseTotal(
+                id: first.financialAccountID ?? first.id,
+                cardName: first.financialAccountName ?? "Wallet account",
+                institutionName: first.financialInstitutionName ?? "",
+                currencyCode: first.financialCurrencyCode ?? currencyCode,
+                amount: entries.compactMap(\.amount).reduce(0, +),
+                transactionCount: entries.count
+            )
+        }.sorted { $0.amount > $1.amount }
+
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Spending by card")
+                        .font(.title2.bold())
+                    Text("Transactions stay linked to the account Apple Wallet provided.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text("\(walletExpenses.count) imported")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(totals) { total in
+                HStack(spacing: 12) {
+                    Image(systemName: "creditcard.fill")
+                        .foregroundStyle(.blue)
+                        .frame(width: 38, height: 38)
+                        .background(Color.blue.opacity(0.12), in: Circle())
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(total.cardName)
+                            .font(.subheadline.weight(.semibold))
+                        Text([total.institutionName, "\(total.transactionCount) transactions"]
+                            .filter { !$0.isEmpty }
+                            .joined(separator: " · "))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Text(total.amount.formatted(.currency(code: total.currencyCode)))
+                        .font(.headline)
+                }
+                if total.id != totals.last?.id {
+                    Divider()
+                }
+            }
+        }
+        .padding(18)
+        .background(Color.blue.opacity(0.07), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
     private var recentExpenses: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Recent spending")
                 .font(.title2.bold())
             ForEach(monthlyExpenses.sorted { $0.timestamp > $1.timestamp }.prefix(12)) { entry in
                 HStack(spacing: 12) {
-                    let category = SimpleExpenseCategory.category(for: entry.title)
+                    let category = SimpleExpenseCategory.category(for: entry)
                     Image(systemName: category.icon)
                         .foregroundStyle(category.color)
                         .frame(width: 36, height: 36)
@@ -227,9 +346,14 @@ struct ExpensesView: View {
                         Text(entry.title).font(.subheadline.weight(.semibold))
                         Text(entry.timestamp, format: .dateTime.day().month(.abbreviated).hour().minute())
                             .font(.caption).foregroundStyle(.secondary)
+                        if let card = entry.financialAccountName {
+                            Label(card, systemImage: "creditcard")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     Spacer()
-                    Text((entry.amount ?? 0).formatted(.currency(code: currencyCode)))
+                    Text((entry.amount ?? 0).formatted(.currency(code: entry.financialCurrencyCode ?? currencyCode)))
                         .font(.subheadline.bold())
                 }
                 Divider()
@@ -396,8 +520,26 @@ private enum SimpleExpenseCategory: String, CaseIterable, Identifiable {
     var color: Color {
         switch self { case .food: .orange; case .transport: .blue; case .shopping: .pink; case .fun: .purple; case .bills: .red; case .travel: .cyan; case .other: .gray }
     }
-    static func category(for title: String) -> Self {
-        let value = title.lowercased()
+    static func category(for entry: LogEntry) -> Self {
+        if let code = entry.merchantCategoryCode {
+            switch code {
+            case 3000...3999, 4511, 4722, 7011, 7512:
+                return .travel
+            case 4111, 4121, 4131, 4784, 4789, 5541, 5542:
+                return .transport
+            case 4812...4899, 4900, 6010...6399:
+                return .bills
+            case 5411, 5422, 5441, 5451, 5462, 5499, 5811...5814:
+                return .food
+            case 7832, 7911, 7922, 7929, 7932, 7933, 7941, 7991...7999:
+                return .fun
+            case 5000...5699, 5712, 5732, 5734, 5940...5999:
+                return .shopping
+            default:
+                break
+            }
+        }
+        let value = entry.title.lowercased()
         if ["food", "lunch", "dinner", "breakfast", "coffee", "grocery", "restaurant"].contains(where: value.contains) { return .food }
         if ["bus", "train", "fuel", "taxi", "uber", "transport", "parking"].contains(where: value.contains) { return .transport }
         if ["rent", "bill", "electric", "internet", "insurance", "phone"].contains(where: value.contains) { return .bills }
@@ -412,6 +554,15 @@ private struct ExpenseCategoryTotal: Identifiable {
     var id: SimpleExpenseCategory { category }
     let category: SimpleExpenseCategory
     let amount: Double
+}
+
+private struct CardExpenseTotal: Identifiable {
+    let id: UUID
+    let cardName: String
+    let institutionName: String
+    let currencyCode: String
+    let amount: Double
+    let transactionCount: Int
 }
 
 private struct MonthlyBudgetSheet: View {

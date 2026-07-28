@@ -2,6 +2,122 @@ import CloudKit
 import Foundation
 import SakhyaContracts
 
+#if canImport(FinanceKit) && os(iOS)
+import FinanceKit
+#endif
+
+struct FinancialAccountReference: Identifiable, Codable, Hashable, Sendable {
+    var id: UUID
+    var displayName: String
+    var institutionName: String
+    var currencyCode: String
+    var isCreditCard: Bool
+}
+
+struct FinancialTransactionImport: Identifiable, Codable, Hashable, Sendable {
+    var id: UUID
+    var account: FinancialAccountReference
+    var merchantName: String
+    var transactionDescription: String
+    var amount: Double
+    var currencyCode: String
+    var date: Date
+    var merchantCategoryCode: Int?
+    var status: String
+}
+
+struct FinancialImportBatch: Sendable {
+    var accounts: [FinancialAccountReference]
+    var transactions: [FinancialTransactionImport]
+}
+
+protocol FinancialDataProvider: Sendable {
+    var isAvailable: Bool { get }
+    func requestAndFetchTransactions(since date: Date) async throws -> FinancialImportBatch
+}
+
+struct UnavailableFinancialDataProvider: FinancialDataProvider {
+    let isAvailable = false
+
+    func requestAndFetchTransactions(since date: Date) async throws -> FinancialImportBatch {
+        throw FinancialDataError.unavailable
+    }
+}
+
+#if canImport(FinanceKit) && os(iOS)
+@available(iOS 17.4, *)
+struct AppleFinanceKitProvider: FinancialDataProvider {
+    var isAvailable: Bool {
+        FinanceStore.isDataAvailable(.financialData)
+    }
+
+    func requestAndFetchTransactions(since date: Date) async throws -> FinancialImportBatch {
+        guard isAvailable else { throw FinancialDataError.unavailable }
+
+        let store = FinanceStore.shared
+        let authorization = try await store.requestAuthorization()
+        guard authorization == .authorized else { throw FinancialDataError.authorizationDenied }
+
+        let financeAccounts = try await store.accounts(query: AccountQuery())
+        let accounts = financeAccounts.map { account in
+            FinancialAccountReference(
+                id: account.id,
+                displayName: account.displayName,
+                institutionName: account.institutionName,
+                currencyCode: account.currencyCode,
+                isCreditCard: account.liabilityAccount != nil
+            )
+        }
+        let accountsByID = Dictionary(uniqueKeysWithValues: accounts.map { ($0.id, $0) })
+        let transactions = try await store.transactions(query: TransactionQuery(limit: 1_000))
+        let spending = transactions.compactMap { transaction -> FinancialTransactionImport? in
+            guard transaction.creditDebitIndicator == .debit,
+                  transaction.transactionDate >= date,
+                  let account = accountsByID[transaction.accountID] else { return nil }
+            let merchant = transaction.merchantName?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let description = transaction.transactionDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+            return FinancialTransactionImport(
+                id: transaction.id,
+                account: account,
+                merchantName: merchant?.isEmpty == false ? merchant! : description,
+                transactionDescription: description,
+                amount: abs(NSDecimalNumber(decimal: transaction.transactionAmount.amount).doubleValue),
+                currencyCode: transaction.transactionAmount.currencyCode,
+                date: transaction.transactionDate,
+                merchantCategoryCode: transaction.merchantCategoryCode.map { Int($0.rawValue) },
+                status: String(describing: transaction.status)
+            )
+        }
+        return FinancialImportBatch(accounts: accounts, transactions: spending)
+    }
+}
+#endif
+
+enum FinancialDataProviderFactory {
+    static var live: any FinancialDataProvider {
+        #if canImport(FinanceKit) && os(iOS)
+        if #available(iOS 17.4, *) {
+            return AppleFinanceKitProvider()
+        }
+        #endif
+        return UnavailableFinancialDataProvider()
+    }
+}
+
+enum FinancialDataError: LocalizedError {
+    case unavailable
+    case authorizationDenied
+
+    var errorDescription: String? {
+        switch self {
+        case .unavailable:
+            "Apple Wallet financial data is unavailable on this device or in this region."
+        case .authorizationDenied:
+            "Access was not granted. You can choose the accounts and date range to share in Apple Wallet."
+        }
+    }
+}
+
 @MainActor
 protocol SharedListRepository {
     func prepareShare(for list: SakhyaList) async throws -> String

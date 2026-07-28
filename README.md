@@ -40,6 +40,7 @@ For your own device, connect the iPhone or iPad to the Mac, select it as the run
 - Recently Deleted with restore, permanent-delete, keep-iCloud, and delete-everywhere controls
 - Expense amounts and fitness durations roll into automatic totals
 - Dedicated beginner-friendly Money page with monthly spending plans, automatic everyday categories, savings goals with contribution history, and trip-budget tracking
+- Consent-based Apple Wallet financial import through FinanceKit, with duplicate-safe transaction ingestion, merchant-category analysis, and spending totals attributed to each eligible card/account
 - Expenses added from Money or a trip are written back to the shared timeline; savings contributions remain separate from spending totals
 - Reading lists and movie watchlists with planned, in-progress, and completed states
 - Contextual analysis: spending in Money, health and personal progress in Track, daily totals in Today, and cross-life guidance in Balance
@@ -94,6 +95,7 @@ To activate CloudKit, select your Apple Developer team in Xcode, add the `iCloud
 
 - Automatic per-app Screen Time needs Apple’s Family Controls distribution entitlement plus a Device Activity report extension.
 - CloudKit synchronization code and entitlements are included; the Apple Developer team must create/assign the container before live sync can authenticate.
+- Apple Wallet account and transaction access requires Apple’s managed FinanceKit entitlement. Apple currently limits eligibility to qualifying financial-management apps distributed for iPhone in the United States or United Kingdom. After approval, enable `com.apple.developer.financekit` for the App ID and signed iOS target; the required financial-data usage description and integration code are already included.
 
 ## Release automation
 
