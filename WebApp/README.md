@@ -22,9 +22,11 @@ Open `http://localhost:3000`.
 
 ## Data and privacy
 
-The current web version stores data in the browser with `localStorage`. Settings provides JSON export, import, and a confirmed sample-data reset.
+The web app requires the platform-provided ChatGPT sign-in. Structured data is stored in D1 under a one-way hash of the signed-in email, and images are kept in a private R2 bucket with account ownership checks. Existing `localStorage` data is validated, copied to secure account storage, and only then removed from browser storage. Settings provides validated JSON export, import, and a confirmed sample-data reset.
 
-Browser data is intentionally separate from Apple-only services. HealthKit, Screen Time, Apple Calendar, Apple Reminders, and CloudKit synchronization remain native-app integrations until a signed account bridge is added.
+Every state mutation requires same-origin authentication and a custom request header. Backup and image imports enforce type, size, structure, and content-signature limits. Responses include a restrictive Content Security Policy, anti-framing, no-sniff, no-store, referrer, permissions, cross-origin, and HSTS protections.
+
+Web data remains separate from Apple-only services. HealthKit, Screen Time, Apple Calendar, Apple Reminders, and CloudKit synchronization remain native-app integrations until a signed account bridge is added.
 
 ## Validate
 

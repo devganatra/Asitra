@@ -181,6 +181,11 @@ struct RemoteAIProvider: AIProvider {
     let authorization: @Sendable () async throws -> String
 
     func interpret(_ request: AIInterpretationRequest) async throws -> AIInterpretationResult {
+        guard endpoint.scheme?.lowercased() == "https",
+              endpoint.user == nil,
+              endpoint.password == nil else {
+            throw IntegrationProviderError.insecureTransport
+        }
         var urlRequest = URLRequest(url: endpoint)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -200,6 +205,11 @@ struct HTTPWearableProvider: WearableProvider {
     let authorization: @Sendable () async throws -> String
 
     func samples(since date: Date?) async throws -> [WearableSample] {
+        guard samplesEndpoint.scheme?.lowercased() == "https",
+              samplesEndpoint.user == nil,
+              samplesEndpoint.password == nil else {
+            throw IntegrationProviderError.insecureTransport
+        }
         var components = URLComponents(url: samplesEndpoint, resolvingAgainstBaseURL: false)
         if let date {
             var queryItems = components?.queryItems ?? []
@@ -222,11 +232,13 @@ struct HTTPWearableProvider: WearableProvider {
 enum IntegrationProviderError: LocalizedError {
     case invalidEndpoint
     case invalidResponse
+    case insecureTransport
 
     var errorDescription: String? {
         switch self {
         case .invalidEndpoint: "The integration endpoint is invalid."
         case .invalidResponse: "The integration returned an invalid response."
+        case .insecureTransport: "The integration must use HTTPS without credentials embedded in its URL."
         }
     }
 }
