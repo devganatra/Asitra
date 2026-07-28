@@ -10,6 +10,12 @@ A daily companion for iPhone, iPad, and Mac. Write naturally in one capture box 
 
 Before installing on a physical device, select the app target and choose your Apple Developer team under **Signing & Capabilities**.
 
+## Web app
+
+The responsive web companion lives in `WebApp/`. It mirrors Today, Lists, Track, Money, Balance, voice capture, editable timeline entries, local data management, and the conversational Sakhya assistant.
+
+The web version is browser-local and offline-first. Apple Health, Screen Time, Calendar, Reminders, and CloudKit remain native integrations until a signed account bridge is introduced. See `WebApp/README.md` for local setup and validation.
+
 ## Install Beta 1 on iPhone or iPad
 
 The current beta is version **0.1.0 (1)**.
