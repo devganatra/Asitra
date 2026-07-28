@@ -20,6 +20,10 @@ final class AppModel {
     private(set) var cloudStatus = "Checking iCloud…"
     private(set) var lastCloudSync: Date?
     private(set) var isSyncingCloud = false
+    private(set) var isImportingFinancialData = false
+    private(set) var financialDataStatus = "Not connected"
+    private(set) var lastFinancialImport: Date?
+    var isFinancialDataAvailable: Bool { financialDataProvider.isAvailable }
     var appleRemindersEnabled: Bool {
         get { calendarFeature.remindersEnabled }
         set { calendarFeature.setRemindersEnabled(newValue) }
@@ -54,6 +58,7 @@ final class AppModel {
     private let sharedListRepository: SharedListRepository
     private let captureEntryUseCase: CaptureTimelineEntryUseCase
     private let importHealthUseCase: ImportHealthEntriesUseCase
+    private let financialDataProvider: any FinancialDataProvider
 
     private let storageKey = "daily-log.entries.v2"
     private let listsStorageKey = "sakhya.lists.v1"
@@ -64,6 +69,7 @@ final class AppModel {
     private let lastCloudSyncKey = "sakhya.icloud.last-sync"
     private let localModifiedKey = "sakhya.local.modified"
     private let sampleDataKey = "sakhya.sample-data.loaded"
+    private let lastFinancialImportKey = "sakhya.finance.last-import"
     private var cloudSyncTask: Task<Void, Never>?
 
     convenience init(container: ModelContainer = PersistenceController.makeContainer()) {
@@ -88,6 +94,7 @@ final class AppModel {
         sharedListRepository = environment.sharedListRepository
         captureEntryUseCase = environment.captureEntry
         importHealthUseCase = environment.importHealth
+        financialDataProvider = environment.financialDataProvider
 
         if timelineRepository.isInitialized {
             try? timelineFeature.load()
@@ -113,6 +120,12 @@ final class AppModel {
             }
         }
         lastCloudSync = defaults.object(forKey: lastCloudSyncKey) as? Date
+        lastFinancialImport = defaults.object(forKey: lastFinancialImportKey) as? Date
+        if lastFinancialImport != nil {
+            financialDataStatus = "Connected"
+        } else if !financialDataProvider.isAvailable {
+            financialDataStatus = "Available on supported iPhone regions"
+        }
         migrateListAssignments()
         if !timelineRepository.isInitialized {
             if defaults.object(forKey: sampleDataKey) == nil {
@@ -186,6 +199,60 @@ final class AppModel {
             audioData: audioData,
             syncToCalendar: calendarOverride != nil || entry.calendarStartDate != nil
         )
+    }
+
+    @discardableResult
+    func importAppleWalletSpending() async -> Int {
+        guard !isImportingFinancialData else { return 0 }
+        isImportingFinancialData = true
+        financialDataStatus = "Waiting for Apple Wallet…"
+        defer { isImportingFinancialData = false }
+
+        let initialStart = Calendar.current.date(byAdding: .month, value: -3, to: .now) ?? .distantPast
+        let startDate = lastFinancialImport.map {
+            Calendar.current.date(byAdding: .day, value: -7, to: $0) ?? $0
+        } ?? initialStart
+
+        do {
+            let batch = try await financialDataProvider.requestAndFetchTransactions(since: startDate)
+            let knownIdentifiers = Set(entries.compactMap(\.externalIdentifier))
+            let newTransactions = batch.transactions.filter {
+                !knownIdentifiers.contains("financekit:\($0.id.uuidString)")
+            }
+            let importedEntries = newTransactions.map { transaction in
+                LogEntry(
+                    timestamp: transaction.date,
+                    category: .expense,
+                    title: transaction.merchantName,
+                    note: transaction.transactionDescription,
+                    amount: transaction.amount,
+                    lifeArea: .personal,
+                    deviceSource: .phone,
+                    fitnessSource: "Apple Wallet",
+                    externalIdentifier: "financekit:\(transaction.id.uuidString)",
+                    financialAccountID: transaction.account.id,
+                    financialAccountName: transaction.account.displayName,
+                    financialInstitutionName: transaction.account.institutionName,
+                    financialCurrencyCode: transaction.currencyCode,
+                    merchantCategoryCode: transaction.merchantCategoryCode,
+                    financialTransactionStatus: transaction.status
+                )
+            }
+            if !importedEntries.isEmpty {
+                entries.append(contentsOf: importedEntries)
+                entries.sort { $0.timestamp > $1.timestamp }
+                save()
+            }
+            lastFinancialImport = .now
+            UserDefaults.standard.set(lastFinancialImport, forKey: lastFinancialImportKey)
+            financialDataStatus = newTransactions.isEmpty
+                ? "Connected · Everything is up to date"
+                : "Connected · Added \(newTransactions.count) transactions"
+            return newTransactions.count
+        } catch {
+            financialDataStatus = error.localizedDescription
+            return 0
+        }
     }
 
     func update(_ entry: LogEntry) {
@@ -1047,6 +1114,12 @@ struct LogEntry: Identifiable, Codable, Hashable {
     var reminderLeadMinutes: Int?
     var appleCalendarEventIdentifier: String?
     var trackerID: UUID?
+    var financialAccountID: UUID?
+    var financialAccountName: String?
+    var financialInstitutionName: String?
+    var financialCurrencyCode: String?
+    var merchantCategoryCode: Int?
+    var financialTransactionStatus: String?
 
     var isCompleted: Bool {
         get { completed ?? false }
