@@ -431,13 +431,20 @@ private struct ManageListView: View {
 struct LibraryView: View {
     @Environment(AppModel.self) private var model
     @Environment(SystemFeatureModel.self) private var systemFeature
-    @State private var family: TrackerFamily = .booksMedia
+    @State private var family: TrackerFamily = .health
     @State private var selectedTrackerID: UUID?
     @State private var showingCreator = false
     @State private var showingEntry = false
 
     private var familyTrackers: [TrackerDefinition] {
         systemFeature.trackers.filter { $0.family == family }
+    }
+
+    private var displayedFamilies: [TrackerFamily] {
+        let customLegacyFamilies = [TrackerFamily.money, .things].filter { legacyFamily in
+            systemFeature.trackers.contains { $0.family == legacyFamily && !$0.isStarter }
+        }
+        return TrackerFamily.everydayCases + customLegacyFamilies
     }
 
     private var selectedTracker: TrackerDefinition? {
@@ -458,7 +465,7 @@ struct LibraryView: View {
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Track what matters")
                             .font(.largeTitle.bold())
-                        Text("Choose a simple tracker. Sakhya handles the structure.")
+                        Text("Health, habits, learning and mindset — without turning life into a spreadsheet.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -473,7 +480,7 @@ struct LibraryView: View {
 
                 ScrollView(.horizontal) {
                     HStack(spacing: 10) {
-                        ForEach(TrackerFamily.allCases) { option in
+                        ForEach(displayedFamilies) { option in
                             Button {
                                 withAnimation(.snappy) {
                                     family = option
@@ -538,7 +545,7 @@ struct LibraryView: View {
             .frame(maxWidth: 980, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
-        .navigationTitle("Trackers")
+        .navigationTitle("Track")
         .sheet(isPresented: $showingCreator) {
             TrackerCreator { name, template in
                 let tracker = systemFeature.addTracker(name: name, template: template)
@@ -686,8 +693,8 @@ private struct TrackerEntryRow: View {
 private struct TrackerCreator: View {
     @Environment(\.dismiss) private var dismiss
     let onCreate: (String, TrackerTemplate) -> Void
-    @State private var family: TrackerFamily = .booksMedia
-    @State private var template: TrackerTemplate = .books
+    @State private var family: TrackerFamily = .health
+    @State private var template: TrackerTemplate = .movement
     @State private var name = ""
 
     private var templates: [TrackerTemplate] {
@@ -701,16 +708,16 @@ private struct TrackerCreator: View {
                     VStack(alignment: .leading, spacing: 5) {
                         Text("What do you want to track?")
                             .font(.title2.bold())
-                        Text("Choose a category, then pick the closest match. You can name it anything.")
+                        Text("Money has its own page and tasks belong in Lists. Track is for personal progress.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
 
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                        ForEach(TrackerFamily.allCases) { option in
+                        ForEach(TrackerFamily.everydayCases) { option in
                             Button {
                                 family = option
-                                template = TrackerTemplate.allCases.first { $0.family == option } ?? .books
+                                template = TrackerTemplate.allCases.first { $0.family == option } ?? .movement
                             } label: {
                                 VStack(alignment: .leading, spacing: 7) {
                                     Image(systemName: option.systemImage)
@@ -835,6 +842,8 @@ private struct TrackerEntryForm: View {
         case .booksMedia: "Title"
         case .habits: "What did you do?"
         case .things: "What is it?"
+        case .health: "What would you like to record?"
+        case .mindset: "What is on your mind?"
         }
     }
 
@@ -872,6 +881,8 @@ private extension TrackerFamily {
         case .booksMedia: .indigo
         case .habits: .green
         case .things: .blue
+        case .health: .teal
+        case .mindset: .purple
         }
     }
 }

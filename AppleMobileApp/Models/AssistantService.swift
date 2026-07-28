@@ -22,8 +22,20 @@ final class SakhyaAssistant {
         )
     ]
     private(set) var isResponding = false
+    private var didPrepare = false
 
     var usesOnDeviceLanguageModel: Bool { AssistantEngine.onDeviceModelAvailable }
+
+    func prepare(model: AppModel) {
+        guard !didPrepare else { return }
+        didPrepare = true
+        let snapshot = AssistantSnapshot(
+            question: "Give me a useful insight from this week",
+            model: model,
+            calendarAgenda: model.calendarAgenda(on: .now)
+        )
+        messages = [AssistantMessage(role: .assistant, text: snapshot.welcomeInsight)]
+    }
 
     func ask(_ rawQuestion: String, model: AppModel) async {
         let question = rawQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -45,7 +57,7 @@ final class SakhyaAssistant {
         messages = [
             AssistantMessage(
                 role: .assistant,
-                text: "New conversation started. What would you like to understand about your life data?"
+                text: "New conversation started. Ask about your day, patterns, plans, money, health, or balance."
             )
         ]
     }
@@ -180,6 +192,34 @@ private struct AssistantSnapshot: Sendable {
         return lines.joined(separator: "\n")
     }
 
+    var welcomeInsight: String {
+        if entryCount == 0 {
+            return "I can help you understand your day and build useful patterns. Add a few entries by typing or talking, then ask me what stands out."
+        }
+        var details: [String] = [
+            "You logged \(entryCount) moments in \(periodLabel)"
+        ]
+        if activeMinutes > 0 { details.append("\(Self.shortDuration(activeMinutes)) of movement") }
+        if openListCount > 0 { details.append("\(openListCount) open list items") }
+        let overview = details.joined(separator: ", ") + "."
+        let nudge: String
+        if screenMinutes > personalMinutes && screenMinutes > 180 {
+            nudge = "Screen time is taking a noticeable share of your personal time."
+        } else if balanceScore < 55 && workMinutes > personalMinutes {
+            nudge = "Your logged week leans toward work; protecting one personal block may help."
+        } else {
+            nudge = "Ask me what stands out, and I’ll connect the areas you’ve recorded."
+        }
+        return overview + " " + nudge
+    }
+
+    private static func shortDuration(_ minutes: Int) -> String {
+        let hours = minutes / 60
+        let remainder = minutes % 60
+        if hours == 0 { return "\(minutes) min" }
+        return remainder == 0 ? "\(hours) hr" : "\(hours) hr \(remainder) min"
+    }
+
     private static func minutes(in entries: [LogEntry], category: LogCategory) -> Int {
         entries.filter { $0.category == category }.compactMap(\.durationMinutes).reduce(0, +)
     }
@@ -221,6 +261,11 @@ private enum AssistantEngine {
 
     @MainActor
     static func answer(question: String, snapshot: AssistantSnapshot) async -> String {
+        // Everyday questions should feel instant and do not need a generative model.
+        // Reserve the language model for genuinely open-ended synthesis.
+        if canAnswerLocally(question) {
+            return fallbackAnswer(question: question, snapshot: snapshot)
+        }
 #if canImport(FoundationModels)
         if #available(iOS 26.0, macOS 26.0, *), SystemLanguageModel.default.isAvailable {
             do {
@@ -269,7 +314,7 @@ private enum AssistantEngine {
         if contains(query, ["balance", "work life", "work-life", "personal time"]) {
             return "Your balance score for " + period + " is " + String(snapshot.balanceScore) + "/100, based on " + duration(snapshot.workMinutes) + " of work and " + duration(snapshot.personalMinutes) + " of personal time."
         }
-        if contains(query, ["list", "task", "reminder", "buy", "grocery"]) {
+        if contains(query, ["list", "task", "reminder", "buy", "grocery", "attention"]) {
             return "Across your lists, " + String(snapshot.openListCount) + " items are open and " + String(snapshot.completedListCount) + " are completed."
         }
         if contains(query, ["book", "read"]) {
@@ -288,6 +333,9 @@ private enum AssistantEngine {
         if contains(query, ["journal", "mood", "mindset", "feel"]) {
             return "You logged " + String(snapshot.journalCount) + " mindset or journal entries for " + period + "."
         }
+        if contains(query, ["insight", "pattern", "stand out", "learn"]) {
+            return snapshot.welcomeInsight
+        }
 
         return "For " + period + ", you logged " + String(snapshot.entryCount) + " entries, " + snapshot.spending.formatted(.currency(code: snapshot.currencyCode)) + " in spending, " + duration(snapshot.activeMinutes) + " of activity, and " + duration(snapshot.screenMinutes) + " of screen time. Ask about any one area for more detail."
     }
@@ -302,5 +350,17 @@ private enum AssistantEngine {
 
     private static func contains(_ value: String, _ terms: [String]) -> Bool {
         terms.contains { value.contains($0) }
+    }
+
+    private static func canAnswerLocally(_ question: String) -> Bool {
+        let query = question.lowercased()
+        return contains(query, [
+            "today", "agenda", "schedule", "spend", "expense", "money", "cost",
+            "screen", "sleep", "rest", "active", "activity", "fitness", "exercise",
+            "workout", "walk", "balance", "work life", "work-life", "personal time",
+            "list", "task", "reminder", "buy", "grocery", "attention", "book", "read",
+            "movie", "watch", "film", "habit", "routine", "journal", "mood",
+            "mindset", "feel", "insight", "pattern", "stand out", "learn"
+        ])
     }
 }

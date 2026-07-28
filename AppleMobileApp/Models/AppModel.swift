@@ -825,12 +825,11 @@ final class AppModel {
 }
 
 enum AppSection: String, CaseIterable, Identifiable {
-    case today = "Today’s System"
+    case today = "Today"
     case lists = "Lists"
+    case collections = "Track"
     case money = "Money"
     case balance = "Balance"
-    case collections = "Trackers"
-    case insights = "Insights"
     case settings = "Settings"
 
     var id: Self { self }
@@ -839,10 +838,9 @@ enum AppSection: String, CaseIterable, Identifiable {
         switch self {
         case .today: "clock"
         case .lists: "checklist"
+        case .collections: "chart.line.uptrend.xyaxis"
         case .money: "wallet.bifold"
         case .balance: "circle.lefthalf.filled"
-        case .collections: "books.vertical"
-        case .insights: "chart.bar"
         case .settings: "gearshape"
         }
     }

@@ -112,6 +112,10 @@ struct HomeView: View {
             Label("Capture evidence", systemImage: "sparkles")
                 .font(.headline)
 
+            Text("Type or talk naturally. Sakhya organizes it before anything is saved.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
             TextField(
                 "Log anything — “walked 30 minutes”, “spent €18”, or “remind me tomorrow at 6pm”…",
                 text: $quickInput,
@@ -230,10 +234,9 @@ struct HomeView: View {
                         voiceCapture.isRecording ? "Stop" : "Talk",
                         systemImage: voiceCapture.isRecording ? "stop.circle.fill" : "mic.fill"
                     )
-                    .labelStyle(.iconOnly)
                     .foregroundStyle(voiceCapture.isRecording ? .red : .primary)
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.bordered)
                 .help(voiceCapture.isRecording ? "Stop voice note" : "Record a voice note")
 
                 Button("More details") {

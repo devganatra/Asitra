@@ -210,8 +210,11 @@ enum TrackerFamily: String, Codable, CaseIterable, Identifiable {
     case booksMedia = "Books & Media"
     case habits = "Habits"
     case things = "Things"
+    case health = "Health"
+    case mindset = "Mindset"
 
     var id: Self { self }
+    static let everydayCases: [Self] = [.health, .habits, .booksMedia, .mindset]
 
     var subtitle: String {
         switch self {
@@ -219,6 +222,8 @@ enum TrackerFamily: String, Codable, CaseIterable, Identifiable {
         case .booksMedia: "Books, novels and things to watch"
         case .habits: "Small actions you want to repeat"
         case .things: "Wish lists, checklists and reminders"
+        case .health: "Movement, sleep, food and energy"
+        case .mindset: "Mood, reflection and mental wellbeing"
         }
     }
 
@@ -228,6 +233,8 @@ enum TrackerFamily: String, Codable, CaseIterable, Identifiable {
         case .booksMedia: "books.vertical"
         case .habits: "repeat.circle"
         case .things: "checklist"
+        case .health: "heart.text.square"
+        case .mindset: "brain.head.profile"
         }
     }
 }
@@ -245,6 +252,13 @@ enum TrackerTemplate: String, Codable, CaseIterable, Identifiable {
     case wishlist = "Wish list"
     case checklist = "Checklist"
     case reminders = "Reminders"
+    case movement = "Movement"
+    case sleep = "Sleep"
+    case meals = "Food & meals"
+    case energy = "Energy"
+    case mood = "Mood"
+    case journal = "Journal"
+    case meditation = "Mindful minutes"
 
     var id: Self { self }
 
@@ -254,6 +268,8 @@ enum TrackerTemplate: String, Codable, CaseIterable, Identifiable {
         case .books, .novels, .documentaries, .movies: .booksMedia
         case .dailyHabit, .weeklyHabit: .habits
         case .wishlist, .checklist, .reminders: .things
+        case .movement, .sleep, .meals, .energy: .health
+        case .mood, .journal, .meditation: .mindset
         }
     }
 
@@ -265,6 +281,12 @@ enum TrackerTemplate: String, Codable, CaseIterable, Identifiable {
         case .documentaries, .movies: .movie
         case .dailyHabit, .weeklyHabit: .routine
         case .wishlist, .checklist, .reminders: .list
+        case .movement: .fitness
+        case .sleep: .sleep
+        case .meals: .food
+        case .energy, .mood: .mood
+        case .journal: .journal
+        case .meditation: .routine
         }
     }
 
@@ -282,6 +304,13 @@ enum TrackerTemplate: String, Codable, CaseIterable, Identifiable {
         case .wishlist: "heart"
         case .checklist: "checklist"
         case .reminders: "bell"
+        case .movement: "figure.walk"
+        case .sleep: "bed.double"
+        case .meals: "fork.knife"
+        case .energy: "bolt.heart"
+        case .mood: "face.smiling"
+        case .journal: "book.pages"
+        case .meditation: "figure.mind.and.body"
         }
     }
 
@@ -299,6 +328,13 @@ enum TrackerTemplate: String, Codable, CaseIterable, Identifiable {
         case .wishlist: "Save things you may want to buy"
         case .checklist: "Keep a simple list of things to do"
         case .reminders: "Add something with a due date"
+        case .movement: "Record walks, workouts and active time"
+        case .sleep: "See your sleep pattern over time"
+        case .meals: "Remember meals and how they felt"
+        case .energy: "Notice when your energy rises and falls"
+        case .mood: "Check in with how you feel"
+        case .journal: "Keep reflections linked to your timeline"
+        case .meditation: "Record time spent slowing down"
         }
     }
 
@@ -311,7 +347,7 @@ enum TrackerTemplate: String, Codable, CaseIterable, Identifiable {
     }
 
     var usesDuration: Bool {
-        family == .habits
+        family == .habits || self == .movement || self == .sleep || self == .meditation
     }
 
     var usesDueDate: Bool {
@@ -471,6 +507,21 @@ final class SystemFeatureModel {
         if workspace.trackers == nil {
             workspace.trackers = Self.starterTrackers()
             try? repository.save(workspace)
+        } else {
+            var current = workspace.trackers ?? []
+            var addedEverydayStarter = false
+            if !current.contains(where: { $0.family == .health }) {
+                current.append(TrackerDefinition(name: "Movement", template: .movement, isStarter: true))
+                addedEverydayStarter = true
+            }
+            if !current.contains(where: { $0.family == .mindset }) {
+                current.append(TrackerDefinition(name: "Mood", template: .mood, isStarter: true))
+                addedEverydayStarter = true
+            }
+            if addedEverydayStarter {
+                workspace.trackers = current
+                try? repository.save(workspace)
+            }
         }
     }
 
@@ -691,10 +742,10 @@ final class SystemFeatureModel {
 
     private static func starterTrackers() -> [TrackerDefinition] {
         [
-            TrackerDefinition(name: "Everyday spending", template: .spending, isStarter: true),
+            TrackerDefinition(name: "Movement", template: .movement, isStarter: true),
             TrackerDefinition(name: "Books", template: .books, isStarter: true),
             TrackerDefinition(name: "Daily habits", template: .dailyHabit, isStarter: true),
-            TrackerDefinition(name: "Things to buy", template: .wishlist, isStarter: true)
+            TrackerDefinition(name: "Mood", template: .mood, isStarter: true)
         ]
     }
 }

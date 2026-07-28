@@ -21,13 +21,14 @@ struct RootView: View {
             Button {
                 showingAssistant = true
             } label: {
-                Image(systemName: "sparkles")
-                    .font(.headline.weight(.semibold))
+                Label("Ask Sakhya", systemImage: "sparkles")
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
-                    .frame(width: 48, height: 48)
-                    .background(.ultraThinMaterial, in: Circle())
+                    .padding(.horizontal, 16)
+                    .frame(height: 46)
+                    .background(.ultraThinMaterial, in: Capsule())
                     .overlay {
-                        Circle()
+                        Capsule()
                             .strokeBorder(.white.opacity(0.14))
                     }
                     .shadow(color: .black.opacity(0.16), radius: 10, y: 4)
@@ -57,8 +58,6 @@ struct RootView: View {
             BalanceView()
         case .collections:
             LibraryView()
-        case .insights:
-            InsightsView()
         case .settings:
             SettingsView()
         }

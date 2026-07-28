@@ -9,10 +9,10 @@ struct AssistantChatView: View {
     @FocusState private var inputFocused: Bool
 
     private let suggestions: [AssistantSuggestion] = [
-        AssistantSuggestion(title: "Spending", prompt: "What did I spend this week?", icon: "creditcard", tint: .orange),
+        AssistantSuggestion(title: "My day", prompt: "Tell me about today", icon: "sun.max", tint: .orange),
+        AssistantSuggestion(title: "Patterns", prompt: "What stands out in my week?", icon: "sparkles", tint: .purple),
         AssistantSuggestion(title: "Life balance", prompt: "How is my work-life balance?", icon: "circle.lefthalf.filled", tint: .indigo),
-        AssistantSuggestion(title: "Screen time", prompt: "How much screen time today?", icon: "hourglass", tint: .cyan),
-        AssistantSuggestion(title: "Open items", prompt: "What is still open in my lists?", icon: "checklist", tint: .mint)
+        AssistantSuggestion(title: "Open items", prompt: "What needs my attention?", icon: "checklist", tint: .mint)
     ]
 
     var body: some View {
@@ -28,6 +28,9 @@ struct AssistantChatView: View {
             if voiceCapture.isRecording || voiceCapture.recordingURL != nil {
                 question = transcript
             }
+        }
+        .onAppear {
+            assistant.prepare(model: model)
         }
     }
 
@@ -101,6 +104,13 @@ struct AssistantChatView: View {
                     if assistant.messages.count == 1 {
                         suggestionGrid
                             .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        Label(
+                            "Your saved history is used as private context. It is not used to train a shared model.",
+                            systemImage: "lock.shield"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
                     }
 
                     if assistant.isResponding {
