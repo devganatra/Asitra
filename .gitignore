@@ -1,6 +1,8 @@
 # Xcode
 DerivedData/
 build/
+!WebApp/build/
+!WebApp/build/sites-vite-plugin.ts
 *.xcuserstate
 xcuserdata/
 .DS_Store
