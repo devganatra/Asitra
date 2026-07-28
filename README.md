@@ -42,6 +42,8 @@ For your own device, connect the iPhone or iPad to the Mac, select it as the run
 - Local notifications for reminders with a detected or selected date and time
 - Apple Health import for workouts and sleep, including source attribution for WHOOP, Apple Watch, and other Health-compatible apps
 - One event pipeline: manual, app, and sensor entries share the same timeline and automatically update category trackers
+- A lightweight tracker builder starts with Money, Books & Media, Habits, or Things, then offers focused templates such as novels, documentaries, saving goals, and reminders
+- Tracker check-ins ask only for relevant details and write the result back to the shared timeline
 - Reading and watching activity resolves into one list item with a current status and full timeline history
 - Native Apple Reminders export with due dates, alerts, completion, and deletion synchronization
 - Automatic Apple Calendar mirroring for every new personal entry, with exact detected time ranges and optional linked reminders

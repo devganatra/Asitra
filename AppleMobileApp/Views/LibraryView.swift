@@ -430,248 +430,448 @@ private struct ManageListView: View {
 
 struct LibraryView: View {
     @Environment(AppModel.self) private var model
-    @State private var collection: CollectionKind = .books
-    @State private var statusFilter: EntryStatus?
+    @Environment(SystemFeatureModel.self) private var systemFeature
+    @State private var family: TrackerFamily = .booksMedia
+    @State private var selectedTrackerID: UUID?
+    @State private var showingCreator = false
+    @State private var showingEntry = false
 
-    private var items: [TrackedCollectionItem] {
-        let matchingEntries = model.entries.filter { $0.category == collection.category }
-        let grouped = Dictionary(grouping: matchingEntries, by: { $0.collectionKey })
-        return grouped.compactMap { key, events in
-            guard let latest = events.max(by: { $0.timestamp < $1.timestamp }) else { return nil }
-            return TrackedCollectionItem(
-                id: key,
-                title: latest.collectionDisplayTitle,
-                latest: latest,
-                eventCount: events.count
-            )
+    private var familyTrackers: [TrackerDefinition] {
+        systemFeature.trackers.filter { $0.family == family }
+    }
+
+    private var selectedTracker: TrackerDefinition? {
+        familyTrackers.first { $0.id == selectedTrackerID } ?? familyTrackers.first
+    }
+
+    private func entries(for tracker: TrackerDefinition) -> [LogEntry] {
+        model.entries.filter { entry in
+            entry.trackerID == tracker.id || (tracker.isStarter && entry.category == tracker.template.category)
         }
-        .filter { statusFilter == nil || $0.latest.status == statusFilter }
-        .sorted { $0.latest.timestamp > $1.latest.timestamp }
+        .sorted { $0.timestamp > $1.timestamp }
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Collections")
-                        .font(.title2.bold())
-                    Text("Everything Sakhya has organized from your timeline")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("Track what matters")
+                            .font(.largeTitle.bold())
+                        Text("Choose a simple tracker. Sakhya handles the structure.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button {
+                        showingCreator = true
+                    } label: {
+                        Label("New tracker", systemImage: "plus")
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
 
                 ScrollView(.horizontal) {
-                    LazyHGrid(rows: [GridItem(.fixed(46)), GridItem(.fixed(46))], spacing: 10) {
-                        ForEach(CollectionKind.allCases) { option in
-                            CollectionSelectionChip(
-                                collection: option,
-                                isSelected: collection == option
-                            ) {
-                                withAnimation(.snappy) { collection = option }
+                    HStack(spacing: 10) {
+                        ForEach(TrackerFamily.allCases) { option in
+                            Button {
+                                withAnimation(.snappy) {
+                                    family = option
+                                    selectedTrackerID = systemFeature.trackers.first { $0.family == option }?.id
+                                }
+                            } label: {
+                                Label(option.rawValue, systemImage: option.systemImage)
+                                    .font(.subheadline.weight(.semibold))
+                                    .padding(.horizontal, 14)
+                                    .frame(height: 40)
+                                    .foregroundStyle(family == option ? Color.white : Color.primary)
+                                    .background(family == option ? option.color : Color.secondary.opacity(0.09), in: Capsule())
                             }
+                            .buttonStyle(.plain)
                         }
                     }
                     .padding(.vertical, 2)
                 }
                 .scrollIndicators(.hidden)
-            }
-            .padding()
 
-            if collection.supportsStatus {
-                Picker("Status", selection: $statusFilter) {
-                    Text("All").tag(EntryStatus?.none)
-                    ForEach(EntryStatus.allCases) { status in
-                        Text(status.rawValue).tag(EntryStatus?.some(status))
+                Text(family.subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                if familyTrackers.isEmpty {
+                    ContentUnavailableView {
+                        Label("No tracker here yet", systemImage: family.systemImage)
+                    } description: {
+                        Text("Create one and Sakhya will offer the right fields automatically.")
+                    } actions: {
+                        Button("Create tracker") { showingCreator = true }
+                            .buttonStyle(.borderedProminent)
                     }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                .padding(.bottom)
-            }
-
-            if items.isEmpty {
-                ContentUnavailableView(
-                    "No \(collection.rawValue.lowercased()) yet",
-                    systemImage: collection.systemImage,
-                    description: Text(collection.emptyMessage)
-                )
-                .frame(maxHeight: .infinity)
-            } else {
-                List(items) { item in
-                    HStack(spacing: 14) {
-                        Image(systemName: item.latest.category.systemImage)
-                            .font(.title2)
-                            .foregroundStyle(collection.color)
-                            .frame(width: 38, height: 38)
-                            .background(collection.color.opacity(0.12), in: Circle())
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(item.title)
-                                .font(.headline)
-                            HStack {
-                                if let status = item.latest.status {
-                                    Menu {
-                                        ForEach(EntryStatus.allCases) { newStatus in
-                                            Button(newStatus.rawValue) {
-                                                model.recordCollectionStatus(
-                                                    for: item.latest,
-                                                    title: item.title,
-                                                    status: newStatus
-                                                )
-                                            }
-                                        }
-                                    } label: {
-                                        Label(status.rawValue, systemImage: "arrow.triangle.2.circlepath")
-                                    }
-                                }
-                                Text(item.latest.timestamp, format: .dateTime.day().month(.abbreviated).year())
-                                if item.eventCount > 1 {
-                                    Text("\(item.eventCount) timeline events")
+                    .frame(minHeight: 300)
+                } else {
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 12) {
+                            ForEach(familyTrackers) { tracker in
+                                TrackerCard(
+                                    tracker: tracker,
+                                    count: entries(for: tracker).count,
+                                    isSelected: tracker.id == selectedTracker?.id
+                                ) {
+                                    withAnimation(.snappy) { selectedTrackerID = tracker.id }
                                 }
                             }
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            if !item.latest.note.isEmpty {
-                                Text(item.latest.note)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                            }
-                            HStack(spacing: 12) {
-                                if let amount = item.latest.amount {
-                                    Label(
-                                        amount.formatted(.currency(code: Locale.current.currency?.identifier ?? "EUR")),
-                                        systemImage: "creditcard"
-                                    )
-                                }
-                                if let minutes = item.latest.durationMinutes {
-                                    Label("\(minutes) min", systemImage: "clock")
-                                }
-                                if let source = item.latest.fitnessSource {
-                                    Label(source, systemImage: "sensor")
-                                }
-                            }
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
                         }
+                        .padding(.vertical, 2)
                     }
-                    .padding(.vertical, 5)
+                    .scrollIndicators(.hidden)
+
+                    if let tracker = selectedTracker {
+                        TrackerDetail(
+                            tracker: tracker,
+                            entries: entries(for: tracker),
+                            onAdd: { showingEntry = true }
+                        )
+                    }
                 }
             }
+            .padding(24)
+            .frame(maxWidth: 980, alignment: .leading)
+            .frame(maxWidth: .infinity)
         }
         .navigationTitle("Trackers")
-        .onChange(of: collection) { _, newValue in
-            if !newValue.supportsStatus { statusFilter = nil }
+        .sheet(isPresented: $showingCreator) {
+            TrackerCreator { name, template in
+                let tracker = systemFeature.addTracker(name: name, template: template)
+                family = tracker.family
+                selectedTrackerID = tracker.id
+            }
+        }
+        .sheet(isPresented: $showingEntry) {
+            if let tracker = selectedTracker {
+                TrackerEntryForm(tracker: tracker)
+            }
+        }
+        .onAppear {
+            if selectedTrackerID == nil {
+                selectedTrackerID = familyTrackers.first?.id
+            }
         }
     }
 }
 
-private struct CollectionSelectionChip: View {
-    let collection: CollectionKind
+private struct TrackerCard: View {
+    let tracker: TrackerDefinition
+    let count: Int
     let isSelected: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 9) {
-                Image(systemName: collection.systemImage)
-                    .font(.subheadline.weight(.semibold))
-                    .frame(width: 28, height: 28)
-                    .background(
-                        isSelected ? Color.white.opacity(0.2) : collection.color.opacity(0.14),
-                        in: Circle()
-                    )
-                Text(collection.rawValue)
-                    .font(.subheadline.weight(.semibold))
+            VStack(alignment: .leading, spacing: 10) {
+                Image(systemName: tracker.template.systemImage)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(isSelected ? Color.white : tracker.family.color)
+                Text(tracker.name)
+                    .font(.headline)
+                    .lineLimit(1)
+                Text(count == 1 ? "1 entry" : "\(count) entries")
+                    .font(.caption)
+                    .foregroundStyle(isSelected ? Color.white.opacity(0.8) : Color.secondary)
             }
             .foregroundStyle(isSelected ? Color.white : Color.primary)
-            .padding(.leading, 9)
-            .padding(.trailing, 14)
-            .frame(height: 42)
-            .background {
-                Capsule()
-                    .fill(isSelected ? collection.color : Color.secondary.opacity(0.08))
-            }
+            .padding(16)
+            .frame(width: 180, height: 112, alignment: .leading)
+            .background(isSelected ? tracker.family.color : Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 18))
             .overlay {
-                Capsule()
-                    .stroke(isSelected ? Color.clear : Color.secondary.opacity(0.12))
+                RoundedRectangle(cornerRadius: 18)
+                    .stroke(isSelected ? Color.clear : Color.secondary.opacity(0.1))
             }
         }
         .buttonStyle(.plain)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
-private struct TrackedCollectionItem: Identifiable {
-    let id: String
-    let title: String
-    let latest: LogEntry
-    let eventCount: Int
+private struct TrackerDetail: View {
+    let tracker: TrackerDefinition
+    let entries: [LogEntry]
+    let onAdd: () -> Void
+
+    private var amount: Double { entries.compactMap(\.amount).reduce(0, +) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(tracker.name)
+                        .font(.title2.bold())
+                    Text(tracker.template.prompt)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button(action: onAdd) {
+                    Label(tracker.template.family == .habits ? "Check in" : "Add entry", systemImage: "plus")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(tracker.family.color)
+            }
+
+            if tracker.template.usesAmount, !entries.isEmpty {
+                HStack(spacing: 8) {
+                    Text(tracker.template == .saving ? "Added" : "Total")
+                        .foregroundStyle(.secondary)
+                    Text(amount, format: .currency(code: Locale.current.currency?.identifier ?? "EUR"))
+                        .font(.title3.bold())
+                }
+            }
+
+            if entries.isEmpty {
+                HStack(spacing: 14) {
+                    Image(systemName: tracker.template.systemImage)
+                        .font(.title2)
+                        .foregroundStyle(tracker.family.color)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Ready when you are")
+                            .font(.headline)
+                        Text("Your first entry will also appear on the timeline.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 12)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(entries.prefix(8)) { entry in
+                        TrackerEntryRow(entry: entry, color: tracker.family.color)
+                        if entry.id != entries.prefix(8).last?.id { Divider() }
+                    }
+                }
+            }
+        }
+        .padding(22)
+        .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 22))
+    }
 }
 
-private enum CollectionKind: String, CaseIterable, Identifiable {
-    case books = "Books"
-    case movies = "Movies"
-    case habits = "Habits"
-    case meals = "Food"
-    case fitness = "Fitness"
-    case sleep = "Sleep"
-    case mindset = "Mindset"
-    case journal = "Journal"
-    case ideas = "Ideas"
-    case expenses = "Expenses"
-    case work = "Work"
-    case screenTime = "Screen Time"
+private struct TrackerEntryRow: View {
+    let entry: LogEntry
+    let color: Color
 
-    var id: Self { self }
-    var category: LogCategory {
-        switch self {
-        case .books: .book
-        case .movies: .movie
-        case .habits: .routine
-        case .meals: .food
-        case .fitness: .fitness
-        case .sleep: .sleep
-        case .mindset: .mood
-        case .journal: .journal
-        case .ideas: .idea
-        case .expenses: .expense
-        case .work: .work
-        case .screenTime: .screenTime
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: entry.completed == true ? "checkmark.circle.fill" : entry.category.systemImage)
+                .foregroundStyle(color)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(entry.collectionDisplayTitle)
+                    .font(.subheadline.weight(.semibold))
+                HStack(spacing: 8) {
+                    Text(entry.timestamp, format: .dateTime.day().month(.abbreviated).hour().minute())
+                    if let status = entry.status { Text(status.rawValue) }
+                    if let minutes = entry.durationMinutes { Text("\(minutes) min") }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if let amount = entry.amount {
+                Text(amount, format: .currency(code: Locale.current.currency?.identifier ?? "EUR"))
+                    .font(.subheadline.weight(.semibold))
+            }
+        }
+        .padding(.vertical, 11)
+    }
+}
+
+private struct TrackerCreator: View {
+    @Environment(\.dismiss) private var dismiss
+    let onCreate: (String, TrackerTemplate) -> Void
+    @State private var family: TrackerFamily = .booksMedia
+    @State private var template: TrackerTemplate = .books
+    @State private var name = ""
+
+    private var templates: [TrackerTemplate] {
+        TrackerTemplate.allCases.filter { $0.family == family }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("What do you want to track?")
+                            .font(.title2.bold())
+                        Text("Choose a category, then pick the closest match. You can name it anything.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                        ForEach(TrackerFamily.allCases) { option in
+                            Button {
+                                family = option
+                                template = TrackerTemplate.allCases.first { $0.family == option } ?? .books
+                            } label: {
+                                VStack(alignment: .leading, spacing: 7) {
+                                    Image(systemName: option.systemImage)
+                                        .font(.title3)
+                                    Text(option.rawValue).font(.headline)
+                                    Text(option.subtitle)
+                                        .font(.caption)
+                                        .foregroundStyle(family == option ? Color.white.opacity(0.8) : Color.secondary)
+                                        .multilineTextAlignment(.leading)
+                                }
+                                .foregroundStyle(family == option ? Color.white : Color.primary)
+                                .padding(14)
+                                .frame(maxWidth: .infinity, minHeight: 105, alignment: .leading)
+                                .background(family == option ? option.color : Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 16))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Choose a type")
+                            .font(.headline)
+                        ForEach(templates) { option in
+                            Button {
+                                template = option
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: option.systemImage)
+                                        .foregroundStyle(family.color)
+                                        .frame(width: 30)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(option.rawValue).font(.subheadline.weight(.semibold))
+                                        Text(option.prompt).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: template == option ? "checkmark.circle.fill" : "circle")
+                                        .foregroundStyle(template == option ? family.color : Color.secondary)
+                                }
+                                .contentShape(Rectangle())
+                                .padding(12)
+                                .background(template == option ? family.color.opacity(0.09) : Color.clear, in: RoundedRectangle(cornerRadius: 12))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    TextField("Name (for example: European novels)", text: $name)
+                        .textFieldStyle(.roundedBorder)
+                }
+                .padding(22)
+            }
+            .navigationTitle("New tracker")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Create") {
+                        onCreate(name, template)
+                        dismiss()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+        }
+        .frame(minWidth: 420, minHeight: 620)
+    }
+}
+
+private struct TrackerEntryForm: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(AppModel.self) private var model
+    let tracker: TrackerDefinition
+    @State private var title = ""
+    @State private var note = ""
+    @State private var amount = 0.0
+    @State private var status: EntryStatus = .planned
+    @State private var duration = 15
+    @State private var dueDate = Date.now
+    @State private var hasDueDate = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField(titlePrompt, text: $title)
+                    if tracker.template.usesAmount {
+                        TextField("Amount", value: $amount, format: .number)
+                    }
+                    if tracker.template.usesStatus {
+                        Picker("Status", selection: $status) {
+                            ForEach(EntryStatus.allCases) { Text($0.rawValue).tag($0) }
+                        }
+                    }
+                    if tracker.template.usesDuration {
+                        Stepper("\(duration) minutes", value: $duration, in: 1...480, step: 5)
+                    }
+                    if tracker.template.usesDueDate {
+                        Toggle("Add a date", isOn: $hasDueDate)
+                        if hasDueDate { DatePicker("When", selection: $dueDate) }
+                    }
+                    TextField("Note (optional)", text: $note, axis: .vertical)
+                } header: {
+                    Label(tracker.name, systemImage: tracker.template.systemImage)
+                } footer: {
+                    Text("This entry will also appear on your timeline.")
+                }
+            }
+            .navigationTitle(tracker.template.family == .habits ? "Habit check-in" : "Add entry")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }
+                        .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (tracker.template.usesAmount && amount <= 0))
+                }
+            }
+        }
+        .frame(minWidth: 380, minHeight: 390)
+    }
+
+    private var titlePrompt: String {
+        switch tracker.template.family {
+        case .money: tracker.template == .saving ? "What are you saving for?" : "What was it for?"
+        case .booksMedia: "Title"
+        case .habits: "What did you do?"
+        case .things: "What is it?"
         }
     }
-    var systemImage: String { category.systemImage }
-    var supportsStatus: Bool { self == .books || self == .movies }
+
+    private func save() {
+        let listKind: ListKind? = switch tracker.template {
+        case .wishlist: .shopping
+        case .reminders: .reminder
+        case .checklist: .task
+        default: nil
+        }
+        let entry = LogEntry(
+            timestamp: .now,
+            category: tracker.template.category,
+            title: title.trimmingCharacters(in: .whitespacesAndNewlines),
+            note: note.trimmingCharacters(in: .whitespacesAndNewlines),
+            amount: tracker.template.usesAmount ? amount : nil,
+            durationMinutes: tracker.template.usesDuration ? duration : nil,
+            status: tracker.template.usesStatus ? status : nil,
+            lifeArea: .personal,
+            deviceSource: model.currentDeviceSource,
+            listKind: listKind,
+            dueDate: hasDueDate ? dueDate : nil,
+            completed: tracker.template.usesDuration ? true : false,
+            trackerID: tracker.id
+        )
+        model.add(entry, syncToCalendar: false)
+        dismiss()
+    }
+}
+
+private extension TrackerFamily {
     var color: Color {
         switch self {
-        case .books: .indigo
-        case .movies: .red
-        case .habits: .blue
-        case .meals: .pink
-        case .fitness: .green
-        case .sleep: .indigo
-        case .mindset: .purple
-        case .journal: .teal
-        case .ideas: .yellow
-        case .expenses: .orange
-        case .work: .blue
-        case .screenTime: .cyan
-        }
-    }
-    var emptyMessage: String {
-        switch self {
-        case .books: "Log “want to read…” or “finished…” to build your reading list."
-        case .movies: "Log “want to watch…” or “watched…” to build your watchlist."
-        case .habits: "Routine entries from the timeline appear here automatically."
-        case .meals: "Meals and food entries from the timeline appear here automatically."
-        case .fitness: "Manual workouts and connected fitness sources appear here."
-        case .sleep: "Sleep imported from wearables or entered manually appears here."
-        case .mindset: "Mood and mindset entries from the timeline appear here."
-        case .journal: "Your journal entries remain organized here."
-        case .ideas: "Start an entry with “idea” and Sakhya will collect it here."
-        case .expenses: "Purchases and spending entries from the timeline appear here."
-        case .work: "Work sessions and events from the timeline appear here."
-        case .screenTime: "Phone and computer usage entries appear here."
+        case .money: .orange
+        case .booksMedia: .indigo
+        case .habits: .green
+        case .things: .blue
         }
     }
 }
