@@ -442,6 +442,22 @@ export default function SakhyaWebApp() {
         ? "Your week is leaning toward work. Protect one personal block this evening."
         : "Your week has a healthy rhythm. Keep the next action small and clear.";
 
+  if (!hydrated) {
+    return (
+      <div className="app-frame">
+        <main>
+          <div className="page-shell">
+            <section className="hero">
+              <span className="eyebrow">Sakhya</span>
+              <h1>Preparing your day…</h1>
+              <p>Loading your private account workspace.</p>
+            </section>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   function addCapture(event?: FormEvent) {
     event?.preventDefault();
     if (!capture.trim()) return;

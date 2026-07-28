@@ -60,10 +60,8 @@ test("server-renders the Sakhya everyday app", async () => {
 
   const html = await response.text();
   assert.match(html, /<title>Sakhya — Your everyday system<\/title>/i);
-  assert.match(html, /Make today feel lighter/);
-  assert.match(html, /What happened\?/);
-  assert.match(html, /Ask Sakhya/);
-  assert.match(html, /Saved securely/);
+  assert.match(html, /Preparing your day/);
+  assert.match(html, /Loading your private account workspace/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/i);
 });
 
