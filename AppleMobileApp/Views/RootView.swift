@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(AppModel.self) private var model
+    @State private var showingAssistant = false
 
     var body: some View {
         @Bindable var model = model
@@ -16,6 +17,31 @@ struct RootView: View {
             destination(for: model.selectedSection ?? .today)
         }
         .navigationSplitViewStyle(.balanced)
+        .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
+            Button {
+                showingAssistant = true
+            } label: {
+                Image(systemName: "sparkles")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 48, height: 48)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .overlay {
+                        Circle()
+                            .strokeBorder(.white.opacity(0.14))
+                    }
+                    .shadow(color: .black.opacity(0.16), radius: 10, y: 4)
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 10)
+            .accessibilityLabel("Ask Sakhya")
+            .help("Ask Sakhya about your stats")
+        }
+        .sheet(isPresented: $showingAssistant) {
+            AssistantChatView()
+                .environment(model)
+        }
     }
 
     @ViewBuilder
@@ -25,6 +51,8 @@ struct RootView: View {
             HomeView()
         case .lists:
             ListsView()
+        case .money:
+            ExpensesView()
         case .balance:
             BalanceView()
         case .collections:
@@ -39,5 +67,5 @@ struct RootView: View {
 
 #Preview {
     RootView()
-        .environment(AppModel())
+        .environment(AppModel(container: PersistenceController.makeContainer(inMemory: true)))
 }

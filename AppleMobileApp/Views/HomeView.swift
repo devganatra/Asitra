@@ -1,3 +1,4 @@
+import AVFoundation
 import PhotosUI
 import SwiftUI
 #if os(macOS)
@@ -13,6 +14,16 @@ struct HomeView: View {
     @State private var quickInput = ""
     @State private var detailsDraft = ""
     @State private var calendarExpanded = false
+    @State private var voiceCapture = VoiceCaptureService()
+    @State private var voicePrefix = ""
+    @State private var quickPhotoSelection: PhotosPickerItem?
+    @State private var quickPhotoData: Data?
+    @State private var imageAnalysis: ImageCaptureAnalysis?
+    @State private var isAnalyzingImage = false
+    @State private var captureError: String?
+    @State private var pendingCalendarCapture: PendingCalendarCapture?
+    @State private var visiblePastEntryCount = 40
+    @State private var visibleFutureEntryCount = 30
     @FocusState private var quickCaptureFocused: Bool
 
     private var entries: [LogEntry] { model.entries(on: selectedDate) }
@@ -20,22 +31,69 @@ struct HomeView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                dateHeader
-                quickCapture
-                summary
-                timeline
+            LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                Section {
+                    VStack(alignment: .leading, spacing: 22) {
+                        greetingHeader
+                        dateHeader
+                        quickCapture
+                        TodaySystemView(date: selectedDate)
+                        summary
+                        timeline
+                    }
+                    .padding()
+                    .frame(maxWidth: 900, alignment: .leading)
+                    .frame(maxWidth: .infinity)
+                } header: {
+                    dayBoundaryHeader
+                        .padding(.horizontal)
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: 900)
+                        .frame(maxWidth: .infinity)
+                        .background(.bar)
+                }
             }
-            .padding()
-            .frame(maxWidth: 900, alignment: .leading)
-            .frame(maxWidth: .infinity)
         }
-        .navigationTitle(Calendar.current.isDateInToday(selectedDate) ? "Today" : selectedDate.formatted(date: .abbreviated, time: .omitted))
+        .navigationTitle(dayRelationship(for: selectedDate))
         .sheet(isPresented: $showingAddEntry) {
             AddEntryView(defaultDate: selectedDate, initialText: detailsDraft) {
                 quickInput = ""
             }
                 .environment(model)
+        }
+        .sheet(item: $pendingCalendarCapture) { capture in
+            CalendarEntryPreview(
+                capture: capture,
+                onCancel: { pendingCalendarCapture = nil },
+                onSave: saveConfirmedCalendarCapture
+            )
+        }
+        .onChange(of: voiceCapture.transcript) { _, transcript in
+            guard voiceCapture.isRecording || voiceCapture.recordingURL != nil else { return }
+            quickInput = [voicePrefix, transcript]
+                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                .joined(separator: voicePrefix.isEmpty ? "" : " ")
+        }
+        .onChange(of: voiceCapture.errorMessage) { _, error in
+            if let error { captureError = error }
+        }
+        .onChange(of: quickPhotoSelection) { _, item in
+            guard let item else { return }
+            analyzeQuickPhoto(item)
+        }
+        .onChange(of: selectedDate) { _, _ in
+            // Each date is its own bounded timeline. Reset progressive loading
+            // rather than carrying scroll/loading state into another day.
+            visiblePastEntryCount = 40
+            visibleFutureEntryCount = 30
+        }
+        .alert("Capture needs attention", isPresented: Binding(
+            get: { captureError != nil },
+            set: { if !$0 { captureError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(captureError ?? "Please try again.")
         }
 #if os(macOS)
         .onAppear { quickCaptureFocused = true }
@@ -44,7 +102,7 @@ struct HomeView: View {
 
     private var quickCapture: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("Quick capture", systemImage: "sparkles")
+            Label("Capture evidence", systemImage: "sparkles")
                 .font(.headline)
 
             TextField(
@@ -57,6 +115,61 @@ struct HomeView: View {
             .textFieldStyle(.plain)
             .focused($quickCaptureFocused)
             .onSubmit(addQuickEntry)
+
+            if let quickPhotoData {
+                HStack(alignment: .top, spacing: 12) {
+                    AttachmentImage(data: quickPhotoData)
+                        .frame(width: 76, height: 76)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label(
+                            isAnalyzingImage ? "Interpreting photo…" : "Photo interpreted on device",
+                            systemImage: isAnalyzingImage ? "sparkles" : "checkmark.shield"
+                        )
+                        .font(.caption.weight(.semibold))
+                        if let imageAnalysis, !imageAnalysis.labels.isEmpty {
+                            Text(imageAnalysis.labels.prefix(3).joined(separator: " · "))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Spacer()
+                    Button {
+                        self.quickPhotoData = nil
+                        quickPhotoSelection = nil
+                        imageAnalysis = nil
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Remove photo")
+                }
+            }
+
+            if voiceCapture.recordingURL != nil {
+                HStack(spacing: 10) {
+                    Image(systemName: voiceCapture.isRecording ? "waveform.circle.fill" : "waveform.circle")
+                        .foregroundStyle(voiceCapture.isRecording ? .red : .blue)
+                    Text(voiceCapture.isRecording ? "Listening… speak naturally" : "Voice note ready")
+                        .font(.caption.weight(.semibold))
+                    if voiceCapture.usesOnDeviceRecognition {
+                        Text("On-device")
+                            .font(.caption2.weight(.medium))
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(.green.opacity(0.12), in: Capsule())
+                    }
+                    Spacer()
+                    Button("Discard") {
+                        voiceCapture.reset()
+                        quickInput = voicePrefix
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
 
             Divider()
 
@@ -72,7 +185,36 @@ struct HomeView: View {
                         .foregroundStyle(list.access == .shared ? .blue : .secondary)
                 }
 
+                if let start = quickSuggestion.calendarStartDate,
+                   let end = quickSuggestion.calendarEndDate {
+                    Label(
+                        "Calendar • \(start.formatted(date: .abbreviated, time: .shortened))–\(end.formatted(date: .omitted, time: .shortened))",
+                        systemImage: "calendar.badge.plus"
+                    )
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.blue)
+                }
+
                 Spacer()
+
+                PhotosPicker(selection: $quickPhotoSelection, matching: .images) {
+                    Label("Photo", systemImage: "photo.badge.plus")
+                        .labelStyle(.iconOnly)
+                }
+                .buttonStyle(.borderless)
+                .disabled(isAnalyzingImage)
+                .help("Add and interpret a photo")
+
+                Button(action: toggleVoiceCapture) {
+                    Label(
+                        voiceCapture.isRecording ? "Stop" : "Talk",
+                        systemImage: voiceCapture.isRecording ? "stop.circle.fill" : "mic.fill"
+                    )
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(voiceCapture.isRecording ? .red : .primary)
+                }
+                .buttonStyle(.borderless)
+                .help(voiceCapture.isRecording ? "Stop voice note" : "Record a voice note")
 
                 Button("More details") {
                     detailsDraft = quickInput
@@ -91,14 +233,172 @@ struct HomeView: View {
     }
 
     private func addQuickEntry() {
+        if voiceCapture.isRecording { voiceCapture.stop() }
         guard !quickInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        model.addCapturedText(quickInput, on: selectedDate)
+        let audioData = voiceCapture.recordingURL.flatMap { try? Data(contentsOf: $0) }
+        let captureNote: String
+        if let analysis = imageAnalysis, !analysis.recognizedText.isEmpty {
+            captureNote = "Recognized from the attached photo on device:\n\(analysis.recognizedText)"
+        } else {
+            captureNote = ""
+        }
+        let scheduledDate = quickSuggestion.calendarStartDate
+        if let startDate = quickSuggestion.calendarStartDate,
+           let endDate = quickSuggestion.calendarEndDate {
+            pendingCalendarCapture = PendingCalendarCapture(
+                sourceText: quickInput.trimmingCharacters(in: .whitespacesAndNewlines),
+                title: quickSuggestion.calendarTitle ?? "Meeting",
+                location: quickSuggestion.calendarLocation ?? "",
+                startDate: startDate,
+                endDate: endDate,
+                reminderLeadMinutes: quickSuggestion.reminderLeadMinutes,
+                photoData: quickPhotoData,
+                audioData: audioData,
+                captureNote: captureNote
+            )
+            return
+        }
+        model.addCapturedText(
+            quickInput,
+            on: selectedDate,
+            photoData: quickPhotoData,
+            audioData: audioData,
+            captureNote: captureNote
+        )
         quickInput = ""
+        voicePrefix = ""
+        voiceCapture.reset()
+        quickPhotoData = nil
+        quickPhotoSelection = nil
+        imageAnalysis = nil
+        if let scheduledDate { selectedDate = scheduledDate }
         quickCaptureFocused = true
+    }
+
+    private func saveConfirmedCalendarCapture(_ capture: PendingCalendarCapture) {
+        let cleanedLocation = capture.location.trimmingCharacters(in: .whitespacesAndNewlines)
+        model.addCapturedText(
+            capture.sourceText,
+            on: selectedDate,
+            photoData: capture.photoData,
+            audioData: capture.audioData,
+            captureNote: capture.captureNote,
+            calendarOverride: CalendarCaptureOverride(
+                title: capture.title.trimmingCharacters(in: .whitespacesAndNewlines),
+                location: cleanedLocation.isEmpty ? nil : cleanedLocation,
+                startDate: capture.startDate,
+                endDate: capture.endDate,
+                reminderLeadMinutes: capture.reminderLeadMinutes
+            )
+        )
+        selectedDate = capture.startDate
+        pendingCalendarCapture = nil
+        quickInput = ""
+        voicePrefix = ""
+        voiceCapture.reset()
+        quickPhotoData = nil
+        quickPhotoSelection = nil
+        imageAnalysis = nil
+        quickCaptureFocused = true
+    }
+
+    private func toggleVoiceCapture() {
+        if voiceCapture.isRecording {
+            voiceCapture.stop()
+        } else {
+            voicePrefix = quickInput.trimmingCharacters(in: .whitespacesAndNewlines)
+            Task { await voiceCapture.start() }
+        }
+    }
+
+    private func analyzeQuickPhoto(_ item: PhotosPickerItem) {
+        isAnalyzingImage = true
+        Task {
+            defer { isAnalyzingImage = false }
+            guard let data = try? await item.loadTransferable(type: Data.self) else {
+                captureError = "Sakhya could not load that photo."
+                return
+            }
+            quickPhotoData = data
+            do {
+                let analysis = try await ImageIntelligenceService.analyze(data)
+                imageAnalysis = analysis
+                if quickInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    quickInput = analysis.suggestedCapture
+                }
+            } catch {
+                captureError = error.localizedDescription
+            }
+        }
     }
 
     private var dateHeader: some View {
         ElegantCalendar(selectedDate: $selectedDate, isExpanded: $calendarExpanded)
+    }
+
+    private var greetingHeader: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(greetingTitle)
+                .font(.largeTitle.bold())
+            Text(Calendar.current.isDateInToday(selectedDate)
+                ? "Follow the system, capture the evidence, and improve one step at a time."
+                : selectedDate.formatted(.dateTime.weekday(.wide).day().month(.wide).year()))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var greetingTitle: String {
+        guard Calendar.current.isDateInToday(selectedDate) else { return dayRelationship(for: selectedDate) }
+        return switch Calendar.current.component(.hour, from: .now) {
+        case 0..<12: "Good morning"
+        case 12..<18: "Good afternoon"
+        default: "Good evening"
+        }
+    }
+
+    private var dayBoundaryHeader: some View {
+        HStack(spacing: 12) {
+            Button { moveSelectedDay(by: -1) } label: {
+                Image(systemName: "chevron.left")
+                    .frame(width: 30, height: 30)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Previous day")
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(dayRelationship(for: selectedDate))
+                    .font(.headline)
+                Text(selectedDate.formatted(.dateTime.weekday(.wide).day().month(.wide).year()))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Text("\(entries.count)")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .background(.quaternary, in: Capsule())
+
+            Button { moveSelectedDay(by: 1) } label: {
+                Image(systemName: "chevron.right")
+                    .frame(width: 30, height: 30)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Next day")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private func moveSelectedDay(by value: Int) {
+        guard let date = Calendar.current.date(byAdding: .day, value: value, to: selectedDate) else { return }
+        withAnimation(.snappy) { selectedDate = date }
     }
 
     private var summary: some View {
@@ -126,11 +426,29 @@ struct HomeView: View {
 
     @ViewBuilder
     private var timeline: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Timeline")
-                .font(.title2.bold())
+        LazyVStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("\(dayRelationship(for: selectedDate))’s timeline")
+                        .font(.title2.bold())
+                    Text(selectedDate.formatted(.dateTime.weekday(.wide).day().month(.wide).year()))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text("\(entries.count) \(entries.count == 1 ? "entry" : "entries")")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.quaternary, in: Capsule())
+            }
 
-            if entries.isEmpty {
+            if Calendar.current.isDateInToday(selectedDate) {
+                TimelineView(.periodic(from: .now, by: 60)) { context in
+                    continuousTodayTimeline(now: context.date)
+                }
+            } else if entries.isEmpty {
                 ContentUnavailableView {
                     Label("Nothing logged", systemImage: "clock")
                 } description: {
@@ -141,11 +459,89 @@ struct HomeView: View {
                 }
                 .frame(maxWidth: .infinity, minHeight: 280)
             } else {
-                ForEach(entries) { entry in
-                    TimelineRow(entry: entry, attachmentData: model.attachmentData(for: entry)) {
-                        model.delete(entry)
-                    }
+                timelineRows(entries)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func continuousTodayTimeline(now: Date) -> some View {
+        // Never pull adjacent days into Today's future/past sections.
+        let ordered = entries.sorted { $0.timestamp < $1.timestamp }
+        let future = ordered.filter { $0.timestamp > now }
+        let past = ordered.lazy.reversed().filter { $0.timestamp <= now }
+        let visibleFuture = Array(future.prefix(visibleFutureEntryCount))
+        let visiblePast = Array(past.prefix(visiblePastEntryCount))
+
+        NowTimelineMarker(now: now)
+
+        if !future.isEmpty {
+            timelineSectionHeader("Upcoming", count: future.count, icon: "arrow.down.forward")
+            timelineRows(visibleFuture)
+            if visibleFuture.count < future.count {
+                progressiveTimelineLoader {
+                    visibleFutureEntryCount = min(visibleFutureEntryCount + 30, future.count)
                 }
+            }
+        } else {
+            HStack(spacing: 8) {
+                Image(systemName: "calendar.badge.clock")
+                Text("Nothing scheduled after now")
+            }
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .padding(.vertical, 8)
+        }
+
+        if !past.isEmpty {
+            timelineSectionHeader("Earlier", count: past.count, icon: "arrow.up.backward")
+            timelineRows(visiblePast)
+            if visiblePast.count < past.count {
+                progressiveTimelineLoader {
+                    visiblePastEntryCount = min(visiblePastEntryCount + 40, past.count)
+                }
+            }
+        }
+    }
+
+    private func progressiveTimelineLoader(load: @escaping () -> Void) -> some View {
+        HStack(spacing: 8) {
+            ProgressView()
+                .controlSize(.small)
+            Text("Loading more entries…")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .onAppear(perform: load)
+    }
+
+    private func timelineSectionHeader(_ title: String, count: Int, icon: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+            Text(title)
+                .font(.headline)
+            Text("\(count)")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(.quaternary, in: Capsule())
+        }
+        .padding(.top, 8)
+    }
+
+    @ViewBuilder
+    private func timelineRows(_ values: [LogEntry]) -> some View {
+        ForEach(values) { entry in
+            TimelineRow(
+                entry: entry,
+                attachmentData: model.attachmentData(for: entry),
+                audioURL: model.audioAttachmentURL(for: entry),
+                isLast: entry.id == values.last?.id
+            ) {
+                model.delete(entry)
             }
         }
     }
@@ -153,9 +549,132 @@ struct HomeView: View {
     private var currencyCode: String {
         Locale.current.currency?.identifier ?? "EUR"
     }
+
+    private func dayRelationship(for date: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) { return "Today" }
+        if calendar.isDateInYesterday(date) { return "Yesterday" }
+        if calendar.isDateInTomorrow(date) { return "Tomorrow" }
+        return date.formatted(.dateTime.weekday(.wide))
+    }
+}
+
+private struct PendingCalendarCapture: Identifiable {
+    let id = UUID()
+    var sourceText: String
+    var title: String
+    var location: String
+    var startDate: Date
+    var endDate: Date
+    var reminderLeadMinutes: Int?
+    var photoData: Data?
+    var audioData: Data?
+    var captureNote: String
+}
+
+private struct CalendarEntryPreview: View {
+    @State private var draft: PendingCalendarCapture
+    let onCancel: () -> Void
+    let onSave: (PendingCalendarCapture) -> Void
+
+    init(
+        capture: PendingCalendarCapture,
+        onCancel: @escaping () -> Void,
+        onSave: @escaping (PendingCalendarCapture) -> Void
+    ) {
+        _draft = State(initialValue: capture)
+        self.onCancel = onCancel
+        self.onSave = onSave
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Label("Review before saving", systemImage: "checkmark.shield")
+                        .font(.headline)
+                    Text("Nothing will be added to Sakhya or Apple Calendar until you confirm.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Calendar entry") {
+                    TextField("Title", text: $draft.title)
+                    TextField("Location", text: $draft.location)
+                    DatePicker("Starts", selection: $draft.startDate)
+                    DatePicker(
+                        "Ends",
+                        selection: $draft.endDate,
+                        in: draft.startDate.addingTimeInterval(60)...
+                    )
+                }
+
+                if let lead = draft.reminderLeadMinutes {
+                    Section("Alert") {
+                        Label("\(lead) minutes before", systemImage: "bell")
+                    }
+                }
+
+                Section("Original input") {
+                    Text(draft.sourceText)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .formStyle(.grouped)
+            .navigationTitle("Confirm Calendar Entry")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", action: onCancel)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add to Calendar") { onSave(draft) }
+                        .disabled(
+                            draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || draft.endDate <= draft.startDate
+                        )
+                }
+            }
+        }
+        .frame(minWidth: 400, minHeight: 460)
+    }
+}
+
+private struct NowTimelineMarker: View {
+    let now: Date
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(now.formatted(.dateTime.hour().minute()))
+                .font(.title3.bold().monospacedDigit())
+                .foregroundStyle(.red)
+                .frame(width: 66, alignment: .leading)
+
+            Circle()
+                .fill(.red)
+                .frame(width: 10, height: 10)
+                .overlay { Circle().stroke(.red.opacity(0.22), lineWidth: 7) }
+
+            Rectangle()
+                .fill(.red.opacity(0.55))
+                .frame(height: 1)
+
+            VStack(alignment: .trailing, spacing: 1) {
+                Text("Now")
+                    .font(.subheadline.bold())
+                    .foregroundStyle(.red)
+                Text(now.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 12)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Now, \(now.formatted(date: .complete, time: .shortened))")
+    }
 }
 
 private struct ElegantCalendar: View {
+    @Environment(AppModel.self) private var model
     @Binding var selectedDate: Date
     @Binding var isExpanded: Bool
     @State private var displayedMonth = Date.now
@@ -176,9 +695,9 @@ private struct ElegantCalendar: View {
                             .foregroundStyle(.blue)
 
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(calendar.isDateInToday(selectedDate) ? "Today" : selectedDate.formatted(.dateTime.weekday(.wide)))
-                                .font(.headline)
-                            Text(selectedDate.formatted(.dateTime.day().month(.wide).year()))
+                            Text(isExpanded ? displayedMonth.formatted(.dateTime.month(.wide).year()) : "Calendar")
+                                .font(.title3.bold())
+                            Text(isExpanded ? "Choose a date" : "Tap to open the month")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -190,11 +709,6 @@ private struct ElegantCalendar: View {
 
                 Spacer()
 
-                if !calendar.isDateInToday(selectedDate) {
-                    Button("Today") { select(.now) }
-                        .buttonStyle(.borderless)
-                }
-
                 Button {
                     displayedMonth = monthStart(for: selectedDate)
                     withAnimation(.snappy) { isExpanded.toggle() }
@@ -205,6 +719,15 @@ private struct ElegantCalendar: View {
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel(isExpanded ? "Close calendar" : "Open calendar")
+
+                if entryCount(on: selectedDate) > 0 {
+                    Text("\(entryCount(on: selectedDate)) \(entryCount(on: selectedDate) == 1 ? "entry" : "entries")")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.quaternary, in: Capsule())
+                }
             }
 
             weekStrip
@@ -219,12 +742,45 @@ private struct ElegantCalendar: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
     }
 
+    private var relativeDayStrip: some View {
+        HStack(spacing: 8) {
+            relativeDayButton(title: "Yesterday", offset: -1)
+            relativeDayButton(title: "Today", offset: 0)
+            relativeDayButton(title: "Tomorrow", offset: 1)
+        }
+    }
+
+    private func relativeDayButton(title: String, offset: Int) -> some View {
+        let date = calendar.date(byAdding: .day, value: offset, to: calendar.startOfDay(for: .now)) ?? .now
+        let selected = calendar.isDate(date, inSameDayAs: selectedDate)
+        return Button { select(date) } label: {
+            VStack(spacing: 3) {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                Text(date.formatted(.dateTime.day().month(.abbreviated)))
+                    .font(.caption2)
+                    .foregroundStyle(selected ? selectedForeground.opacity(0.8) : .secondary)
+                if entryCount(on: date) > 0 {
+                    Text("\(entryCount(on: date))")
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .padding(.horizontal, 5)
+                        .frame(minHeight: 15)
+                        .background(selected ? selectedForeground.opacity(0.16) : Color.blue.opacity(0.14), in: Capsule())
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 9)
+            .foregroundStyle(selected ? selectedForeground : .primary)
+            .background(selected ? Color.primary : Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 11))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
     private var weekStrip: some View {
         HStack(spacing: 6) {
             ForEach(weekDates, id: \.self) { date in
                 let selected = calendar.isDate(date, inSameDayAs: selectedDate)
-                let future = date > calendar.startOfDay(for: .now)
-
                 Button {
                     select(date)
                 } label: {
@@ -237,13 +793,12 @@ private struct ElegantCalendar: View {
                             .frame(width: 32, height: 32)
                             .background(selected ? Color.primary : .clear, in: Circle())
                             .foregroundStyle(selected ? selectedForeground : .primary)
+                        calendarActivity(count: entryCount(on: date), selected: selected)
                     }
                     .frame(maxWidth: .infinity)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .disabled(future)
-                .opacity(future ? 0.35 : 1)
                 .accessibilityLabel(date.formatted(date: .complete, time: .omitted))
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
@@ -271,7 +826,6 @@ private struct ElegantCalendar: View {
                     Image(systemName: "chevron.right")
                 }
                 .buttonStyle(.borderless)
-                .disabled(!canMoveForward)
             }
 
             LazyVGrid(columns: columns, spacing: 8) {
@@ -296,27 +850,35 @@ private struct ElegantCalendar: View {
     private func monthDay(_ date: Date) -> some View {
         let selected = calendar.isDate(date, inSameDayAs: selectedDate)
         let today = calendar.isDateInToday(date)
-        let future = date > calendar.startOfDay(for: .now)
-
         return Button {
             select(date)
             withAnimation(.snappy) { isExpanded = false }
         } label: {
-            Text(date.formatted(.dateTime.day()))
-                .font(.subheadline.weight(selected ? .semibold : .regular))
-                .frame(maxWidth: .infinity, minHeight: 34)
-                .background(selected ? Color.primary : .clear, in: Circle())
-                .foregroundStyle(selected ? selectedForeground : .primary)
-                .overlay {
-                    if today && !selected {
-                        Circle().stroke(Color.blue, lineWidth: 1.5)
-                            .frame(width: 32, height: 32)
+            ZStack(alignment: .bottomTrailing) {
+                Text(date.formatted(.dateTime.day()))
+                    .font(.subheadline.weight(selected ? .semibold : .regular))
+                    .frame(maxWidth: .infinity, minHeight: 34)
+                    .background(selected ? Color.primary : .clear, in: Circle())
+                    .foregroundStyle(selected ? selectedForeground : .primary)
+                    .overlay {
+                        if today && !selected {
+                            Circle().stroke(Color.blue, lineWidth: 1.5)
+                                .frame(width: 32, height: 32)
+                        }
                     }
+                let count = entryCount(on: date)
+                if count > 0 {
+                    Text(count > 99 ? "99+" : "\(count)")
+                        .font(.system(size: 8, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, count > 9 ? 4 : 0)
+                        .frame(minWidth: 15, minHeight: 15)
+                        .background(Color.blue, in: Capsule())
+                        .offset(x: 2, y: 2)
                 }
+            }
         }
         .buttonStyle(.plain)
-        .disabled(future)
-        .opacity(future ? 0.28 : 1)
         .accessibilityLabel(date.formatted(date: .complete, time: .omitted))
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
@@ -345,10 +907,6 @@ private struct ElegantCalendar: View {
         return blanks + days.map(Optional.some)
     }
 
-    private var canMoveForward: Bool {
-        monthStart(for: displayedMonth) < monthStart(for: .now)
-    }
-
     private var selectedForeground: Color {
 #if os(macOS)
         Color(NSColor.windowBackgroundColor)
@@ -364,12 +922,42 @@ private struct ElegantCalendar: View {
 
     private func shiftMonth(_ value: Int) {
         guard let next = calendar.date(byAdding: .month, value: value, to: displayedMonth) else { return }
-        displayedMonth = monthStart(for: min(next, .now))
+        displayedMonth = monthStart(for: next)
     }
 
     private func select(_ date: Date) {
-        selectedDate = min(date, .now)
+        selectedDate = date
         displayedMonth = monthStart(for: selectedDate)
+    }
+
+    private func relativeName(for date: Date) -> String {
+        if calendar.isDateInToday(date) { return "Today" }
+        if calendar.isDateInYesterday(date) { return "Yesterday" }
+        if calendar.isDateInTomorrow(date) { return "Tomorrow" }
+        return date.formatted(.dateTime.weekday(.wide))
+    }
+
+    @ViewBuilder
+    private func calendarActivity(count: Int, selected: Bool) -> some View {
+        if count > 0 {
+            HStack(spacing: 2) {
+                Circle()
+                    .fill(selected ? selectedForeground.opacity(0.8) : Color.blue)
+                    .frame(width: 4, height: 4)
+                if count > 1 {
+                    Text("\(count)")
+                        .font(.system(size: 8, weight: .semibold, design: .rounded))
+                        .foregroundStyle(selected ? selectedForeground.opacity(0.8) : .secondary)
+                }
+            }
+            .frame(height: 8)
+        } else {
+            Color.clear.frame(height: 8)
+        }
+    }
+
+    private func entryCount(on date: Date) -> Int {
+        model.entries(on: date).count
     }
 }
 
@@ -398,21 +986,34 @@ private struct SummaryCard: View {
 private struct TimelineRow: View {
     let entry: LogEntry
     let attachmentData: Data?
+    let audioURL: URL?
+    let isLast: Bool
     let onDelete: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
-            VStack(spacing: 5) {
-                Text(entry.timestamp, format: .dateTime.hour().minute())
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+            VStack(spacing: 7) {
+                VStack(spacing: 1) {
+                    Text(entry.timestamp, format: .dateTime.hour().minute())
+                        .font(.subheadline.weight(.semibold).monospacedDigit())
+                    Text(entry.timestamp, format: .dateTime.day().month(.abbreviated))
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
                 Image(systemName: entry.category.systemImage)
                     .font(.headline)
                     .foregroundStyle(categoryColor)
                     .frame(width: 36, height: 36)
                     .background(categoryColor.opacity(0.14), in: Circle())
+
+                if !isLast {
+                    Rectangle()
+                        .fill(Color.secondary.opacity(0.18))
+                        .frame(width: 1.5)
+                        .frame(maxHeight: .infinity)
+                }
             }
-            .frame(width: 58)
+            .frame(width: 66)
 
             VStack(alignment: .leading, spacing: 5) {
                 HStack {
@@ -475,6 +1076,31 @@ private struct TimelineRow: View {
                     .foregroundStyle(.secondary)
                 }
 
+
+                if let start = entry.calendarStartDate {
+                    let end = entry.calendarEndDate ?? start.addingTimeInterval(3600)
+                    HStack(spacing: 10) {
+                        Label(
+                            "\(start.formatted(date: .abbreviated, time: .shortened))–\(end.formatted(date: .omitted, time: .shortened))",
+                            systemImage: "calendar"
+                        )
+                        if entry.appleCalendarEventIdentifier != nil {
+                            Label("Apple Calendar", systemImage: "checkmark.icloud")
+                        }
+                        if let lead = entry.reminderLeadMinutes {
+                            Label("\(lead) min before", systemImage: "bell")
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+
+                if entry.calendarStartDate == nil, entry.appleCalendarEventIdentifier != nil {
+                    Label("Apple Calendar · \(entry.timestamp.formatted(date: .abbreviated, time: .shortened))", systemImage: "checkmark.icloud")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 if !entry.note.isEmpty {
                     Text(entry.note)
                         .font(.subheadline)
@@ -486,6 +1112,11 @@ private struct TimelineRow: View {
                         .frame(maxWidth: 420, minHeight: 120, maxHeight: 240)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                         .padding(.top, 5)
+                }
+
+                if let audioURL {
+                    AudioNotePlayer(url: audioURL)
+                        .padding(.top, 4)
                 }
             }
             .padding(14)
@@ -513,6 +1144,52 @@ private struct TimelineRow: View {
         case .journal: .teal
         case .idea: .yellow
         case .note: .gray
+        }
+    }
+}
+
+private struct AudioNotePlayer: View {
+    let url: URL
+    @State private var player: AVAudioPlayer?
+    @State private var isPlaying = false
+
+    var body: some View {
+        Button(action: togglePlayback) {
+            HStack(spacing: 10) {
+                Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                    .font(.title2)
+                Image(systemName: "waveform")
+                Text("Voice note")
+                    .font(.subheadline.weight(.semibold))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.blue.opacity(0.1), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isPlaying ? "Pause voice note" : "Play voice note")
+        .onDisappear {
+            player?.stop()
+            isPlaying = false
+        }
+    }
+
+    private func togglePlayback() {
+        if isPlaying {
+            player?.pause()
+            isPlaying = false
+            return
+        }
+
+        do {
+            if player == nil {
+                player = try AVAudioPlayer(contentsOf: url)
+                player?.prepareToPlay()
+            }
+            player?.play()
+            isPlaying = true
+        } catch {
+            isPlaying = false
         }
     }
 }
@@ -550,6 +1227,8 @@ private struct AddEntryView: View {
     @State private var status: EntryStatus = .inProgress
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var photoData: Data?
+    @State private var photoSuggestion: String?
+    @State private var isInterpretingPhoto = false
     @State private var selectedLifeArea: LifeArea?
     @State private var selectedDevice: DeviceSource?
     @State private var selectedListKind: ListKind?
@@ -663,20 +1342,48 @@ private struct AddEntryView: View {
 
                 if category == .list {
                     Section("Save to list") {
-                        Picker("List", selection: Binding(
-                            get: { destinationList?.id },
-                            set: { id in
-                                selectedListID = id
-                                if let list = model.list(withID: id) {
-                                    selectedListKind = list.kind
+                        ScrollView(.horizontal) {
+                            HStack(spacing: 10) {
+                                ForEach(model.lists) { list in
+                                    Button {
+                                        selectedListID = list.id
+                                        selectedListKind = list.kind
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            HStack {
+                                                Image(systemName: list.kind.systemImage)
+                                                    .font(.headline)
+                                                Spacer()
+                                                Image(systemName: list.access.systemImage)
+                                                    .font(.caption)
+                                            }
+                                            Text(list.name)
+                                                .font(.subheadline.weight(.semibold))
+                                                .lineLimit(1)
+                                            Text(list.kind.displayName)
+                                                .font(.caption)
+                                                .foregroundStyle(
+                                                    destinationList?.id == list.id ? Color.white.opacity(0.82) : Color.secondary
+                                                )
+                                        }
+                                        .foregroundStyle(destinationList?.id == list.id ? Color.white : Color.primary)
+                                        .padding(12)
+                                        .frame(width: 150, alignment: .leading)
+                                        .background {
+                                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                                .fill(destinationList?.id == list.id ? Color.accentColor : Color.secondary.opacity(0.09))
+                                        }
+                                        .overlay {
+                                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                                .stroke(destinationList?.id == list.id ? Color.clear : Color.secondary.opacity(0.12))
+                                        }
+                                    }
+                                    .buttonStyle(.plain)
                                 }
                             }
-                        )) {
-                            ForEach(model.lists) { list in
-                                Label(list.name, systemImage: list.access.systemImage)
-                                    .tag(Optional(list.id))
-                            }
+                            .padding(.vertical, 2)
                         }
+                        .scrollIndicators(.hidden)
 
                         if destinationList?.access == .shared {
                             Label("Everyone with edit access will see this item.", systemImage: "person.2.fill")
@@ -703,6 +1410,21 @@ private struct AddEntryView: View {
                         AttachmentImage(data: photoData)
                             .frame(height: 180)
                             .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                        if isInterpretingPhoto {
+                            Label("Interpreting on device…", systemImage: "sparkles")
+                                .foregroundStyle(.secondary)
+                        } else if let photoSuggestion {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Label("Suggested from photo", systemImage: "checkmark.shield")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                Text(photoSuggestion)
+                                    .font(.callout)
+                                Button("Use suggestion") { input = photoSuggestion }
+                                    .buttonStyle(.borderless)
+                            }
+                        }
                     }
                 }
             }
@@ -721,9 +1443,7 @@ private struct AddEntryView: View {
                 if let suggestedStatus { status = suggestedStatus }
             }
             .onChange(of: selectedPhoto) { _, newItem in
-                Task {
-                    photoData = try? await newItem?.loadTransferable(type: Data.self)
-                }
+                interpretDetailedPhoto(newItem)
             }
             .onChange(of: suggestion.dueDate) { _, suggestedDate in
                 if let suggestedDate {
@@ -746,7 +1466,7 @@ private struct AddEntryView: View {
         let normalizedAmount = amount.replacingOccurrences(of: ",", with: ".")
         let typedAmount = Double(normalizedAmount)
         model.add(LogEntry(
-            timestamp: timestamp,
+            timestamp: suggestion.calendarStartDate ?? timestamp,
             category: category,
             title: input.trimmingCharacters(in: .whitespacesAndNewlines),
             note: note.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -757,9 +1477,31 @@ private struct AddEntryView: View {
             deviceSource: deviceSource,
             listKind: category == .list ? destinationList?.kind ?? listKind : nil,
             listID: category == .list ? destinationList?.id : nil,
-            dueDate: category == .list && hasDueDate ? dueDate : nil
+            dueDate: category == .list && hasDueDate ? dueDate : nil,
+            calendarStartDate: suggestion.calendarStartDate,
+            calendarEndDate: suggestion.calendarEndDate,
+            reminderLeadMinutes: suggestion.reminderLeadMinutes
         ), photoData: photoData)
         onSaved()
         dismiss()
+    }
+
+    private func interpretDetailedPhoto(_ item: PhotosPickerItem?) {
+        guard let item else { return }
+        isInterpretingPhoto = true
+        Task {
+            defer { isInterpretingPhoto = false }
+            guard let data = try? await item.loadTransferable(type: Data.self) else { return }
+            photoData = data
+            guard let analysis = try? await ImageIntelligenceService.analyze(data) else { return }
+            photoSuggestion = analysis.suggestedCapture
+            if input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                input = analysis.suggestedCapture
+            }
+            if note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               !analysis.recognizedText.isEmpty {
+                note = "Recognized from the attached photo on device:\n\(analysis.recognizedText)"
+            }
+        }
     }
 }
