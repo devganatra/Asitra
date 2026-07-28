@@ -88,6 +88,7 @@ test("ships the secured product source without starter artifacts", async () => {
   assert.match(client, /sendMessage/);
   assert.match(client, /exportData/);
   assert.match(client, /validatePersistedState/);
+  assert.match(client, /Remove the old plaintext browser copy/);
   assert.match(client, /Today/);
   assert.match(client, /Lists/);
   assert.match(client, /Track/);
