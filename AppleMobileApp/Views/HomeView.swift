@@ -22,6 +22,7 @@ struct HomeView: View {
     @State private var isAnalyzingImage = false
     @State private var captureError: String?
     @State private var pendingCalendarCapture: PendingCalendarCapture?
+    @State private var editingEntry: LogEntry?
     @State private var visiblePastEntryCount = 40
     @State private var visibleFutureEntryCount = 30
     @FocusState private var quickCaptureFocused: Bool
@@ -67,6 +68,12 @@ struct HomeView: View {
                 onCancel: { pendingCalendarCapture = nil },
                 onSave: saveConfirmedCalendarCapture
             )
+        }
+        .sheet(item: $editingEntry) { entry in
+            EditTimelineEntryView(entry: entry) { updated in
+                model.update(updated)
+                editingEntry = nil
+            }
         }
         .onChange(of: voiceCapture.transcript) { _, transcript in
             guard voiceCapture.isRecording || voiceCapture.recordingURL != nil else { return }
@@ -185,6 +192,15 @@ struct HomeView: View {
                         .foregroundStyle(list.access == .shared ? .blue : .secondary)
                 }
 
+                if let minutes = quickSuggestion.durationMinutes {
+                    Label(
+                        minutes >= 60 && minutes.isMultiple(of: 60) ? "\(minutes / 60) hr" : "\(minutes) min",
+                        systemImage: "clock"
+                    )
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                }
+
                 if let start = quickSuggestion.calendarStartDate,
                    let end = quickSuggestion.calendarEndDate {
                     Label(
@@ -193,6 +209,10 @@ struct HomeView: View {
                     )
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.blue)
+                } else if quickSuggestion.category == .work, quickSuggestion.durationMinutes != nil {
+                    Label("Timeline only", systemImage: "checkmark.circle")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.green)
                 }
 
                 Spacer()
@@ -539,10 +559,10 @@ struct HomeView: View {
                 entry: entry,
                 attachmentData: model.attachmentData(for: entry),
                 audioURL: model.audioAttachmentURL(for: entry),
-                isLast: entry.id == values.last?.id
-            ) {
-                model.delete(entry)
-            }
+                isLast: entry.id == values.last?.id,
+                onEdit: { editingEntry = entry },
+                onDelete: { model.delete(entry) }
+            )
         }
     }
 
@@ -988,6 +1008,7 @@ private struct TimelineRow: View {
     let attachmentData: Data?
     let audioURL: URL?
     let isLast: Bool
+    let onEdit: () -> Void
     let onDelete: () -> Void
 
     var body: some View {
@@ -1029,6 +1050,17 @@ private struct TimelineRow: View {
                             .font(.subheadline.bold())
                             .foregroundStyle(.green)
                     }
+                    Menu {
+                        Button("Edit", systemImage: "pencil", action: onEdit)
+                        Divider()
+                        Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
+                    }
+                    .menuStyle(.borderlessButton)
+                    .accessibilityLabel("Entry actions")
                 }
 
                 HStack(spacing: 8) {
@@ -1123,6 +1155,7 @@ private struct TimelineRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
             .contextMenu {
+                Button("Edit", systemImage: "pencil", action: onEdit)
                 Button("Delete", role: .destructive, action: onDelete)
             }
         }
@@ -1145,6 +1178,135 @@ private struct TimelineRow: View {
         case .idea: .yellow
         case .note: .gray
         }
+    }
+}
+
+private struct EditTimelineEntryView: View {
+    @Environment(\.dismiss) private var dismiss
+    let original: LogEntry
+    let onSave: (LogEntry) -> Void
+
+    @State private var title: String
+    @State private var note: String
+    @State private var timestamp: Date
+    @State private var category: LogCategory
+    @State private var amount: String
+    @State private var duration: String
+    @State private var status: EntryStatus
+    @State private var lifeArea: LifeArea
+    @State private var deviceSource: DeviceSource
+    @State private var listKind: ListKind
+    @State private var hasDueDate: Bool
+    @State private var dueDate: Date
+    @State private var calendarStart: Date
+    @State private var calendarEnd: Date
+
+    init(entry: LogEntry, onSave: @escaping (LogEntry) -> Void) {
+        original = entry
+        self.onSave = onSave
+        _title = State(initialValue: entry.title)
+        _note = State(initialValue: entry.note)
+        _timestamp = State(initialValue: entry.timestamp)
+        _category = State(initialValue: entry.category)
+        _amount = State(initialValue: entry.amount.map { String(format: "%.2f", $0) } ?? "")
+        _duration = State(initialValue: entry.durationMinutes.map(String.init) ?? "")
+        _status = State(initialValue: entry.status ?? .inProgress)
+        _lifeArea = State(initialValue: entry.lifeArea ?? entry.category.defaultLifeArea)
+        _deviceSource = State(initialValue: entry.deviceSource ?? .offline)
+        _listKind = State(initialValue: entry.listKind ?? .task)
+        _hasDueDate = State(initialValue: entry.dueDate != nil)
+        _dueDate = State(initialValue: entry.dueDate ?? .now)
+        _calendarStart = State(initialValue: entry.calendarStartDate ?? entry.timestamp)
+        _calendarEnd = State(initialValue: entry.calendarEndDate ?? entry.timestamp.addingTimeInterval(3600))
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Entry") {
+                    TextField("Title", text: $title)
+                    DatePicker("Time", selection: $timestamp)
+                    Picker("Category", selection: $category) {
+                        ForEach(LogCategory.allCases) { Text($0.displayName).tag($0) }
+                    }
+                    TextField("Note", text: $note, axis: .vertical)
+                        .lineLimit(2...5)
+                }
+
+                Section("Details") {
+                    if category == .expense || original.amount != nil {
+                        TextField("Amount", text: $amount)
+                    }
+                    TextField("Duration in minutes", text: $duration)
+                    if category == .book || category == .movie {
+                        Picker("Status", selection: $status) {
+                            ForEach(EntryStatus.allCases) { Text($0.rawValue).tag($0) }
+                        }
+                    }
+                    Picker("Life area", selection: $lifeArea) {
+                        ForEach(LifeArea.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    Picker("Source", selection: $deviceSource) {
+                        ForEach(DeviceSource.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                }
+
+                if category == .list {
+                    Section("List or reminder") {
+                        Picker("Type", selection: $listKind) {
+                            ForEach(ListKind.allCases) { Text($0.displayName).tag($0) }
+                        }
+                        Toggle("Add a due date", isOn: $hasDueDate)
+                        if hasDueDate { DatePicker("Due", selection: $dueDate) }
+                    }
+                }
+
+                if original.calendarStartDate != nil {
+                    Section {
+                        DatePicker("Starts", selection: $calendarStart)
+                        DatePicker("Ends", selection: $calendarEnd, in: calendarStart...)
+                    } header: {
+                        Text("Calendar time")
+                    } footer: {
+                        if original.appleCalendarEventIdentifier != nil {
+                            Text("Saving also updates the linked Apple Calendar event.")
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Edit entry")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }
+                        .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+        .frame(minWidth: 400, minHeight: 560)
+    }
+
+    private func save() {
+        var updated = original
+        updated.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        updated.note = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        updated.timestamp = timestamp
+        updated.category = category
+        updated.amount = amount.isEmpty ? nil : Double(amount.replacingOccurrences(of: ",", with: "."))
+        updated.durationMinutes = duration.isEmpty ? nil : Int(duration)
+        updated.status = category == .book || category == .movie ? status : nil
+        updated.lifeArea = lifeArea
+        updated.deviceSource = deviceSource
+        updated.listKind = category == .list ? listKind : nil
+        updated.dueDate = category == .list && hasDueDate ? dueDate : nil
+        if original.calendarStartDate != nil {
+            updated.calendarStartDate = calendarStart
+            updated.calendarEndDate = calendarEnd
+        }
+        onSave(updated)
+        dismiss()
     }
 }
 
@@ -1481,7 +1643,7 @@ private struct AddEntryView: View {
             calendarStartDate: suggestion.calendarStartDate,
             calendarEndDate: suggestion.calendarEndDate,
             reminderLeadMinutes: suggestion.reminderLeadMinutes
-        ), photoData: photoData)
+        ), photoData: photoData, syncToCalendar: suggestion.calendarStartDate != nil)
         onSaved()
         dismiss()
     }

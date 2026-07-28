@@ -42,6 +42,8 @@ For your own device, connect the iPhone or iPad to the Mac, select it as the run
 - Local notifications for reminders with a detected or selected date and time
 - Apple Health import for workouts and sleep, including source attribution for WHOOP, Apple Watch, and other Health-compatible apps
 - One event pipeline: manual, app, and sensor entries share the same timeline and automatically update category trackers
+- Timeline entries can be edited in place; linked Apple Calendar events and Apple Reminders are updated when their Sakhya entry changes
+- Calendar creation requires scheduling intent, so retrospective phrases such as “worked three hours” remain timeline evidence instead of becoming appointments
 - A lightweight tracker builder starts with Money, Books & Media, Habits, or Things, then offers focused templates such as novels, documentaries, saving goals, and reminders
 - Tracker check-ins ask only for relevant details and write the result back to the shared timeline
 - Reading and watching activity resolves into one list item with a current status and full timeline history

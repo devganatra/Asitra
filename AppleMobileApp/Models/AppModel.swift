@@ -132,7 +132,7 @@ final class AppModel {
         _ entry: LogEntry,
         photoData: Data? = nil,
         audioData: Data? = nil,
-        syncToCalendar: Bool = true
+        syncToCalendar: Bool = false
     ) {
         var storedEntry = entry
         if storedEntry.category == .list, storedEntry.listID == nil {
@@ -180,7 +180,61 @@ final class AppModel {
             captureNote: captureNote,
             calendarOverride: calendarOverride
         ) else { return }
-        add(entry, photoData: photoData, audioData: audioData)
+        add(
+            entry,
+            photoData: photoData,
+            audioData: audioData,
+            syncToCalendar: calendarOverride != nil || entry.calendarStartDate != nil
+        )
+    }
+
+    func update(_ entry: LogEntry) {
+        guard let index = entries.firstIndex(where: { $0.id == entry.id }) else { return }
+        entries[index] = entry
+        entries.sort { $0.timestamp > $1.timestamp }
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [entry.id.uuidString])
+        if entry.category == .list, entry.appleReminderIdentifier == nil, let dueDate = entry.dueDate {
+            scheduleNotification(for: entry, at: dueDate)
+        }
+        save()
+
+        if let identifier = entry.appleCalendarEventIdentifier {
+            Task {
+                do {
+                    let start = entry.calendarStartDate ?? entry.timestamp
+                    let end = entry.calendarEndDate
+                        ?? start.addingTimeInterval(TimeInterval(max(entry.durationMinutes ?? 15, 1) * 60))
+                    try AppleReminderService.shared.updateCalendarEvent(
+                        identifier: identifier,
+                        title: entry.calendarTitle ?? calendarTitle(from: entry.title),
+                        location: entry.calendarLocation,
+                        notes: entry.note.isEmpty ? "Updated from Sakhya" : "Updated from Sakhya\n\n\(entry.note)",
+                        startDate: start,
+                        endDate: end,
+                        reminderLeadMinutes: entry.reminderLeadMinutes
+                    )
+                    calendarFeature.update(calendarStatus: "Connected")
+                } catch {
+                    calendarFeature.setError(error.localizedDescription)
+                }
+            }
+        }
+
+        if entry.category == .list, let identifier = entry.appleReminderIdentifier {
+            Task {
+                do {
+                    try AppleReminderService.shared.updateReminder(
+                        identifier: identifier,
+                        title: entry.title,
+                        notes: entry.note,
+                        dueDate: entry.dueDate
+                    )
+                    calendarFeature.update(remindersStatus: "Connected")
+                } catch {
+                    calendarFeature.setError(error.localizedDescription)
+                }
+            }
+        }
     }
 
     func defaultList(for kind: ListKind) -> SakhyaList? {
@@ -1069,7 +1123,7 @@ struct SmartCapture {
     init(text: String) {
         let value = text.lowercased()
 
-        let meetingRange = Self.scheduledRange(in: value)
+        let meetingRange = Self.hasCalendarIntent(in: value) ? Self.scheduledRange(in: value) : nil
 
         if meetingRange != nil && Self.contains(value, ["meeting", "appointment", "calendar event", "video call", "client call", "out of office", "busy"]) {
             category = .work
@@ -1178,6 +1232,22 @@ struct SmartCapture {
             return Int(number * 60)
         }
         return Int(number)
+    }
+
+    private static func hasCalendarIntent(in text: String) -> Bool {
+        let explicitRequest = contains(text, [
+            "add to calendar", "put in calendar", "create an event", "schedule", "book time", "block time"
+        ])
+        if explicitRequest { return true }
+
+        let retrospective = contains(text, [
+            "worked", "i did", "i was", "had a meeting", "added time", "extra time", "last week", "yesterday"
+        ])
+        if retrospective { return false }
+
+        return contains(text, [
+            "meeting", "appointment", "calendar event", "video call", "client call", "out of office", "busy"
+        ])
     }
 
     private static func reminderDate(in text: String, now: Date = .now) -> Date? {
