@@ -316,9 +316,16 @@ export default function SakhyaWebApp() {
           }) as PersistedState;
           const migrated = await migrateLegacyPhotos(parsed);
           await saveState(migrated);
-          window.localStorage.removeItem(LEGACY_STORAGE_KEY);
           setState(migrated);
-          setNotice("Your existing browser data was moved into secure account storage.");
+          const removeLegacyCopy = window.confirm(
+            "Your browser data is now saved securely to your account. Remove the old plaintext browser copy? Choose Cancel to keep it.",
+          );
+          if (removeLegacyCopy) {
+            window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+            setNotice("Your browser data was moved into secure account storage, and the old copy was removed.");
+          } else {
+            setNotice("Your secure account copy is ready. The old browser copy was kept as requested.");
+          }
         }
         setHydrated(true);
         return;

@@ -89,7 +89,7 @@ The deployment targets are iOS/iPadOS 17 and macOS 14.
 - Photos and voice notes are stored in the app's private `Application Support/Sakhya/Attachments` folder. Older `Dayline/Attachments` files remain readable and are not removed during migration.
 - When iCloud sync is enabled, record-level mutations are sent from the durable outbox and the compatibility snapshot continues to carry metadata and attachment assets. Shared lists have dedicated CloudKit records and `CKShare` metadata.
 - Settings → Data Management shows local usage and gives separate controls for sample data, Recently Deleted, clearing only this device, or deleting both the iCloud and local copies.
-- The web companion requires authenticated access, stores structured data in per-user D1 records, keeps validated images in private per-user R2 objects, and sends strict browser security headers. Legacy browser state is migrated only after a validated secure save succeeds.
+- The web companion requires authenticated access, stores structured data in per-user D1 records, keeps validated images in private per-user R2 objects, and sends strict browser security headers. Legacy browser state is migrated only after a validated secure save succeeds, and its old plaintext copy is removed only after user confirmation.
 
 To activate CloudKit, select your Apple Developer team in Xcode, add the `iCloud.com.devganatra.sakhya` container to the App ID, and enable the iCloud/CloudKit capability for the target. Xcode will then attach the included platform entitlement configuration to the signed app. It is intentionally not attached to unsigned Mac builds, so the app continues to build and work locally before developer signing is configured.
 
