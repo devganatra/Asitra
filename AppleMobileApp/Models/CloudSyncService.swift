@@ -57,7 +57,12 @@ enum CloudSyncService {
         let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
         let fileURL = directory.appendingPathComponent("SakhyaCloudSnapshot.json")
-        try JSONEncoder().encode(snapshot).write(to: fileURL, options: .atomic)
+        var writeOptions: Data.WritingOptions = .atomic
+        #if os(iOS)
+        writeOptions.insert(.completeFileProtection)
+        #endif
+        try JSONEncoder().encode(snapshot).write(to: fileURL, options: writeOptions)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
 
         let database = container.privateCloudDatabase
         let record: CKRecord

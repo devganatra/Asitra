@@ -248,6 +248,12 @@ enum PersistenceController {
         let databaseDirectory = URL.applicationSupportDirectory
             .appending(path: "Sakhya/Database", directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: databaseDirectory, withIntermediateDirectories: true)
+        #if os(iOS)
+        try? FileManager.default.setAttributes(
+            [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
+            ofItemAtPath: databaseDirectory.path
+        )
+        #endif
         let configuration: ModelConfiguration
         if inMemory {
             configuration = ModelConfiguration(

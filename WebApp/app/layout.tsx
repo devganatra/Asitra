@@ -19,10 +19,13 @@ const description =
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
-  const host =
+  const requestedHost =
     requestHeaders.get("x-forwarded-host") ??
     requestHeaders.get("host") ??
     "localhost:3000";
+  const host = isAllowedHost(requestedHost)
+    ? requestedHost
+    : "sakhya-everyday.deepanddev.chatgpt.site";
   const protocol =
     requestHeaders.get("x-forwarded-proto") ??
     (host.startsWith("localhost") ? "http" : "https");
@@ -48,6 +51,13 @@ export async function generateMetadata(): Promise<Metadata> {
       images: [`${origin}/og.png`],
     },
   };
+}
+
+function isAllowedHost(host: string): boolean {
+  return (
+    /^localhost(?::\d+)?$/i.test(host) ||
+    /^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.chatgpt\.site$/i.test(host)
+  );
 }
 
 export default function RootLayout({

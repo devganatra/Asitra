@@ -659,6 +659,12 @@ final class AppModel {
             ?? FileManager.default.temporaryDirectory
         let directory = base.appendingPathComponent("Sakhya/Attachments", isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        #if os(iOS)
+        try? FileManager.default.setAttributes(
+            [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
+            ofItemAtPath: directory.path
+        )
+        #endif
         return directory
     }
 
@@ -678,7 +684,10 @@ final class AppModel {
         let filename = "\(id.uuidString).\(fileExtension)"
         do {
             let storedData = fileExtension == "image" ? optimizedImageData(from: data) ?? data : data
-            try storedData.write(to: attachmentsDirectory.appendingPathComponent(filename), options: .atomic)
+            try storedData.write(
+                to: attachmentsDirectory.appendingPathComponent(filename),
+                options: protectedWriteOptions
+            )
             return filename
         } catch {
             return nil
@@ -753,7 +762,10 @@ final class AppModel {
         lists = snapshot.lists.isEmpty ? SakhyaList.defaults : snapshot.lists
         recentlyDeleted = snapshot.recentlyDeleted
         for (filename, data) in snapshot.attachments {
-            try? data.write(to: attachmentsDirectory.appendingPathComponent(filename), options: .atomic)
+            try? data.write(
+                to: attachmentsDirectory.appendingPathComponent(filename),
+                options: protectedWriteOptions
+            )
         }
         UserDefaults.standard.set(snapshot.updatedAt, forKey: localModifiedKey)
         save(markModified: false)
@@ -761,6 +773,14 @@ final class AppModel {
 
     private var attachmentFilenames: Set<String> {
         Set((entries + recentlyDeleted.map(\.entry)).flatMap { [$0.attachmentFilename, $0.audioAttachmentFilename].compactMap { $0 } })
+    }
+
+    private var protectedWriteOptions: Data.WritingOptions {
+        #if os(iOS)
+        [.atomic, .completeFileProtection]
+        #else
+        .atomic
+        #endif
     }
 
     private func permanentlyRemoveAttachments(for entry: LogEntry) {
