@@ -23,6 +23,7 @@ enum CloudSyncService {
     private static let recordType = "SakhyaSnapshot"
 
     static var isConfigured: Bool {
+        #if os(macOS)
         guard let task = SecTaskCreateFromSelf(nil),
               let containers = SecTaskCopyValueForEntitlement(
                 task,
@@ -30,6 +31,12 @@ enum CloudSyncService {
                 nil
               ) as? [String] else { return false }
         return containers.contains("iCloud.com.devganatra.sakhya")
+        #else
+        // iOS does not expose the SecTask entitlement APIs. The iCloud container is
+        // declared by the target's entitlements and CloudKit validates availability
+        // when accountStatus() or a database operation is performed.
+        return true
+        #endif
     }
 
     static func accountStatus() async throws -> CKAccountStatus {
