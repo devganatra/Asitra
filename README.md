@@ -18,7 +18,8 @@ For your own device, connect the iPhone or iPad to the Mac, select it as the run
 
 ## Current features
 
-- “Today’s System” home dashboard with a current action, next actions, daily completion, process steps, and weekly system progress
+- A simple five-part structure: Today, Lists, Track, Money, and Balance, with Settings kept separate
+- Today home dashboard with a current action, next actions, daily completion, process steps, and weekly system progress
 - Customizable in-app widget canvas with drag-to-reorder, content-specific compact/standard/expanded designs, hide/restore, responsive iPhone stacking, and persistent layout
 - Always-visible capture placed before the movable dashboard so manual, voice, and photo input remain immediate
 - Persistent goals, personal systems, repeatable processes, scheduled actions, and morning/evening reviews
@@ -26,7 +27,7 @@ For your own device, connect the iPhone or iPad to the Mac, select it as the run
 - Natural-language smart capture with an editable category suggestion
 - Voice notes with live speech transcription and timeline playback
 - On-device photo interpretation for text, receipts, book covers, meals, and general image labels
-- A floating private AI assistant for asking natural-language questions about personal statistics
+- A floating ChatGPT-style private assistant with typed or spoken questions, instant everyday statistics, contextual insights, and optional on-device Apple Intelligence synthesis
 - Eleven categories covering daily life, journaling, ideas, books, and movies
 - Thirty days of realistic sample data across every major tracker, removable independently from personal entries
 - Private iCloud/CloudKit synchronization for entries, lists, photos, and voice notes
@@ -35,7 +36,7 @@ For your own device, connect the iPhone or iPad to the Mac, select it as the run
 - Dedicated beginner-friendly Money page with monthly spending plans, automatic everyday categories, savings goals with contribution history, and trip-budget tracking
 - Expenses added from Money or a trip are written back to the shared timeline; savings contributions remain separate from spending totals
 - Reading lists and movie watchlists with planned, in-progress, and completed states
-- Seven-day spending, activity, food, habit, mindset, and journal analysis
+- Contextual analysis: spending in Money, health and personal progress in Track, daily totals in Today, and cross-life guidance in Balance
 - Work, personal, rest, and screen-time attribution by phone, tablet, Mac, web, or offline activity
 - A seven-day work-life balance dashboard and guidance
 - Checkable grocery, shopping, reminder, and task lists generated from natural input
@@ -44,7 +45,7 @@ For your own device, connect the iPhone or iPad to the Mac, select it as the run
 - One event pipeline: manual, app, and sensor entries share the same timeline and automatically update category trackers
 - Timeline entries can be edited in place; linked Apple Calendar events and Apple Reminders are updated when their Sakhya entry changes
 - Calendar creation requires scheduling intent, so retrospective phrases such as “worked three hours” remain timeline evidence instead of becoming appointments
-- A lightweight tracker builder starts with Money, Books & Media, Habits, or Things, then offers focused templates such as novels, documentaries, saving goals, and reminders
+- A lightweight tracker builder focused on Health, Habits, Learning & Media, and Mindset; money stays in Money and commitments stay in Lists
 - Tracker check-ins ask only for relevant details and write the result back to the shared timeline
 - Reading and watching activity resolves into one list item with a current status and full timeline history
 - Native Apple Reminders export with due dates, alerts, completion, and deletion synchronization
@@ -69,7 +70,7 @@ For your own device, connect the iPhone or iPad to the Mac, select it as the run
 - On-device and remote AI providers, plus HTTP wearable providers, are replaceable adapters. Tokens are supplied at runtime and are never embedded in the app.
 - `RootView` provides adaptive split navigation.
 - `HomeView` is the daily timeline and entry flow.
-- `LibraryView` presents insights and charts.
+- `LibraryView` presents focused health, habit, learning/media, and mindset trackers.
 
 The deployment targets are iOS/iPadOS 17 and macOS 14.
 
