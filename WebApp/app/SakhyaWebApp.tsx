@@ -41,7 +41,7 @@ import {
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { validatePersistedState } from "./state-schema";
 
-type Section = "today" | "lists" | "track" | "money" | "balance";
+type Section = "today" | "lists" | "track" | "money" | "balance" | "settings";
 type EntryKind =
   | "work"
   | "expense"
@@ -193,6 +193,7 @@ const navItems: { id: Section; label: string; icon: typeof Home }[] = [
   { id: "track", label: "Track", icon: Activity },
   { id: "money", label: "Money", icon: WalletCards },
   { id: "balance", label: "Balance", icon: BarChart3 },
+  { id: "settings", label: "Settings", icon: Settings },
 ];
 
 const kindMeta: Record<EntryKind, { label: string; color: string; icon: typeof Home }> = {
@@ -294,7 +295,6 @@ export default function SakhyaWebApp() {
   const [isListening, setIsListening] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<Entry>();
   const [selectedListId, setSelectedListId] = useState("l1");
   const [newListItem, setNewListItem] = useState("");
@@ -1043,14 +1043,57 @@ export default function SakhyaWebApp() {
       );
     }
 
+    if (section === "settings") {
+      return (
+        <div className="page-shell">
+          <PageHeader
+            eyebrow="Sakhya"
+            title="Settings"
+            description="Manage your data and understand which capabilities are available on this device."
+          />
+          <div className="settings-page-grid">
+            <section className="panel settings-page-card">
+              <div className="section-heading">
+                <div><span className="eyebrow">Data</span><h2>Your data</h2></div>
+                <ShieldCheck size={20} />
+              </div>
+              <div className="data-summary">
+                <ShieldCheck size={23} />
+                <div>
+                  <strong>Private account storage</strong>
+                  <span>Your web data is isolated by account and protected by the private Sakhya service.</span>
+                </div>
+              </div>
+              <button className="settings-row" onClick={exportData}><Download size={18} /><span><strong>Export backup</strong><small>Download all entries, lists and plans</small></span><ArrowRight size={16} /></button>
+              <label className="settings-row"><Upload size={18} /><span><strong>Import backup</strong><small>Restore a Sakhya JSON file</small></span><ArrowRight size={16} /><input type="file" accept=".json,application/json" onChange={importData} hidden /></label>
+              <button className="settings-row" onClick={resetData}><RotateCcw size={18} /><span><strong>Restore sample workspace</strong><small>Requires confirmation</small></span><ArrowRight size={16} /></button>
+            </section>
+            <section className="panel settings-page-card">
+              <div className="section-heading">
+                <div><span className="eyebrow">Apple environment</span><h2>Connected capabilities</h2></div>
+                <Activity size={20} />
+              </div>
+              <div className="capability-row"><span>Calendar and Reminders</span><strong>Native app</strong></div>
+              <div className="capability-row"><span>Health and wearables</span><strong>Native app</strong></div>
+              <div className="capability-row"><span>Screen Time</span><strong>Native app</strong></div>
+              <div className="capability-row"><span>Web account storage</span><strong>Connected</strong></div>
+              <div className="native-note">
+                <ShieldCheck size={17} />
+                The interface is shared across devices. Apple-only integrations are collected by the native app and are not yet synchronized into the web store.
+              </div>
+            </section>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="page-shell today-page">
         <div className="greeting-row">
           <div>
-            <span className="eyebrow">Good {new Date().getHours() < 12 ? "morning" : new Date().getHours() < 18 ? "afternoon" : "evening"}</span>
-            <h1>Make today feel lighter.</h1>
+            <h1>Good {new Date().getHours() < 12 ? "morning" : new Date().getHours() < 18 ? "afternoon" : "evening"}</h1>
+            <p>Follow the system, capture the evidence, and improve one step at a time.</p>
           </div>
-          <p>{todayInsight}</p>
         </div>
         <div className="calendar-strip panel">
           <button className="icon-button" onClick={() => changeDay(-1)} aria-label="Previous day"><ChevronLeft size={18} /></button>
@@ -1074,8 +1117,8 @@ export default function SakhyaWebApp() {
           <div className="capture-top">
             <div className="capture-mark"><Sparkles size={19} /></div>
             <div>
-              <strong>What happened?</strong>
-              <small>Type or talk naturally. Sakhya organizes it before saving.</small>
+              <strong>Capture evidence</strong>
+              <small>Type or talk naturally. Sakhya organizes it before anything is saved.</small>
             </div>
           </div>
           <textarea
@@ -1202,7 +1245,6 @@ export default function SakhyaWebApp() {
         </nav>
         <div className="sidebar-bottom">
           <div className="sync-state"><span /><div><strong>Saved securely</strong><small>Private to your account</small></div></div>
-          <button onClick={() => setSettingsOpen(true)}><Settings size={18} /> Settings</button>
         </div>
       </aside>
       {mobileMenu && <button className="scrim" onClick={() => setMobileMenu(false)} aria-label="Close menu" />}
@@ -1253,7 +1295,7 @@ export default function SakhyaWebApp() {
                 </div>
               )}
             </div>
-            <div className="privacy-line"><Lock size={13} /> Uses only data saved in this browser.</div>
+            <div className="privacy-line"><Lock size={13} /> Uses only data saved to your private Sakhya account.</div>
             <form className="chat-composer" onSubmit={(event) => { event.preventDefault(); sendMessage(); }}>
               <textarea value={chatInput} onChange={(event) => setChatInput(event.target.value)} placeholder="Ask about your day…" rows={1} />
               <button type="button" className={isListening ? "recording" : ""} onClick={() => toggleListening("chat")}><Mic size={17} /></button>
@@ -1272,19 +1314,6 @@ export default function SakhyaWebApp() {
             <label>Note<textarea value={editingEntry.note ?? ""} onChange={(event) => setEditingEntry({ ...editingEntry, note: event.target.value })} rows={3} /></label>
             <button className="primary-button" disabled={!editingEntry.title.trim()}>Save changes</button>
           </form>
-        </div>
-      )}
-      {settingsOpen && (
-        <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Data settings">
-          <button className="modal-backdrop" onClick={() => setSettingsOpen(false)} aria-label="Close settings" />
-          <section className="settings-modal">
-            <div className="section-heading"><div><span className="eyebrow">Web settings</span><h2>Your data</h2></div><button className="icon-button" onClick={() => setSettingsOpen(false)}><X size={18} /></button></div>
-            <div className="data-summary"><ShieldCheck size={23} /><div><strong>Private account storage</strong><span>Your data is isolated by account and protected by the private Sakhya service.</span></div></div>
-            <button className="settings-row" onClick={exportData}><Download size={18} /><span><strong>Export backup</strong><small>Download all entries, lists and plans</small></span><ArrowRight size={16} /></button>
-            <label className="settings-row"><Upload size={18} /><span><strong>Import backup</strong><small>Restore a Sakhya JSON file</small></span><ArrowRight size={16} /><input type="file" accept=".json,application/json" onChange={importData} hidden /></label>
-            <button className="settings-row" onClick={resetData}><RotateCcw size={18} /><span><strong>Restore sample workspace</strong><small>Requires confirmation</small></span><ArrowRight size={16} /></button>
-            <div className="native-note"><ShieldCheck size={17} />Cross-device iCloud sync, Health, Calendar, Reminders and Screen Time remain native-app integrations.</div>
-          </section>
         </div>
       )}
     </div>

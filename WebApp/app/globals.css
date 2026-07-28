@@ -324,14 +324,15 @@ h3 {
 }
 
 .greeting-row {
-  align-items: center;
+  align-items: flex-start;
 }
 
-.greeting-row p {
-  max-width: 310px;
-  padding-left: 20px;
-  border-left: 2px solid var(--line-strong);
-  font-size: 13px;
+.greeting-row > div > p {
+  max-width: 690px;
+  margin-top: 8px;
+  padding-left: 0;
+  border-left: 0;
+  font-size: 14px;
 }
 
 .primary-button,
@@ -1749,6 +1750,35 @@ h3 {
   box-shadow: var(--shadow);
 }
 
+.settings-page-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  gap: 18px;
+}
+
+.settings-page-card {
+  align-self: start;
+  padding: 24px;
+}
+
+.capability-row {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.capability-row span {
+  color: var(--muted);
+}
+
+.capability-row strong {
+  color: var(--sage);
+  font-size: 12px;
+}
+
 .edit-modal label {
   display: grid;
   gap: 7px;
@@ -1839,7 +1869,8 @@ h3 {
 
   .today-grid,
   .money-grid,
-  .balance-grid {
+  .balance-grid,
+  .settings-page-grid {
     grid-template-columns: 1fr;
   }
 
