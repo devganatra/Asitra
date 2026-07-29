@@ -4,7 +4,7 @@ import SwiftUI
 struct ExpensesView: View {
     @Environment(AppModel.self) private var model
     @Environment(SystemFeatureModel.self) private var systemFeature
-    @State private var section: MoneySection = .month
+    @State private var section: MoneySection = .overview
     @State private var selectedMonth = Calendar.current.dateInterval(of: .month, for: .now)?.start ?? .now
     @State private var showingBudget = false
     @State private var showingExpense = false
@@ -13,6 +13,8 @@ struct ExpensesView: View {
     @State private var contributionPlan: SavingPlan?
     @State private var showingTrip = false
     @State private var showingWalletRequirements = false
+    @State private var moneyEntryKind: PersonalFinanceEntryKind?
+    @State private var balanceSheetDraft: BalanceSheetItem?
 
     private var currencyCode: String { Locale.current.currency?.identifier ?? "EUR" }
     private var finance: FinanceWorkspace { systemFeature.financeWorkspace }
@@ -27,6 +29,27 @@ struct ExpensesView: View {
     private var walletExpenses: [LogEntry] {
         monthlyExpenses.filter { $0.financialAccountID != nil }
     }
+    private var monthlyIncome: Double {
+        finance.moneyEntries
+            .filter { $0.kind == .income && monthInterval.contains($0.date) }
+            .reduce(0) { $0 + $1.amount }
+    }
+    private var monthlyInvested: Double {
+        finance.moneyEntries
+            .filter { $0.kind == .investment && monthInterval.contains($0.date) }
+            .reduce(0) { $0 + $1.amount }
+    }
+    private var monthlySaved: Double {
+        finance.savingPlans
+            .flatMap(\.contributions)
+            .filter { monthInterval.contains($0.date) }
+            .reduce(0) { $0 + $1.amount }
+    }
+    private var assets: [BalanceSheetItem] { finance.balanceSheetItems.filter(\.category.isAsset) }
+    private var liabilities: [BalanceSheetItem] { finance.balanceSheetItems.filter { !$0.category.isAsset } }
+    private var totalAssets: Double { assets.reduce(0) { $0 + $1.balance } }
+    private var totalLiabilities: Double { liabilities.reduce(0) { $0 + $1.balance } }
+    private var netWorth: Double { totalAssets - totalLiabilities }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -43,6 +66,7 @@ struct ExpensesView: View {
             ScrollView {
                 Group {
                     switch section {
+                    case .overview: positionOverview
                     case .month: monthlyView
                     case .savings: savingsView
                     case .trips: tripsView
@@ -85,6 +109,14 @@ struct ExpensesView: View {
         .sheet(isPresented: $showingTrip) {
             NewTripSheet { systemFeature.addTrip($0) }
         }
+        .sheet(item: $moneyEntryKind) { kind in
+            AddMoneyEntrySheet(kind: kind) { amount, date, note in
+                systemFeature.addMoneyEntry(kind: kind, amount: amount, date: date, note: note)
+            }
+        }
+        .sheet(item: $balanceSheetDraft) { draft in
+            BalanceSheetItemSheet(item: draft) { systemFeature.upsertBalanceSheetItem($0) }
+        }
         .alert("Apple Wallet connection", isPresented: $showingWalletRequirements) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -111,6 +143,261 @@ struct ExpensesView: View {
             .buttonStyle(.borderedProminent)
         }
         .padding()
+    }
+
+    private var positionOverview: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            monthSelector
+            netWorthHero
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 16)], spacing: 16) {
+                cashFlowCard
+                personalProfitLossCard
+                balanceSheetCard
+            }
+            Text("This is a personal overview, not formal accounting or financial advice. Account balances are snapshots; saving goals are allocations and are only assets when the money is also recorded in an account.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 4)
+        }
+    }
+
+    private var netWorthHero: some View {
+        HStack(spacing: 22) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("YOUR MONEY POSITION")
+                    .font(.caption.bold())
+                    .tracking(1)
+                    .foregroundStyle(.secondary)
+                Text(netWorth.formatted(.currency(code: currencyCode)))
+                    .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                Text(finance.balanceSheetItems.isEmpty
+                    ? "Add what you own and owe to calculate net worth."
+                    : "\(totalAssets.formatted(.currency(code: currencyCode))) owned − \(totalLiabilities.formatted(.currency(code: currencyCode))) owed")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button {
+                balanceSheetDraft = BalanceSheetItem(name: "", balance: 0, category: .cash)
+            } label: {
+                Label("Add balance", systemImage: "plus")
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding(22)
+        .background(
+            LinearGradient(
+                colors: [Color.indigo.opacity(0.14), Color.green.opacity(0.10)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 24, style: .continuous)
+        )
+    }
+
+    private var cashFlowCard: some View {
+        let netCashMovement = monthlyIncome - monthlySpent - monthlyInvested
+        return VStack(alignment: .leading, spacing: 13) {
+            statementHeading(
+                eyebrow: "Movement",
+                title: "Cash flow",
+                subtitle: "What came in and what left your usable cash.",
+                icon: "arrow.left.arrow.right"
+            ) {
+                moneyEntryKind = .income
+            }
+            statementRow("Income", amount: monthlyIncome, sign: .positive)
+            statementRow("Everyday spending", amount: monthlySpent, sign: .negative)
+            statementRow("Moved to investments", amount: monthlyInvested, sign: .negative)
+            Divider()
+            statementRow("Net cash movement", amount: netCashMovement, emphasize: true)
+            if monthlySaved > 0 {
+                Label(
+                    "\(monthlySaved.formatted(.currency(code: currencyCode))) earmarked for saving goals stays in cash until it is moved to another account.",
+                    systemImage: "info.circle"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            HStack {
+                Button("Add income") { moneyEntryKind = .income }
+                Button("Add investment") { moneyEntryKind = .investment }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .statementCard()
+    }
+
+    private var personalProfitLossCard: some View {
+        let surplus = monthlyIncome - monthlySpent
+        let assigned = monthlySaved + monthlyInvested
+        let remainder = surplus - assigned
+        let isBalanced = abs(remainder) < 0.01
+        return VStack(alignment: .leading, spacing: 13) {
+            statementHeading(
+                eyebrow: "Zero-based allocation",
+                title: "Personal P&L",
+                subtitle: "Give every euro of your monthly surplus a purpose.",
+                icon: "equal.circle"
+            )
+            statementRow("Income", amount: monthlyIncome)
+            statementRow("Spent on life", amount: monthlySpent, sign: .negative)
+            statementRow("Surplus after spending", amount: surplus, emphasize: true)
+            Divider()
+            statementRow("Saved", amount: monthlySaved)
+            statementRow("Invested", amount: monthlyInvested)
+            statementRow(
+                remainder >= 0 ? "Still to assign" : "Used from reserves",
+                amount: abs(remainder),
+                emphasize: true
+            )
+            Label(
+                isBalanced ? "Balanced: income has been fully spent, saved or invested." :
+                    remainder > 0 ? "Assign the remainder to a saving goal or investment to reach zero." :
+                    "Spending and allocations exceed this month’s income; the difference came from existing cash or debt.",
+                systemImage: isBalanced ? "checkmark.circle.fill" : "lightbulb"
+            )
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(isBalanced ? .green : remainder > 0 ? .orange : .red)
+            Text("Unlike a business P&L, saving and investing are shown as uses of personal surplus—not expenses.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+        .statementCard()
+    }
+
+    private var balanceSheetCard: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            statementHeading(
+                eyebrow: "Snapshot",
+                title: "Balance sheet",
+                subtitle: "What you own, what you owe, and the difference.",
+                icon: "scale.3d"
+            ) {
+                balanceSheetDraft = BalanceSheetItem(name: "", balance: 0, category: .cash)
+            }
+            if finance.balanceSheetItems.isEmpty {
+                Text("Start with bank balances, investments, credit cards and loans. Update them whenever a statement changes.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("ASSETS")
+                    .font(.caption2.bold())
+                    .foregroundStyle(.secondary)
+                ForEach(assets.sorted { $0.balance > $1.balance }) { item in
+                    balanceItemRow(item)
+                }
+                statementRow("Total assets", amount: totalAssets, emphasize: true)
+                Divider()
+                Text("LIABILITIES")
+                    .font(.caption2.bold())
+                    .foregroundStyle(.secondary)
+                ForEach(liabilities.sorted { $0.balance > $1.balance }) { item in
+                    balanceItemRow(item)
+                }
+                statementRow("Total liabilities", amount: totalLiabilities, emphasize: true)
+                Divider()
+                statementRow("Net worth", amount: netWorth, emphasize: true)
+            }
+            Button {
+                balanceSheetDraft = BalanceSheetItem(name: "", balance: 0, category: .cash)
+            } label: {
+                Label("Add asset or debt", systemImage: "plus")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .statementCard()
+    }
+
+    private func balanceItemRow(_ item: BalanceSheetItem) -> some View {
+        Button {
+            balanceSheetDraft = item
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: item.category.systemImage)
+                    .foregroundStyle(item.category.isAsset ? .green : .orange)
+                    .frame(width: 26)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(item.name)
+                        .font(.subheadline.weight(.semibold))
+                    Text(item.category.title)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text(item.balance.formatted(.currency(code: currencyCode)))
+                    .font(.subheadline.monospacedDigit())
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private enum StatementSign {
+        case positive, negative
+    }
+
+    private func statementRow(
+        _ title: String,
+        amount: Double,
+        sign: StatementSign? = nil,
+        emphasize: Bool = false
+    ) -> some View {
+        HStack {
+            Text(title)
+                .foregroundStyle(emphasize ? .primary : .secondary)
+            Spacer()
+            Text(statementAmount(amount, sign: sign))
+                .fontWeight(emphasize ? .bold : .semibold)
+                .monospacedDigit()
+        }
+        .font(.subheadline)
+    }
+
+    private func statementAmount(_ amount: Double, sign: StatementSign?) -> String {
+        let formatted = abs(amount).formatted(.currency(code: currencyCode))
+        if amount < 0 { return "−\(formatted)" }
+        switch sign {
+        case .positive: return "+\(formatted)"
+        case .negative: return amount == 0 ? formatted : "−\(formatted)"
+        case nil: return formatted
+        }
+    }
+
+    @ViewBuilder
+    private func statementHeading(
+        eyebrow: String,
+        title: String,
+        subtitle: String,
+        icon: String,
+        action: (() -> Void)? = nil
+    ) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(eyebrow.uppercased())
+                    .font(.caption2.bold())
+                    .tracking(0.8)
+                    .foregroundStyle(.secondary)
+                Text(title)
+                    .font(.title3.bold())
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if let action {
+                Button(action: action) {
+                    Image(systemName: "plus")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            } else {
+                Image(systemName: icon)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     private var monthlyView: some View {
@@ -504,10 +791,24 @@ struct ExpensesView: View {
 }
 
 private enum MoneySection: String, CaseIterable, Identifiable {
-    case month, savings, trips
+    case overview, month, savings, trips
     var id: Self { self }
-    var title: String { self == .month ? "This month" : self == .savings ? "Savings" : "Trips" }
-    var icon: String { self == .month ? "chart.bar" : self == .savings ? "target" : "airplane" }
+    var title: String {
+        switch self {
+        case .overview: "Overview"
+        case .month: "Spending"
+        case .savings: "Goals"
+        case .trips: "Trips"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .overview: "rectangle.3.group"
+        case .month: "chart.bar"
+        case .savings: "target"
+        case .trips: "airplane"
+        }
+    }
 }
 
 private enum SimpleExpenseCategory: String, CaseIterable, Identifiable {
@@ -665,6 +966,75 @@ private struct NewTripSheet: View {
     }
 }
 
+private struct AddMoneyEntrySheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let kind: PersonalFinanceEntryKind
+    let onSave: (Double, Date, String) -> Void
+    @State private var amount = ""
+    @State private var date = Date.now
+    @State private var note = ""
+
+    var body: some View {
+        MoneyFormShell(
+            title: kind == .income ? "Record income" : "Record investment",
+            explanation: kind == .income
+                ? "Income is money received this month, such as salary, freelance work or a refund."
+                : "Record money moved from cash into an investment. The investment balance itself belongs on the balance sheet."
+        ) {
+            TextField("Amount", text: $amount)
+            TextField(kind == .income ? "Source or note" : "Investment or note", text: $note)
+            DatePicker("When", selection: $date, displayedComponents: .date)
+        } save: {
+            guard let value = Double(amount.replacingOccurrences(of: ",", with: ".")), value > 0 else { return }
+            onSave(value, date, note.trimmingCharacters(in: .whitespacesAndNewlines))
+            dismiss()
+        }
+    }
+}
+
+private struct BalanceSheetItemSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var item: BalanceSheetItem
+    @State private var amount: String
+    let onSave: (BalanceSheetItem) -> Void
+
+    init(item: BalanceSheetItem, onSave: @escaping (BalanceSheetItem) -> Void) {
+        _item = State(initialValue: item)
+        _amount = State(initialValue: item.balance > 0 ? String(format: "%.2f", item.balance) : "")
+        self.onSave = onSave
+    }
+
+    var body: some View {
+        MoneyFormShell(
+            title: item.name.isEmpty ? "Add asset or debt" : "Update \(item.name)",
+            explanation: "Enter the latest balance as a positive number. Assets add to net worth; debts reduce it."
+        ) {
+            TextField("Name, for example Main bank", text: $item.name)
+            Picker("Type", selection: $item.category) {
+                Section("What you own") {
+                    ForEach(BalanceSheetCategory.allCases.filter(\.isAsset)) { category in
+                        Label(category.title, systemImage: category.systemImage).tag(category)
+                    }
+                }
+                Section("What you owe") {
+                    ForEach(BalanceSheetCategory.allCases.filter { !$0.isAsset }) { category in
+                        Label(category.title, systemImage: category.systemImage).tag(category)
+                    }
+                }
+            }
+            TextField("Current balance", text: $amount)
+        } save: {
+            guard let value = Double(amount.replacingOccurrences(of: ",", with: ".")),
+                  value >= 0,
+                  !item.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            item.name = item.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            item.balance = value
+            onSave(item)
+            dismiss()
+        }
+    }
+}
+
 private struct MoneyFormShell<Content: View>: View {
     @Environment(\.dismiss) private var dismiss
     let title: String
@@ -684,5 +1054,13 @@ private struct MoneyFormShell<Content: View>: View {
             }
         }
         .frame(minWidth: 390, minHeight: 330)
+    }
+}
+
+private extension View {
+    func statementCard() -> some View {
+        padding(18)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 }

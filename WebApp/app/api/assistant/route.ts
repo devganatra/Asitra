@@ -133,6 +133,7 @@ function buildContext(state: ReturnType<typeof validatePersistedState> | null) {
           savingsTarget: state.savingsTarget,
           savingsCurrent: state.savingsCurrent,
           currency: "EUR",
+          ...buildMoneyOverview(state, now),
         },
       }
     : {
@@ -154,6 +155,7 @@ function buildVerifiedMetrics(
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const weekEntries = state.entries.filter((entry) => new Date(entry.timestamp) >= weekStart);
   const monthEntries = state.entries.filter((entry) => new Date(entry.timestamp) >= monthStart);
+  const money = buildMoneyOverview(state, now);
   const sumMinutes = (kind: string) =>
     weekEntries
       .filter((entry) => entry.kind === kind)
@@ -197,5 +199,71 @@ function buildVerifiedMetrics(
       period: "current month",
       source: sourceFor("expense"),
     },
+    {
+      name: "income",
+      value: money.income,
+      unit: "EUR",
+      period: "current month",
+      source: "Sakhya money records",
+    },
+    {
+      name: "saved",
+      value: money.saved,
+      unit: "EUR",
+      period: "current month",
+      source: "Sakhya money records",
+    },
+    {
+      name: "invested",
+      value: money.invested,
+      unit: "EUR",
+      period: "current month",
+      source: "Sakhya money records",
+    },
+    {
+      name: "net worth",
+      value: money.netWorth,
+      unit: "EUR",
+      period: "latest balances",
+      source: "Sakhya balance sheet",
+    },
   ];
+}
+
+function buildMoneyOverview(
+  state: ReturnType<typeof validatePersistedState>,
+  now: Date,
+) {
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const currentMoneyEntries = state.moneyEntries.filter(
+    (entry) => new Date(entry.date) >= monthStart && new Date(entry.date) <= now,
+  );
+  const totalFor = (kind: string) =>
+    currentMoneyEntries
+      .filter((entry) => entry.kind === kind)
+      .reduce((sum, entry) => sum + entry.amount, 0);
+  const assetCategories = new Set(["cash", "investments", "property", "otherAsset"]);
+  const assets = state.balanceSheetItems
+    .filter((item) => assetCategories.has(item.category))
+    .reduce((sum, item) => sum + item.balance, 0);
+  const liabilities = state.balanceSheetItems
+    .filter((item) => !assetCategories.has(item.category))
+    .reduce((sum, item) => sum + item.balance, 0);
+  const spending = state.entries
+    .filter((entry) => entry.kind === "expense" && new Date(entry.timestamp) >= monthStart)
+    .reduce((sum, entry) => sum + (entry.amount ?? 0), 0);
+  const income = totalFor("income");
+  const saved = totalFor("saving");
+  const invested = totalFor("investment");
+  return {
+    income,
+    spending,
+    saved,
+    invested,
+    assets,
+    liabilities,
+    netWorth: assets - liabilities,
+    unallocatedSurplus: income - spending - saved - invested,
+    balanceSheetItems: state.balanceSheetItems,
+  };
 }

@@ -131,6 +131,10 @@ test("ships the secured product source without starter artifacts", async () => {
   assert.match(client, /Lists/);
   assert.match(client, /Track/);
   assert.match(client, /Money/);
+  assert.match(client, /Cash flow/);
+  assert.match(client, /Personal P&amp;L/);
+  assert.match(client, /Balance sheet/);
+  assert.match(client, /unallocated/);
   assert.match(client, /Balance/);
   assert.match(worker, /content-security-policy/);
   assert.match(layout, /Sakhya — Your everyday system/);

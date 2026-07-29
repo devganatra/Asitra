@@ -1198,6 +1198,224 @@ h3 {
   background: #253e31;
 }
 
+.money-segments {
+  margin-top: -8px;
+}
+
+.money-position-hero {
+  min-height: 190px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 30px;
+  margin-bottom: 18px;
+  padding: 30px 36px;
+  overflow: hidden;
+  border: 1px solid #cad8ce;
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 85% 20%, rgba(230, 149, 92, 0.18), transparent 28%),
+    linear-gradient(135deg, #f8fbf7, #e4ede6);
+}
+
+.money-position-hero > div:first-child > strong {
+  display: block;
+  margin: 7px 0;
+  font-family: Georgia, serif;
+  font-size: clamp(40px, 6vw, 62px);
+  font-weight: 500;
+  letter-spacing: -0.045em;
+}
+
+.money-position-hero p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.position-pulse {
+  min-width: 160px;
+  display: grid;
+  gap: 4px;
+  padding: 18px;
+  border: 1px solid rgba(54, 94, 73, 0.14);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.position-pulse small,
+.position-pulse span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.position-pulse strong {
+  font-size: 23px;
+}
+
+.statement-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  gap: 18px;
+}
+
+.statement-card {
+  min-width: 0;
+  padding: 22px;
+}
+
+.statement-title {
+  min-height: 74px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid var(--line);
+}
+
+.statement-title > svg {
+  color: var(--moss);
+}
+
+.statement-title p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.statement-line {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  color: var(--muted);
+  border-bottom: 1px solid rgba(223, 228, 220, 0.7);
+  font-size: 11px;
+}
+
+.statement-line strong {
+  color: var(--ink);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.statement-line strong.positive {
+  color: #477a5b;
+}
+
+.statement-line.total {
+  color: var(--ink);
+  font-weight: 750;
+}
+
+.statement-line.net-worth-line {
+  margin-top: 4px;
+  color: var(--sage);
+  border-top: 1px solid var(--line-strong);
+}
+
+.statement-note {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.allocation-status {
+  margin: 12px 0 0;
+  padding: 9px 10px;
+  border-radius: 9px;
+  color: #8a672b;
+  background: #f6eddc;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.allocation-status.balanced {
+  color: #3e704f;
+  background: #e4f0e7;
+}
+
+.allocation-status.over {
+  color: #9a4e47;
+  background: #f6e4e2;
+}
+
+.statement-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 14px;
+}
+
+.statement-actions button {
+  min-height: 33px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: white;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.statement-actions button:hover,
+.balance-item-row:hover {
+  border-color: #aabcae;
+  background: #f2f7f2;
+}
+
+.statement-group {
+  display: block;
+  margin-top: 15px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.balance-item-row {
+  width: 100%;
+  min-height: 47px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 0;
+  border: 0;
+  border-bottom: 1px solid rgba(223, 228, 220, 0.7);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.balance-item-row span strong,
+.balance-item-row span small {
+  display: block;
+}
+
+.balance-item-row span strong {
+  font-size: 11px;
+}
+
+.balance-item-row span small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.balance-item-row b {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .money-hero > div:first-child > strong {
   display: block;
   margin: 8px 0;
@@ -1933,6 +2151,7 @@ h3 {
 
   .today-grid,
   .money-grid,
+  .statement-grid,
   .balance-grid,
   .settings-page-grid {
     grid-template-columns: 1fr;
@@ -2159,6 +2378,16 @@ h3 {
     padding: 26px 23px;
   }
 
+  .money-position-hero {
+    min-height: 220px;
+    padding: 25px 23px;
+  }
+
+  .position-pulse {
+    min-width: 132px;
+    padding: 14px;
+  }
+
   .budget-ring {
     width: 90px;
     height: 90px;
@@ -2237,6 +2466,19 @@ h3 {
 
   .money-hero > div:first-child > strong {
     font-size: 37px;
+  }
+
+  .money-position-hero {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .money-position-hero > div:first-child > strong {
+    font-size: 39px;
+  }
+
+  .position-pulse {
+    width: 100%;
   }
 
   .money-hero p {

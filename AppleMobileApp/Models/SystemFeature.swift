@@ -197,10 +197,104 @@ struct TripBudgetPlan: Identifiable, Codable, Hashable {
     var createdAt = Date.now
 }
 
+enum PersonalFinanceEntryKind: String, Codable, CaseIterable, Identifiable {
+    case income
+    case investment
+
+    var id: Self { self }
+    var title: String { self == .income ? "Income" : "Investment" }
+    var systemImage: String { self == .income ? "arrow.down.circle.fill" : "chart.line.uptrend.xyaxis.circle.fill" }
+}
+
+struct PersonalFinanceEntry: Identifiable, Codable, Hashable {
+    var id = UUID()
+    var kind: PersonalFinanceEntryKind
+    var amount: Double
+    var date = Date.now
+    var note: String = ""
+}
+
+enum BalanceSheetCategory: String, Codable, CaseIterable, Identifiable {
+    case cash
+    case investments
+    case property
+    case otherAsset
+    case creditCard
+    case loan
+    case otherLiability
+
+    var id: Self { self }
+    var isAsset: Bool {
+        switch self {
+        case .cash, .investments, .property, .otherAsset: true
+        case .creditCard, .loan, .otherLiability: false
+        }
+    }
+    var title: String {
+        switch self {
+        case .cash: "Cash & bank"
+        case .investments: "Investments"
+        case .property: "Property & valuables"
+        case .otherAsset: "Other asset"
+        case .creditCard: "Credit card"
+        case .loan: "Loan"
+        case .otherLiability: "Other debt"
+        }
+    }
+    var systemImage: String {
+        switch self {
+        case .cash: "banknote"
+        case .investments: "chart.line.uptrend.xyaxis"
+        case .property: "house"
+        case .otherAsset: "shippingbox"
+        case .creditCard: "creditcard"
+        case .loan: "building.columns"
+        case .otherLiability: "doc.text"
+        }
+    }
+}
+
+struct BalanceSheetItem: Identifiable, Codable, Hashable {
+    var id = UUID()
+    var name: String
+    var balance: Double
+    var category: BalanceSheetCategory
+    var updatedAt = Date.now
+}
+
 struct FinanceWorkspace: Codable, Hashable {
     var monthlyBudget: Double?
     var savingPlans: [SavingPlan]
     var trips: [TripBudgetPlan]
+    var moneyEntries: [PersonalFinanceEntry]
+    var balanceSheetItems: [BalanceSheetItem]
+
+    init(
+        monthlyBudget: Double?,
+        savingPlans: [SavingPlan],
+        trips: [TripBudgetPlan],
+        moneyEntries: [PersonalFinanceEntry] = [],
+        balanceSheetItems: [BalanceSheetItem] = []
+    ) {
+        self.monthlyBudget = monthlyBudget
+        self.savingPlans = savingPlans
+        self.trips = trips
+        self.moneyEntries = moneyEntries
+        self.balanceSheetItems = balanceSheetItems
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case monthlyBudget, savingPlans, trips, moneyEntries, balanceSheetItems
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        monthlyBudget = try container.decodeIfPresent(Double.self, forKey: .monthlyBudget)
+        savingPlans = try container.decodeIfPresent([SavingPlan].self, forKey: .savingPlans) ?? []
+        trips = try container.decodeIfPresent([TripBudgetPlan].self, forKey: .trips) ?? []
+        moneyEntries = try container.decodeIfPresent([PersonalFinanceEntry].self, forKey: .moneyEntries) ?? []
+        balanceSheetItems = try container.decodeIfPresent([BalanceSheetItem].self, forKey: .balanceSheetItems) ?? []
+    }
 
     static let empty = FinanceWorkspace(monthlyBudget: nil, savingPlans: [], trips: [])
 }
@@ -576,6 +670,24 @@ final class SystemFeatureModel {
 
     func addTrip(_ trip: TripBudgetPlan) {
         updateFinance { $0.trips.append(trip) }
+    }
+
+    func addMoneyEntry(kind: PersonalFinanceEntryKind, amount: Double, date: Date, note: String) {
+        updateFinance {
+            $0.moneyEntries.append(PersonalFinanceEntry(kind: kind, amount: amount, date: date, note: note))
+        }
+    }
+
+    func upsertBalanceSheetItem(_ item: BalanceSheetItem) {
+        updateFinance { finance in
+            var updated = item
+            updated.updatedAt = .now
+            if let index = finance.balanceSheetItems.firstIndex(where: { $0.id == item.id }) {
+                finance.balanceSheetItems[index] = updated
+            } else {
+                finance.balanceSheetItems.append(updated)
+            }
+        }
     }
 
     func linkExpense(_ entryID: UUID, toTrip tripID: UUID) {
