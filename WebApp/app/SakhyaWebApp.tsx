@@ -15,6 +15,7 @@ import {
   CircleDollarSign,
   Clock3,
   Download,
+  FileText,
   Film,
   HeartPulse,
   Home,
@@ -39,6 +40,13 @@ import {
   Zap,
 } from "lucide-react";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  extractPdfText,
+  ImportedMoneyTransaction,
+  isMoneyRecordCommand,
+  parseMoneyInstruction,
+  parseStatementText,
+} from "./money-import";
 import { validatePersistedState } from "./state-schema";
 
 type Section = "today" | "lists" | "track" | "money" | "balance" | "settings";
@@ -106,6 +114,13 @@ type MoneyEntry = {
   note?: string;
 };
 
+type MoneyDraft = {
+  kind: "expense" | MoneyEntry["kind"];
+  amount: string;
+  date: string;
+  note: string;
+};
+
 type BalanceSheetCategory =
   | "cash"
   | "investments"
@@ -137,6 +152,12 @@ type PersistedState = {
 const LEGACY_STORAGE_KEY = "sakhya-web-v1";
 const MAX_BACKUP_BYTES = 2_000_000;
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const EMPTY_MONEY_DRAFT: MoneyDraft = {
+  kind: "expense",
+  amount: "",
+  date: new Date().toISOString().slice(0, 10),
+  note: "",
+};
 const currency = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
 const weekdayOnly = new Intl.DateTimeFormat("en", { weekday: "short" });
 const longDate = new Intl.DateTimeFormat("en", {
@@ -358,6 +379,13 @@ export default function SakhyaWebApp() {
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [assistantThinking, setAssistantThinking] = useState(false);
+  const [moneyEntryOpen, setMoneyEntryOpen] = useState(false);
+  const [moneyEntryMode, setMoneyEntryMode] = useState<"type" | "pdf" | "sakhya">("type");
+  const [moneyDraft, setMoneyDraft] = useState<MoneyDraft>(EMPTY_MONEY_DRAFT);
+  const [moneyInstruction, setMoneyInstruction] = useState("");
+  const [importedTransactions, setImportedTransactions] = useState<ImportedMoneyTransaction[]>([]);
+  const [importFileName, setImportFileName] = useState("");
+  const [importReading, setImportReading] = useState(false);
   const [notice, setNotice] = useState<string>();
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -766,35 +794,142 @@ export default function SakhyaWebApp() {
     setNotice(`${tracker.name} check-in added to the timeline.`);
   }
 
-  function addExpense() {
-    const title = window.prompt("What did you spend on?");
-    if (!title?.trim()) return;
-    const rawAmount = window.prompt("Amount in EUR");
-    const amount = Number(rawAmount?.replace(",", "."));
-    if (!Number.isFinite(amount) || amount <= 0) return;
+  function openMoneyEntry(kind: MoneyDraft["kind"] = "expense", mode: typeof moneyEntryMode = "type") {
+    setMoneyDraft({ ...EMPTY_MONEY_DRAFT, kind, date: new Date().toISOString().slice(0, 10) });
+    setMoneyEntryMode(mode);
+    setMoneyInstruction("");
+    setImportedTransactions([]);
+    setImportFileName("");
+    setMoneyEntryOpen(true);
+  }
+
+  function storeMoneyRecord(kind: MoneyDraft["kind"], amount: number, date: string, note: string) {
     setState((current) => ({
       ...current,
-      entries: [
-        { id: uid(), title: title.trim(), kind: "expense", amount, timestamp: new Date().toISOString() },
-        ...current.entries,
-      ],
+      entries:
+        kind === "expense"
+          ? [
+              {
+                id: uid(),
+                title: note || "Expense",
+                kind: "expense",
+                amount,
+                timestamp: date,
+                source: "Money",
+              },
+              ...current.entries,
+            ]
+          : current.entries,
+      savingsCurrent: kind === "saving" ? current.savingsCurrent + amount : current.savingsCurrent,
+      moneyEntries:
+        kind === "expense"
+          ? current.moneyEntries
+          : [...current.moneyEntries, { id: uid(), kind, amount, date, note: note || undefined }],
     }));
   }
 
-  function recordMoneyEntry(kind: MoneyEntry["kind"]) {
-    const label = kind === "income" ? "income" : kind === "saving" ? "saving" : "investment";
-    const rawAmount = window.prompt(`How much ${label} would you like to record in EUR?`);
-    const amount = Number(rawAmount?.replace(",", "."));
-    if (!Number.isFinite(amount) || amount <= 0) return;
-    const note = window.prompt("Optional source or note")?.trim();
-    setState((current) => ({
-      ...current,
-      savingsCurrent: kind === "saving" ? current.savingsCurrent + amount : current.savingsCurrent,
-      moneyEntries: [
-        ...current.moneyEntries,
-        { id: uid(), kind, amount, date: new Date().toISOString(), note },
-      ],
-    }));
+  function submitMoneyDraft(event: FormEvent) {
+    event.preventDefault();
+    const amount = Number(moneyDraft.amount.replace(",", "."));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setNotice("Enter an amount greater than zero.");
+      return;
+    }
+    const date = new Date(`${moneyDraft.date}T12:00:00`);
+    if (!Number.isFinite(date.getTime())) {
+      setNotice("Choose a valid date.");
+      return;
+    }
+    storeMoneyRecord(moneyDraft.kind, amount, date.toISOString(), moneyDraft.note.trim());
+    setMoneyEntryOpen(false);
+    setNotice(`${moneyDraft.kind === "expense" ? "Expense" : "Money entry"} added for ${moneyDraft.date}.`);
+  }
+
+  function submitMoneyInstruction(event: FormEvent) {
+    event.preventDefault();
+    const parsed = parseMoneyInstruction(moneyInstruction);
+    if (!parsed) {
+      setNotice("Include an amount and an action, for example “spent €24 on groceries yesterday”.");
+      return;
+    }
+    storeMoneyRecord(parsed.kind, parsed.amount, parsed.date, parsed.title);
+    setMoneyEntryOpen(false);
+    setNotice(`Sakhya recorded ${currency.format(parsed.amount)} as ${parsed.kind}.`);
+  }
+
+  async function readStatementPdf(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setImportReading(true);
+    setImportedTransactions([]);
+    setImportFileName(file.name);
+    try {
+      const text = await extractPdfText(file);
+      const transactions = parseStatementText(text);
+      setImportedTransactions(transactions);
+      if (!transactions.length) {
+        setNotice("No dated transactions with amounts were detected. Try a text-based bank PDF.");
+      }
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "The PDF could not be read.");
+    } finally {
+      setImportReading(false);
+    }
+  }
+
+  function commitStatementImport() {
+    const selected = importedTransactions.filter((transaction) => transaction.selected);
+    if (!selected.length) {
+      setNotice("Select at least one transaction to import.");
+      return;
+    }
+    setState((current) => {
+      const existing = new Set([
+        ...current.entries
+          .filter((entry) => entry.kind === "expense" && entry.amount)
+          .map((entry) => `${entry.timestamp.slice(0, 10)}|expense|${entry.amount!.toFixed(2)}|${entry.title.toLowerCase()}`),
+        ...current.moneyEntries
+          .filter((entry) => entry.kind === "income")
+          .map((entry) => `${entry.date.slice(0, 10)}|income|${entry.amount.toFixed(2)}|${(entry.note ?? "").toLowerCase()}`),
+      ]);
+      const fresh = selected.filter(
+        (transaction) =>
+          !existing.has(
+            `${transaction.date.slice(0, 10)}|${transaction.kind}|${transaction.amount.toFixed(2)}|${transaction.title.toLowerCase()}`,
+          ),
+      );
+      return {
+        ...current,
+        entries: [
+          ...fresh
+            .filter((transaction) => transaction.kind === "expense")
+            .map<Entry>((transaction) => ({
+              id: uid(),
+              title: transaction.title,
+              kind: "expense",
+              amount: transaction.amount,
+              timestamp: transaction.date,
+              source: "PDF statement",
+            })),
+          ...current.entries,
+        ],
+        moneyEntries: [
+          ...current.moneyEntries,
+          ...fresh
+            .filter((transaction) => transaction.kind === "income")
+            .map<MoneyEntry>((transaction) => ({
+              id: uid(),
+              kind: "income",
+              amount: transaction.amount,
+              date: transaction.date,
+              note: transaction.title,
+            })),
+        ],
+      };
+    });
+    setMoneyEntryOpen(false);
+    setNotice(`${selected.length} statement ${selected.length === 1 ? "entry" : "entries"} imported. Existing matches were skipped.`);
   }
 
   function editBalanceSheetItem(existing?: BalanceSheetItem, asset = true) {
@@ -840,6 +975,28 @@ export default function SakhyaWebApp() {
     setMessages((current) => [...current, userMessage]);
     setChatInput("");
     setAssistantThinking(true);
+
+    const requestedMoneyEntry = isMoneyRecordCommand(question)
+      ? parseMoneyInstruction(question)
+      : undefined;
+    if (requestedMoneyEntry) {
+      storeMoneyRecord(
+        requestedMoneyEntry.kind,
+        requestedMoneyEntry.amount,
+        requestedMoneyEntry.date,
+        requestedMoneyEntry.title,
+      );
+      setMessages((current) => [
+        ...current,
+        {
+          id: uid(),
+          role: "assistant",
+          text: `Done — I recorded ${currency.format(requestedMoneyEntry.amount)} as ${requestedMoneyEntry.kind} on ${new Date(requestedMoneyEntry.date).toLocaleDateString()}. You can see it in Money and on the timeline when it is an expense.`,
+        },
+      ]);
+      setAssistantThinking(false);
+      return;
+    }
 
     try {
       const response = await fetch("/api/assistant", {
@@ -1130,8 +1287,8 @@ export default function SakhyaWebApp() {
             description="Understand your monthly movement, what you own and owe, and where every euro of surplus is going."
             action={
               moneyView === "overview"
-                ? <button className="primary-button" onClick={() => recordMoneyEntry("income")}><Plus size={17} /> Add income</button>
-                : <button className="primary-button" onClick={addExpense}><Plus size={17} /> Add expense</button>
+                ? <div className="money-header-actions"><button className="secondary-button" onClick={() => openMoneyEntry("expense", "pdf")}><FileText size={17} /> Import PDF</button><button className="primary-button" onClick={() => openMoneyEntry("income")}><Plus size={17} /> Add income</button></div>
+                : <div className="money-header-actions"><button className="secondary-button" onClick={() => openMoneyEntry("expense", "pdf")}><FileText size={17} /> Import PDF</button><button className="primary-button" onClick={() => openMoneyEntry("expense")}><Plus size={17} /> Add expense</button></div>
             }
           />
           <div className="segment-row money-segments">
@@ -1164,8 +1321,8 @@ export default function SakhyaWebApp() {
                   <div className="statement-line total"><span>Net cash movement</span><strong>{currency.format(netCashMovement)}</strong></div>
                   {monthSaved > 0 && <p className="statement-note">{currency.format(monthSaved)} earmarked for goals remains cash until it is transferred.</p>}
                   <div className="statement-actions">
-                    <button onClick={() => recordMoneyEntry("income")}>Add income</button>
-                    <button onClick={() => recordMoneyEntry("investment")}>Add investment</button>
+                    <button onClick={() => openMoneyEntry("income")}>Add income</button>
+                    <button onClick={() => openMoneyEntry("investment")}>Add investment</button>
                   </div>
                 </section>
 
@@ -1188,8 +1345,8 @@ export default function SakhyaWebApp() {
                         : "This month used existing cash or debt."}
                   </p>
                   <div className="statement-actions">
-                    <button onClick={() => recordMoneyEntry("saving")}>Add saving</button>
-                    <button onClick={() => recordMoneyEntry("investment")}>Add investment</button>
+                    <button onClick={() => openMoneyEntry("saving")}>Add saving</button>
+                    <button onClick={() => openMoneyEntry("investment")}>Add investment</button>
                   </div>
                 </section>
 
@@ -1256,7 +1413,7 @@ export default function SakhyaWebApp() {
                   <strong>{currency.format(state.savingsCurrent)}</strong>
                   <p>of {currency.format(state.savingsTarget)}</p>
                   <div className="progress-line large"><span style={{ width: `${(state.savingsCurrent / state.savingsTarget) * 100}%` }} /></div>
-                  <button className="secondary-button full" onClick={() => recordMoneyEntry("saving")}>
+                  <button className="secondary-button full" onClick={() => openMoneyEntry("saving")}>
                     <Plus size={16} /> Add contribution
                   </button>
                 </section>
@@ -1635,6 +1792,68 @@ export default function SakhyaWebApp() {
             <label>Note<textarea value={editingEntry.note ?? ""} onChange={(event) => setEditingEntry({ ...editingEntry, note: event.target.value })} rows={3} /></label>
             <button className="primary-button" disabled={!editingEntry.title.trim()}>Save changes</button>
           </form>
+        </div>
+      )}
+      {moneyEntryOpen && (
+        <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Add money">
+          <button className="modal-backdrop" onClick={() => setMoneyEntryOpen(false)} aria-label="Close money entry" />
+          <section className="money-entry-modal">
+            <div className="section-heading">
+              <div><span className="eyebrow">Money</span><h2>Add to this month</h2></div>
+              <button type="button" className="icon-button" onClick={() => setMoneyEntryOpen(false)} aria-label="Close"><X size={18} /></button>
+            </div>
+            <div className="money-entry-tabs" role="tablist" aria-label="Money entry method">
+              <button className={moneyEntryMode === "type" ? "active" : ""} onClick={() => setMoneyEntryMode("type")}>Type it</button>
+              <button className={moneyEntryMode === "pdf" ? "active" : ""} onClick={() => setMoneyEntryMode("pdf")}>Import PDF</button>
+              <button className={moneyEntryMode === "sakhya" ? "active" : ""} onClick={() => setMoneyEntryMode("sakhya")}>Tell Sakhya</button>
+            </div>
+            {moneyEntryMode === "type" && (
+              <form className="money-entry-form" onSubmit={submitMoneyDraft}>
+                <label>Entry type<select value={moneyDraft.kind} onChange={(event) => setMoneyDraft({ ...moneyDraft, kind: event.target.value as MoneyDraft["kind"] })}><option value="expense">Expense</option><option value="income">Income</option><option value="saving">Saving</option><option value="investment">Investment</option></select></label>
+                <div className="money-form-row">
+                  <label>Amount (€)<input autoFocus inputMode="decimal" value={moneyDraft.amount} onChange={(event) => setMoneyDraft({ ...moneyDraft, amount: event.target.value })} placeholder="0.00" /></label>
+                  <label>Date<input type="date" value={moneyDraft.date} onChange={(event) => setMoneyDraft({ ...moneyDraft, date: event.target.value })} /></label>
+                </div>
+                <label>{moneyDraft.kind === "income" ? "Source" : "What was it for?"}<input value={moneyDraft.note} onChange={(event) => setMoneyDraft({ ...moneyDraft, note: event.target.value })} placeholder={moneyDraft.kind === "income" ? "Salary, freelance…" : "Groceries, rent…"} /></label>
+                <button className="primary-button" disabled={!moneyDraft.amount.trim()}>Add entry</button>
+              </form>
+            )}
+            {moneyEntryMode === "sakhya" && (
+              <form className="money-sakhya-form" onSubmit={submitMoneyInstruction}>
+                <div className="sakhya-entry-prompt"><Sparkles size={18} /><div><strong>Write it naturally</strong><span>I’ll understand the type, amount and date before adding it.</span></div></div>
+                <textarea autoFocus rows={4} value={moneyInstruction} onChange={(event) => setMoneyInstruction(event.target.value)} placeholder="Spent €24.50 on groceries yesterday" />
+                {parseMoneyInstruction(moneyInstruction) && <div className="money-parse-preview"><CheckCircle2 size={16} /><span>{currency.format(parseMoneyInstruction(moneyInstruction)!.amount)} · {parseMoneyInstruction(moneyInstruction)!.kind} · {new Date(parseMoneyInstruction(moneyInstruction)!.date).toLocaleDateString()}</span></div>}
+                <button className="primary-button" disabled={!parseMoneyInstruction(moneyInstruction)}>Let Sakhya add it</button>
+              </form>
+            )}
+            {moneyEntryMode === "pdf" && (
+              <div className="pdf-import-panel">
+                {!importedTransactions.length && (
+                  <label className="pdf-dropzone">
+                    <FileText size={28} />
+                    <strong>{importReading ? "Reading your statement…" : "Choose a monthly statement PDF"}</strong>
+                    <span>The PDF is read on this device. Review every detected row before anything is saved.</span>
+                    <input type="file" accept="application/pdf,.pdf" onChange={readStatementPdf} disabled={importReading} />
+                  </label>
+                )}
+                {!!importedTransactions.length && (
+                  <>
+                    <div className="pdf-review-heading"><div><strong>{importFileName}</strong><span>{importedTransactions.filter((item) => item.selected).length} of {importedTransactions.length} selected</span></div><label className="pdf-replace"><FileText size={15} /> Choose another<input type="file" accept="application/pdf,.pdf" onChange={readStatementPdf} /></label></div>
+                    <div className="pdf-transaction-list">
+                      {importedTransactions.map((transaction) => (
+                        <label className="pdf-transaction" key={transaction.id}>
+                          <input type="checkbox" checked={transaction.selected} onChange={() => setImportedTransactions((current) => current.map((item) => item.id === transaction.id ? { ...item, selected: !item.selected } : item))} />
+                          <span><strong>{transaction.title}</strong><small>{new Date(transaction.date).toLocaleDateString()} · {transaction.kind}</small></span>
+                          <b className={transaction.kind === "income" ? "positive" : ""}>{transaction.kind === "income" ? "+" : "−"}{currency.format(transaction.amount)}</b>
+                        </label>
+                      ))}
+                    </div>
+                    <button className="primary-button full" onClick={commitStatementImport}>Import selected entries</button>
+                  </>
+                )}
+              </div>
+            )}
+          </section>
         </div>
       )}
     </div>

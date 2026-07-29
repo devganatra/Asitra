@@ -43,6 +43,7 @@ For your own device, connect the iPhone or iPad to the Mac, select it as the run
 - Personal money-position overview with monthly cash flow, a zero-based personal P&L allocation view, and an editable balance sheet for assets, liabilities, and net worth
 - Consent-based Apple Wallet financial import through FinanceKit, with duplicate-safe transaction ingestion, merchant-category analysis, and spending totals attributed to each eligible card/account
 - Expenses added from Money or a trip are written back to the shared timeline; savings contributions remain separate from spending totals
+- Money can be entered with a normal form, a natural Sakhya instruction, or a reviewed PDF bank-statement import; duplicate statement rows are skipped
 - Reading lists and movie watchlists with planned, in-progress, and completed states
 - Contextual analysis: spending in Money, health and personal progress in Track, daily totals in Today, and cross-life guidance in Balance
 - Work, personal, rest, and screen-time attribution by phone, tablet, Mac, web, or offline activity

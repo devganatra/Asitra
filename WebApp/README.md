@@ -5,7 +5,7 @@ The responsive web companion for Sakhya. It follows the same everyday structure 
 - **Today** — natural-language capture, voice dictation, photos, calendar strip, daily system, and editable timeline
 - **Lists** — private and shared-list flows with timeline-connected items
 - **Track** — health, habits, learning/media, and mindset check-ins
-- **Money** — cash flow, personal surplus allocation, balance sheet/net worth, monthly spending, savings progress, and trip planning
+- **Money** — cash flow, personal surplus allocation, balance sheet/net worth, monthly spending, savings progress, trip planning, typed entry, natural Sakhya commands, and reviewed PDF statement import
 - **Balance** — work/personal context and cross-life signals
 - **Ask Sakhya** — one shared Terra-powered assistant for web, Mac, iPhone, and iPad
 
