@@ -43,6 +43,7 @@ export function validatePersistedState(value: unknown, options: ValidationOption
       amount: optionalFiniteNumber(entry.amount, 0, 1_000_000_000),
       minutes: optionalFiniteNumber(entry.minutes, 0, 525_600),
       note: optionalString(entry.note, "entry note", 10_000),
+      source: optionalString(entry.source, "entry source", 200),
       photo,
     };
   });

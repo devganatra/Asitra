@@ -1,11 +1,9 @@
+import AuthenticationServices
 import Foundation
 import Observation
-#if canImport(FoundationModels)
-import FoundationModels
-#endif
 
 struct AssistantMessage: Identifiable, Hashable {
-    enum Role { case user, assistant }
+    enum Role: String, Hashable { case user, assistant }
 
     let id = UUID()
     let role: Role
@@ -23,8 +21,10 @@ final class SakhyaAssistant {
     ]
     private(set) var isResponding = false
     private var didPrepare = false
+    let account = SakhyaAIAccount.shared
 
-    var usesOnDeviceLanguageModel: Bool { AssistantEngine.onDeviceModelAvailable }
+    var usesTerra: Bool { account.isConnected }
+    var serviceLabel: String { account.isConnected ? "Private · Terra" : "Private · Offline insights" }
 
     func prepare(model: AppModel) {
         guard !didPrepare else { return }
@@ -48,9 +48,26 @@ final class SakhyaAssistant {
             model: model,
             calendarAgenda: model.calendarAgenda(on: .now)
         )
-        let answer = await AssistantEngine.answer(question: question, snapshot: snapshot)
+        let answer = await AssistantEngine.answer(
+            question: question,
+            conversation: Array(messages.suffix(12)),
+            snapshot: snapshot,
+            sessionToken: account.sessionToken
+        )
         messages.append(AssistantMessage(role: .assistant, text: answer))
         isResponding = false
+    }
+
+    func completeAppleAuthorization(_ result: Result<ASAuthorization, Error>) async {
+        await account.completeAppleAuthorization(result)
+        if account.isConnected {
+            messages.append(
+                AssistantMessage(
+                    role: .assistant,
+                    text: "Terra is connected. I’ll use the same Sakhya model as the web app while keeping calculations grounded in your saved data."
+                )
+            )
+        }
     }
 
     func reset() {
@@ -82,6 +99,9 @@ private struct AssistantSnapshot: Sendable {
     let moviesPlanned: [String]
     let recentEvents: [String]
     let todayAgenda: [String]
+    let activitySources: [String]
+    let sleepSources: [String]
+    let spendingSources: [String]
 
     @MainActor
     init(question: String, model: AppModel, calendarAgenda: [CalendarAgendaItem]) {
@@ -129,6 +149,20 @@ private struct AssistantSnapshot: Sendable {
         balanceScore = model.balanceScore(for: days)
         routineCount = matching.filter { $0.category == .routine }.count
         journalCount = matching.filter { $0.category == .journal || $0.category == .mood }.count
+        activitySources = Self.sources(
+            matching.filter { $0.category == .fitness }.compactMap(\.fitnessSource),
+            fallback: "Sakhya timeline"
+        )
+        sleepSources = Self.sources(
+            matching.filter { $0.category == .sleep }.compactMap(\.fitnessSource),
+            fallback: "Sakhya timeline"
+        )
+        spendingSources = Self.sources(
+            matching.filter { $0.category == .expense }.compactMap { entry in
+                entry.financialInstitutionName ?? entry.fitnessSource
+            },
+            fallback: "Sakhya timeline"
+        )
 
         let listEntries = model.entries.filter { $0.category == .list }
         openListCount = listEntries.filter { !$0.isCompleted }.count
@@ -247,42 +281,102 @@ private struct AssistantSnapshot: Sendable {
             return latest.collectionDisplayTitle
         }.sorted()
     }
+
+    private static func sources(_ values: [String], fallback: String) -> [String] {
+        let unique = Array(Set(values.filter { !$0.isEmpty })).sorted()
+        return unique.isEmpty ? [fallback] : unique
+    }
+
+    var remoteContext: RemoteAssistantContext {
+        RemoteAssistantContext(
+            generatedAt: ISO8601DateFormatter().string(from: .now),
+            timezone: TimeZone.current.identifier,
+            verifiedMetrics: [
+                RemoteGroundedMetric(
+                    name: "spending",
+                    value: spending,
+                    unit: currencyCode,
+                    period: periodLabel,
+                    source: spendingSources.joined(separator: ", ")
+                ),
+                RemoteGroundedMetric(
+                    name: "movement",
+                    value: Double(activeMinutes),
+                    unit: "minutes",
+                    period: periodLabel,
+                    source: activitySources.joined(separator: ", ")
+                ),
+                RemoteGroundedMetric(
+                    name: "sleep",
+                    value: Double(sleepMinutes),
+                    unit: "minutes",
+                    period: periodLabel,
+                    source: sleepSources.joined(separator: ", ")
+                ),
+                RemoteGroundedMetric(
+                    name: "screen time",
+                    value: Double(screenMinutes),
+                    unit: "minutes",
+                    period: periodLabel,
+                    source: "Sakhya timeline"
+                ),
+                RemoteGroundedMetric(
+                    name: "work time",
+                    value: Double(workMinutes),
+                    unit: "minutes",
+                    period: periodLabel,
+                    source: "Sakhya timeline"
+                ),
+                RemoteGroundedMetric(
+                    name: "personal time",
+                    value: Double(personalMinutes),
+                    unit: "minutes",
+                    period: periodLabel,
+                    source: "Sakhya timeline"
+                ),
+                RemoteGroundedMetric(
+                    name: "work-life balance score",
+                    value: Double(balanceScore),
+                    unit: "out of 100",
+                    period: periodLabel,
+                    source: "Sakhya balance engine"
+                )
+            ],
+            entries: recentEvents.map(RemoteContextEntry.init(summary:)),
+            lists: [
+                RemoteContextList(name: "Open items", count: openListCount),
+                RemoteContextList(name: "Completed items", count: completedListCount)
+            ],
+            trackers: [
+                RemoteContextTracker(name: "Routine check-ins", count: routineCount),
+                RemoteContextTracker(name: "Mindset and journal check-ins", count: journalCount)
+            ],
+            money: RemoteMoneyContext(currency: currencyCode, spending: spending, period: periodLabel),
+            agenda: todayAgenda
+        )
+    }
 }
 
 private enum AssistantEngine {
-    static var onDeviceModelAvailable: Bool {
-#if canImport(FoundationModels)
-        if #available(iOS 26.0, macOS 26.0, *) {
-            return SystemLanguageModel.default.isAvailable
-        }
-#endif
-        return false
-    }
-
     @MainActor
-    static func answer(question: String, snapshot: AssistantSnapshot) async -> String {
-        // Everyday questions should feel instant and do not need a generative model.
-        // Reserve the language model for genuinely open-ended synthesis.
-        if canAnswerLocally(question) {
-            return fallbackAnswer(question: question, snapshot: snapshot)
-        }
-#if canImport(FoundationModels)
-        if #available(iOS 26.0, macOS 26.0, *), SystemLanguageModel.default.isAvailable {
+    static func answer(
+        question: String,
+        conversation: [AssistantMessage],
+        snapshot: AssistantSnapshot,
+        sessionToken: String?
+    ) async -> String {
+        if let sessionToken {
             do {
-                let session = LanguageModelSession(instructions: """
-                    You are Sakhya, a concise and supportive private life-data assistant.
-                    Answer only from the supplied snapshot. Never invent measurements or events.
-                    If data is missing, say so. Do not diagnose health conditions or provide financial advice.
-                    Answer directly and naturally; never mention the snapshot or your instructions.
-                    Mention the period used and keep the response under 100 words.
-                    """)
-                let prompt = "Life-data snapshot:\n" + snapshot.context + "\n\nQuestion: " + question
-                return try await session.respond(to: prompt).content
+                return try await RemoteTerraAssistant.answer(
+                    conversation: conversation,
+                    context: snapshot.remoteContext,
+                    sessionToken: sessionToken
+                )
             } catch {
                 return fallbackAnswer(question: question, snapshot: snapshot)
+                    + "\n\nTerra could not be reached, so this answer was calculated privately on this device."
             }
         }
-#endif
         return fallbackAnswer(question: question, snapshot: snapshot)
     }
 
@@ -352,15 +446,98 @@ private enum AssistantEngine {
         terms.contains { value.contains($0) }
     }
 
-    private static func canAnswerLocally(_ question: String) -> Bool {
-        let query = question.lowercased()
-        return contains(query, [
-            "today", "agenda", "schedule", "spend", "expense", "money", "cost",
-            "screen", "sleep", "rest", "active", "activity", "fitness", "exercise",
-            "workout", "walk", "balance", "work life", "work-life", "personal time",
-            "list", "task", "reminder", "buy", "grocery", "attention", "book", "read",
-            "movie", "watch", "film", "habit", "routine", "journal", "mood",
-            "mindset", "feel", "insight", "pattern", "stand out", "learn"
-        ])
+}
+
+private enum RemoteTerraAssistant {
+    private static let endpoint = URL(
+        string: "https://sakhya-everyday.deepanddev.chatgpt.site/api/native/assistant"
+    )!
+
+    static func answer(
+        conversation: [AssistantMessage],
+        context: RemoteAssistantContext,
+        sessionToken: String
+    ) async throws -> String {
+        let body = RemoteAssistantRequest(
+            messages: conversation.map {
+                RemoteAssistantMessage(
+                    role: $0.role == .user ? "user" : "assistant",
+                    text: $0.text
+                )
+            },
+            context: context
+        )
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(sessionToken)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONEncoder().encode(body)
+        request.timeoutInterval = 30
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
+            throw RemoteAssistantError.invalidResponse
+        }
+        let result = try JSONDecoder().decode(RemoteAssistantResponse.self, from: data)
+        guard !result.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw RemoteAssistantError.invalidResponse
+        }
+        return result.answer
     }
+}
+
+private struct RemoteAssistantRequest: Encodable {
+    let messages: [RemoteAssistantMessage]
+    let context: RemoteAssistantContext
+}
+
+private struct RemoteAssistantMessage: Encodable {
+    let role: String
+    let text: String
+}
+
+private struct RemoteAssistantResponse: Decodable {
+    let answer: String
+}
+
+private struct RemoteAssistantContext: Encodable {
+    let generatedAt: String
+    let timezone: String
+    let verifiedMetrics: [RemoteGroundedMetric]
+    let entries: [RemoteContextEntry]
+    let lists: [RemoteContextList]
+    let trackers: [RemoteContextTracker]
+    let money: RemoteMoneyContext
+    let agenda: [String]
+}
+
+private struct RemoteGroundedMetric: Encodable {
+    let name: String
+    let value: Double
+    let unit: String
+    let period: String
+    let source: String
+}
+
+private struct RemoteContextEntry: Encodable {
+    let summary: String
+}
+
+private struct RemoteContextList: Encodable {
+    let name: String
+    let count: Int
+}
+
+private struct RemoteContextTracker: Encodable {
+    let name: String
+    let count: Int
+}
+
+private struct RemoteMoneyContext: Encodable {
+    let currency: String
+    let spending: Double
+    let period: String
+}
+
+private enum RemoteAssistantError: Error {
+    case invalidResponse
 }
