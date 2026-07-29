@@ -1364,9 +1364,34 @@ export default function SakhyaWebApp() {
             </div>
             <div className="privacy-line"><Lock size={13} /> Your key stays on the server. AI requests are not stored by Sakhya.</div>
             <form className="chat-composer" onSubmit={(event) => { event.preventDefault(); sendMessage(); }}>
-              <textarea value={chatInput} onChange={(event) => setChatInput(event.target.value)} placeholder="Ask about your day…" rows={1} />
-              <button type="button" className={isListening ? "recording" : ""} onClick={() => toggleListening("chat")}><Mic size={17} /></button>
-              <button className="send-button" disabled={!chatInput.trim() || assistantThinking}><Send size={16} /></button>
+              <textarea
+                value={chatInput}
+                onChange={(event) => setChatInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    if (chatInput.trim() && !assistantThinking) sendMessage();
+                  }
+                }}
+                placeholder="Ask about your day…"
+                rows={1}
+              />
+              <button
+                type="button"
+                className={isListening ? "recording" : ""}
+                onClick={() => toggleListening("chat")}
+                aria-label={isListening ? "Stop voice input" : "Start voice input"}
+              >
+                <Mic size={17} />
+              </button>
+              <button
+                type="submit"
+                className="send-button"
+                aria-label="Send message"
+                disabled={!chatInput.trim() || assistantThinking}
+              >
+                <Send size={16} />
+              </button>
             </form>
           </section>
         </div>
