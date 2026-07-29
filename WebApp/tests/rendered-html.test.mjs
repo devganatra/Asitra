@@ -119,6 +119,9 @@ test("ships the secured product source without starter artifacts", async () => {
   assert.match(client, /\/api\/state/);
   assert.match(client, /toggleListening/);
   assert.match(client, /sendMessage/);
+  assert.match(client, /event\.key === "Enter" && !event\.shiftKey/);
+  assert.match(client, /aria-label="Send message"/);
+  assert.match(client, /"Stop voice input" : "Start voice input"/);
   assert.match(client, /Everyday · Terra/);
   assert.match(client, /\/api\/assistant/);
   assert.match(client, /exportData/);

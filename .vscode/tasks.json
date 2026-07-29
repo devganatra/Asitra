@@ -1,0 +1,64 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Web: Install dependencies",
+      "type": "shell",
+      "command": "npm ci",
+      "options": {
+        "cwd": "${workspaceFolder}/WebApp"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Web: Run",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": {
+        "cwd": "${workspaceFolder}/WebApp"
+      },
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Web: Build",
+      "type": "shell",
+      "command": "npm run build",
+      "options": {
+        "cwd": "${workspaceFolder}/WebApp"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Web: Test",
+      "type": "shell",
+      "command": "npm test",
+      "options": {
+        "cwd": "${workspaceFolder}/WebApp"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Mac: Build",
+      "type": "shell",
+      "command": "xcodebuild -project AppleMobileApp.xcodeproj -scheme AppleMobileApp -configuration Debug -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "DEVELOPER_DIR": "/Applications/Xcode.app/Contents/Developer"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Verify: Web and Mac",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "Web: Build",
+        "Web: Test",
+        "Mac: Build"
+      ],
+      "problemMatcher": []
+    }
+  ]
+}
