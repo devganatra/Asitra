@@ -12,6 +12,16 @@ const ENTRY_KINDS = new Set([
   "note",
 ]);
 const TRACKER_FAMILIES = new Set(["Health", "Habits", "Learning & Media", "Mindset"]);
+const MONEY_ENTRY_KINDS = new Set(["income", "saving", "investment"]);
+const BALANCE_SHEET_CATEGORIES = new Set([
+  "cash",
+  "investments",
+  "property",
+  "otherAsset",
+  "creditCard",
+  "loan",
+  "otherLiability",
+]);
 const ATTACHMENT_PATH = /^\/api\/attachments\/[0-9a-f-]{36}$/i;
 const LEGACY_IMAGE = /^data:image\/(?:jpeg|png|webp);base64,/i;
 
@@ -81,6 +91,36 @@ export function validatePersistedState(value: unknown, options: ValidationOption
     };
   });
 
+  const moneyEntries = optionalArray(source.moneyEntries, "money entries", 5_000).map((item) => {
+    const entry = record(item, "money entry");
+    const kind = shortString(entry.kind, "money entry type", 32);
+    if (!MONEY_ENTRY_KINDS.has(kind)) throw new Error("Unknown money entry type.");
+    const date = shortString(entry.date, "money entry date", 64);
+    if (!Number.isFinite(Date.parse(date))) throw new Error("A money entry has an invalid date.");
+    return {
+      id: identifier(entry.id),
+      kind,
+      amount: finiteNumber(entry.amount, "money entry amount", 0, 1_000_000_000),
+      date,
+      note: optionalString(entry.note, "money entry note", 1_000),
+    };
+  });
+
+  const balanceSheetItems = optionalArray(source.balanceSheetItems, "balance sheet items", 1_000).map((item) => {
+    const balanceItem = record(item, "balance sheet item");
+    const category = shortString(balanceItem.category, "balance sheet category", 32);
+    if (!BALANCE_SHEET_CATEGORIES.has(category)) throw new Error("Unknown balance sheet category.");
+    const updatedAt = shortString(balanceItem.updatedAt, "balance update date", 64);
+    if (!Number.isFinite(Date.parse(updatedAt))) throw new Error("A balance has an invalid update date.");
+    return {
+      id: identifier(balanceItem.id),
+      name: shortString(balanceItem.name, "balance name", 200),
+      balance: finiteNumber(balanceItem.balance, "balance", 0, 1_000_000_000),
+      category,
+      updatedAt,
+    };
+  });
+
   return {
     entries,
     lists,
@@ -88,6 +128,8 @@ export function validatePersistedState(value: unknown, options: ValidationOption
     monthlyBudget: finiteNumber(source.monthlyBudget, "monthly budget", 0, 1_000_000_000),
     savingsTarget: finiteNumber(source.savingsTarget, "savings target", 0, 1_000_000_000),
     savingsCurrent: finiteNumber(source.savingsCurrent, "savings amount", 0, 1_000_000_000),
+    moneyEntries,
+    balanceSheetItems,
   };
 }
 
@@ -103,6 +145,11 @@ function array(value: unknown, label: string, maximum: number): unknown[] {
     throw new Error(`${label} is invalid or too large.`);
   }
   return value;
+}
+
+function optionalArray(value: unknown, label: string, maximum: number): unknown[] {
+  if (value == null) return [];
+  return array(value, label, maximum);
 }
 
 function shortString(value: unknown, label: string, maximum: number): string {

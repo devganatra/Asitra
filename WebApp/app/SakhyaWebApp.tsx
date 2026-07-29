@@ -98,6 +98,31 @@ type ChatMessage = {
   text: string;
 };
 
+type MoneyEntry = {
+  id: string;
+  kind: "income" | "saving" | "investment";
+  amount: number;
+  date: string;
+  note?: string;
+};
+
+type BalanceSheetCategory =
+  | "cash"
+  | "investments"
+  | "property"
+  | "otherAsset"
+  | "creditCard"
+  | "loan"
+  | "otherLiability";
+
+type BalanceSheetItem = {
+  id: string;
+  name: string;
+  balance: number;
+  category: BalanceSheetCategory;
+  updatedAt: string;
+};
+
 type PersistedState = {
   entries: Entry[];
   lists: LifeList[];
@@ -105,6 +130,8 @@ type PersistedState = {
   monthlyBudget: number;
   savingsTarget: number;
   savingsCurrent: number;
+  moneyEntries: MoneyEntry[];
+  balanceSheetItems: BalanceSheetItem[];
 };
 
 const LEGACY_STORAGE_KEY = "sakhya-web-v1";
@@ -186,6 +213,16 @@ const seedState: PersistedState = {
   monthlyBudget: 1200,
   savingsTarget: 3000,
   savingsCurrent: 1840,
+  moneyEntries: [
+    { id: "m1", kind: "income", amount: 2500, date: atDayOffset(-5, 9), note: "Monthly income" },
+    { id: "m2", kind: "saving", amount: 300, date: atDayOffset(-4, 10), note: "Future freedom" },
+    { id: "m3", kind: "investment", amount: 200, date: atDayOffset(-3, 10), note: "Monthly investment" },
+  ],
+  balanceSheetItems: [
+    { id: "b1", name: "Main bank", balance: 7200, category: "cash", updatedAt: atDayOffset(0, 8) },
+    { id: "b2", name: "Investment account", balance: 12400, category: "investments", updatedAt: atDayOffset(0, 8) },
+    { id: "b3", name: "Credit card", balance: 450, category: "creditCard", updatedAt: atDayOffset(0, 8) },
+  ],
 };
 
 const navItems: { id: Section; label: string; icon: typeof Home }[] = [
@@ -230,6 +267,23 @@ function minutesLabel(minutes?: number) {
   const rest = minutes % 60;
   if (!hours) return `${rest} min`;
   return rest ? `${hours}h ${rest}m` : `${hours}h`;
+}
+
+function isAssetCategory(category: BalanceSheetCategory) {
+  return ["cash", "investments", "property", "otherAsset"].includes(category);
+}
+
+function balanceCategoryLabel(category: BalanceSheetCategory) {
+  const labels: Record<BalanceSheetCategory, string> = {
+    cash: "Cash & bank",
+    investments: "Investments",
+    property: "Property & valuables",
+    otherAsset: "Other asset",
+    creditCard: "Credit card",
+    loan: "Loan",
+    otherLiability: "Other debt",
+  };
+  return labels[category];
 }
 
 function parseCapture(text: string): Omit<Entry, "id" | "timestamp"> {
@@ -300,6 +354,7 @@ export default function SakhyaWebApp() {
   const [selectedListId, setSelectedListId] = useState("l1");
   const [newListItem, setNewListItem] = useState("");
   const [trackerFamily, setTrackerFamily] = useState<TrackerFamily>("Health");
+  const [moneyView, setMoneyView] = useState<"overview" | "month">("overview");
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [assistantThinking, setAssistantThinking] = useState(false);
@@ -425,6 +480,27 @@ export default function SakhyaWebApp() {
     });
   }, [state.entries]);
   const monthSpent = monthEntries.reduce((sum, entry) => sum + (entry.amount ?? 0), 0);
+  const monthMoneyEntries = useMemo(() => {
+    const now = new Date();
+    return state.moneyEntries.filter((entry) => {
+      const date = new Date(entry.date);
+      return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+    });
+  }, [state.moneyEntries]);
+  const monthIncome = monthMoneyEntries
+    .filter((entry) => entry.kind === "income")
+    .reduce((sum, entry) => sum + entry.amount, 0);
+  const monthSaved = monthMoneyEntries
+    .filter((entry) => entry.kind === "saving")
+    .reduce((sum, entry) => sum + entry.amount, 0);
+  const monthInvested = monthMoneyEntries
+    .filter((entry) => entry.kind === "investment")
+    .reduce((sum, entry) => sum + entry.amount, 0);
+  const assets = state.balanceSheetItems.filter((item) => isAssetCategory(item.category));
+  const liabilities = state.balanceSheetItems.filter((item) => !isAssetCategory(item.category));
+  const totalAssets = assets.reduce((sum, item) => sum + item.balance, 0);
+  const totalLiabilities = liabilities.reduce((sum, item) => sum + item.balance, 0);
+  const netWorth = totalAssets - totalLiabilities;
   const weekActivity = weekEntries
     .filter((entry) => entry.kind === "movement")
     .reduce((sum, entry) => sum + (entry.minutes ?? 0), 0);
@@ -705,6 +781,57 @@ export default function SakhyaWebApp() {
     }));
   }
 
+  function recordMoneyEntry(kind: MoneyEntry["kind"]) {
+    const label = kind === "income" ? "income" : kind === "saving" ? "saving" : "investment";
+    const rawAmount = window.prompt(`How much ${label} would you like to record in EUR?`);
+    const amount = Number(rawAmount?.replace(",", "."));
+    if (!Number.isFinite(amount) || amount <= 0) return;
+    const note = window.prompt("Optional source or note")?.trim();
+    setState((current) => ({
+      ...current,
+      savingsCurrent: kind === "saving" ? current.savingsCurrent + amount : current.savingsCurrent,
+      moneyEntries: [
+        ...current.moneyEntries,
+        { id: uid(), kind, amount, date: new Date().toISOString(), note },
+      ],
+    }));
+  }
+
+  function editBalanceSheetItem(existing?: BalanceSheetItem, asset = true) {
+    const name = window.prompt("Account, asset or debt name", existing?.name ?? "");
+    if (!name?.trim()) return;
+    const rawAmount = window.prompt("Current balance in EUR", existing ? String(existing.balance) : "");
+    const balance = Number(rawAmount?.replace(",", "."));
+    if (!Number.isFinite(balance) || balance < 0) return;
+
+    let category = existing?.category;
+    if (!category) {
+      const choices = asset
+        ? "cash, investments, property, otherAsset"
+        : "creditCard, loan, otherLiability";
+      const requested = window.prompt(`Type one of: ${choices}`, asset ? "cash" : "creditCard");
+      const allowed = asset
+        ? new Set<BalanceSheetCategory>(["cash", "investments", "property", "otherAsset"])
+        : new Set<BalanceSheetCategory>(["creditCard", "loan", "otherLiability"]);
+      if (!requested || !allowed.has(requested as BalanceSheetCategory)) return;
+      category = requested as BalanceSheetCategory;
+    }
+
+    const next: BalanceSheetItem = {
+      id: existing?.id ?? uid(),
+      name: name.trim(),
+      balance,
+      category,
+      updatedAt: new Date().toISOString(),
+    };
+    setState((current) => ({
+      ...current,
+      balanceSheetItems: existing
+        ? current.balanceSheetItems.map((item) => (item.id === existing.id ? next : item))
+        : [...current.balanceSheetItems, next],
+    }));
+  }
+
   async function sendMessage(text = chatInput) {
     const question = text.trim();
     if (!question || assistantThinking) return;
@@ -764,7 +891,7 @@ export default function SakhyaWebApp() {
     if (/(today|day|schedule)/.test(lower)) {
       answer = `Today has ${dayEntries.length} recorded moments, ${openItems} open list items, and ${minutesLabel(dayEntries.filter((entry) => entry.kind === "movement").reduce((sum, entry) => sum + (entry.minutes ?? 0), 0)) || "no movement yet"}.`;
     } else if (/(spend|money|expense|budget)/.test(lower)) {
-      answer = `You have spent ${currency.format(monthSpent)} this month, leaving ${currency.format(Math.max(state.monthlyBudget - monthSpent, 0))} in your plan.`;
+      answer = `You received ${currency.format(monthIncome)} and spent ${currency.format(monthSpent)} this month. Your recorded net worth is ${currency.format(netWorth)}, and ${currency.format(Math.max(state.monthlyBudget - monthSpent, 0))} remains in your spending plan.`;
     } else if (/(balance|work|personal)/.test(lower)) {
       answer = `Your seven-day balance score is ${balanceScore}/100. You logged ${minutesLabel(weekWork)} of work and about ${minutesLabel(weekPersonal)} of personal time. ${todayInsight}`;
     } else if (/(list|open|attention|task)/.test(lower)) {
@@ -986,6 +1113,10 @@ export default function SakhyaWebApp() {
 
     if (section === "money") {
       const remaining = Math.max(state.monthlyBudget - monthSpent, 0);
+      const surplus = monthIncome - monthSpent;
+      const unallocated = surplus - monthSaved - monthInvested;
+      const netCashMovement = monthIncome - monthSpent - monthInvested;
+      const allocationBalanced = Math.abs(unallocated) < 0.01;
       const categoryGroups = [
         { label: "Everyday", value: monthEntries.filter((e) => e.amount && e.amount < 40).reduce((s, e) => s + (e.amount ?? 0), 0), color: "#df9966" },
         { label: "Living", value: monthEntries.filter((e) => e.amount && e.amount >= 40).reduce((s, e) => s + (e.amount ?? 0), 0), color: "#7d8d79" },
@@ -995,50 +1126,148 @@ export default function SakhyaWebApp() {
         <div className="page-shell">
           <PageHeader
             eyebrow="Money, made understandable"
-            title="Your month"
-            description="Know what is safe to spend, save toward something meaningful, and plan trips without finance jargon."
-            action={<button className="primary-button" onClick={addExpense}><Plus size={17} /> Add expense</button>}
+            title="Your money"
+            description="Understand your monthly movement, what you own and owe, and where every euro of surplus is going."
+            action={
+              moneyView === "overview"
+                ? <button className="primary-button" onClick={() => recordMoneyEntry("income")}><Plus size={17} /> Add income</button>
+                : <button className="primary-button" onClick={addExpense}><Plus size={17} /> Add expense</button>
+            }
           />
-          <div className="money-hero">
-            <div>
-              <span className="eyebrow">Available this month</span>
-              <strong>{currency.format(remaining)}</strong>
-              <p>{currency.format(monthSpent)} used from a {currency.format(state.monthlyBudget)} plan</p>
-            </div>
-            <div className="budget-ring" style={{ "--progress": `${Math.min((monthSpent / state.monthlyBudget) * 100, 100) * 3.6}deg` } as React.CSSProperties}>
-              <span>{Math.round((monthSpent / state.monthlyBudget) * 100)}%</span>
-            </div>
+          <div className="segment-row money-segments">
+            <button className={moneyView === "overview" ? "active" : ""} onClick={() => setMoneyView("overview")}>Money position</button>
+            <button className={moneyView === "month" ? "active" : ""} onClick={() => setMoneyView("month")}>Spending & goals</button>
           </div>
-          <div className="money-grid">
-            <section className="panel spending-panel">
-              <div className="section-heading"><div><span className="eyebrow">Where it went</span><h2>Spending</h2></div><Search size={18} /></div>
-              {categoryGroups.map((group) => (
-                <div className="money-row" key={group.label}>
-                  <span className="category-mark" style={{ background: group.color }} />
-                  <span>{group.label}</span>
-                  <div className="money-bar"><i style={{ width: `${Math.min((group.value / Math.max(monthSpent, 1)) * 100, 100)}%`, background: group.color }} /></div>
-                  <strong>{currency.format(group.value)}</strong>
+          {moneyView === "overview" ? (
+            <>
+              <section className="money-position-hero">
+                <div>
+                  <span className="eyebrow">Your money position</span>
+                  <strong>{currency.format(netWorth)}</strong>
+                  <p>{currency.format(totalAssets)} owned − {currency.format(totalLiabilities)} owed</p>
                 </div>
-              ))}
-            </section>
-            <section className="panel savings-panel">
-              <div className="section-heading"><div><span className="eyebrow">Saving plan</span><h2>Future freedom</h2></div><Target size={19} /></div>
-              <strong>{currency.format(state.savingsCurrent)}</strong>
-              <p>of {currency.format(state.savingsTarget)}</p>
-              <div className="progress-line large"><span style={{ width: `${(state.savingsCurrent / state.savingsTarget) * 100}%` }} /></div>
-              <button
-                className="secondary-button full"
-                onClick={() => setState((current) => ({ ...current, savingsCurrent: current.savingsCurrent + 50 }))}
-              >
-                <Plus size={16} /> Add €50 contribution
-              </button>
-            </section>
-            <section className="panel trip-panel">
-              <div className="trip-visual"><span>SEPT 12–15</span><strong>Lisbon</strong></div>
-              <div><span className="eyebrow">Trip plan</span><h2>€420 left</h2><p>€280 spent from €700</p></div>
-              <button className="icon-button"><ArrowRight size={18} /></button>
-            </section>
-          </div>
+                <div className="position-pulse">
+                  <small>This month</small>
+                  <strong>{netCashMovement >= 0 ? "+" : "−"}{currency.format(Math.abs(netCashMovement))}</strong>
+                  <span>cash movement</span>
+                </div>
+              </section>
+              <div className="statement-grid">
+                <section className="panel statement-card">
+                  <div className="statement-title">
+                    <div><span className="eyebrow">Movement</span><h2>Cash flow</h2><p>What came in and left usable cash.</p></div>
+                    <WalletCards size={20} />
+                  </div>
+                  <div className="statement-line"><span>Income</span><strong className="positive">+{currency.format(monthIncome)}</strong></div>
+                  <div className="statement-line"><span>Everyday spending</span><strong>−{currency.format(monthSpent)}</strong></div>
+                  <div className="statement-line"><span>Moved to investments</span><strong>−{currency.format(monthInvested)}</strong></div>
+                  <div className="statement-line total"><span>Net cash movement</span><strong>{currency.format(netCashMovement)}</strong></div>
+                  {monthSaved > 0 && <p className="statement-note">{currency.format(monthSaved)} earmarked for goals remains cash until it is transferred.</p>}
+                  <div className="statement-actions">
+                    <button onClick={() => recordMoneyEntry("income")}>Add income</button>
+                    <button onClick={() => recordMoneyEntry("investment")}>Add investment</button>
+                  </div>
+                </section>
+
+                <section className="panel statement-card">
+                  <div className="statement-title">
+                    <div><span className="eyebrow">Zero-based allocation</span><h2>Personal P&amp;L</h2><p>Give every euro of surplus a purpose.</p></div>
+                    <CircleDollarSign size={20} />
+                  </div>
+                  <div className="statement-line"><span>Income</span><strong>{currency.format(monthIncome)}</strong></div>
+                  <div className="statement-line"><span>Spent on life</span><strong>−{currency.format(monthSpent)}</strong></div>
+                  <div className="statement-line total"><span>Surplus after spending</span><strong>{currency.format(surplus)}</strong></div>
+                  <div className="statement-line"><span>Saved</span><strong>{currency.format(monthSaved)}</strong></div>
+                  <div className="statement-line"><span>Invested</span><strong>{currency.format(monthInvested)}</strong></div>
+                  <div className="statement-line total"><span>{unallocated >= 0 ? "Still to assign" : "Used from reserves"}</span><strong>{currency.format(Math.abs(unallocated))}</strong></div>
+                  <p className={`allocation-status ${allocationBalanced ? "balanced" : unallocated < 0 ? "over" : ""}`}>
+                    {allocationBalanced
+                      ? "Balanced: income is fully spent, saved or invested."
+                      : unallocated > 0
+                        ? "Assign the remainder to saving or investing to reach zero."
+                        : "This month used existing cash or debt."}
+                  </p>
+                  <div className="statement-actions">
+                    <button onClick={() => recordMoneyEntry("saving")}>Add saving</button>
+                    <button onClick={() => recordMoneyEntry("investment")}>Add investment</button>
+                  </div>
+                </section>
+
+                <section className="panel statement-card balance-statement">
+                  <div className="statement-title">
+                    <div><span className="eyebrow">Snapshot</span><h2>Balance sheet</h2><p>What you own minus what you owe.</p></div>
+                    <BarChart3 size={20} />
+                  </div>
+                  <span className="statement-group">Assets</span>
+                  {assets.map((item) => (
+                    <button className="balance-item-row" key={item.id} onClick={() => editBalanceSheetItem(item)}>
+                      <span><strong>{item.name}</strong><small>{balanceCategoryLabel(item.category)}</small></span>
+                      <b>{currency.format(item.balance)}</b>
+                    </button>
+                  ))}
+                  {!assets.length && <p className="statement-note">No assets recorded yet.</p>}
+                  <div className="statement-line total"><span>Total assets</span><strong>{currency.format(totalAssets)}</strong></div>
+                  <span className="statement-group">Liabilities</span>
+                  {liabilities.map((item) => (
+                    <button className="balance-item-row" key={item.id} onClick={() => editBalanceSheetItem(item)}>
+                      <span><strong>{item.name}</strong><small>{balanceCategoryLabel(item.category)}</small></span>
+                      <b>{currency.format(item.balance)}</b>
+                    </button>
+                  ))}
+                  {!liabilities.length && <p className="statement-note">No debts recorded.</p>}
+                  <div className="statement-line total net-worth-line"><span>Net worth</span><strong>{currency.format(netWorth)}</strong></div>
+                  <div className="statement-actions">
+                    <button onClick={() => editBalanceSheetItem(undefined, true)}>Add asset</button>
+                    <button onClick={() => editBalanceSheetItem(undefined, false)}>Add debt</button>
+                  </div>
+                </section>
+              </div>
+              <div className="native-note wide">
+                <ShieldCheck size={17} />
+                Personal overview only—not formal accounting or financial advice. Saving goals are not counted again as assets unless their account balance is recorded.
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="money-hero">
+                <div>
+                  <span className="eyebrow">Available this month</span>
+                  <strong>{currency.format(remaining)}</strong>
+                  <p>{currency.format(monthSpent)} used from a {currency.format(state.monthlyBudget)} plan</p>
+                </div>
+                <div className="budget-ring" style={{ "--progress": `${Math.min((monthSpent / state.monthlyBudget) * 100, 100) * 3.6}deg` } as React.CSSProperties}>
+                  <span>{Math.round((monthSpent / state.monthlyBudget) * 100)}%</span>
+                </div>
+              </div>
+              <div className="money-grid">
+                <section className="panel spending-panel">
+                  <div className="section-heading"><div><span className="eyebrow">Where it went</span><h2>Spending</h2></div><Search size={18} /></div>
+                  {categoryGroups.map((group) => (
+                    <div className="money-row" key={group.label}>
+                      <span className="category-mark" style={{ background: group.color }} />
+                      <span>{group.label}</span>
+                      <div className="money-bar"><i style={{ width: `${Math.min((group.value / Math.max(monthSpent, 1)) * 100, 100)}%`, background: group.color }} /></div>
+                      <strong>{currency.format(group.value)}</strong>
+                    </div>
+                  ))}
+                </section>
+                <section className="panel savings-panel">
+                  <div className="section-heading"><div><span className="eyebrow">Saving plan</span><h2>Future freedom</h2></div><Target size={19} /></div>
+                  <strong>{currency.format(state.savingsCurrent)}</strong>
+                  <p>of {currency.format(state.savingsTarget)}</p>
+                  <div className="progress-line large"><span style={{ width: `${(state.savingsCurrent / state.savingsTarget) * 100}%` }} /></div>
+                  <button className="secondary-button full" onClick={() => recordMoneyEntry("saving")}>
+                    <Plus size={16} /> Add contribution
+                  </button>
+                </section>
+                <section className="panel trip-panel">
+                  <div className="trip-visual"><span>SEPT 12–15</span><strong>Lisbon</strong></div>
+                  <div><span className="eyebrow">Trip plan</span><h2>€420 left</h2><p>€280 spent from €700</p></div>
+                  <button className="icon-button"><ArrowRight size={18} /></button>
+                </section>
+              </div>
+            </>
+          )}
         </div>
       );
     }

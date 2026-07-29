@@ -40,6 +40,7 @@ For your own device, connect the iPhone or iPad to the Mac, select it as the run
 - Recently Deleted with restore, permanent-delete, keep-iCloud, and delete-everywhere controls
 - Expense amounts and fitness durations roll into automatic totals
 - Dedicated beginner-friendly Money page with monthly spending plans, automatic everyday categories, savings goals with contribution history, and trip-budget tracking
+- Personal money-position overview with monthly cash flow, a zero-based personal P&L allocation view, and an editable balance sheet for assets, liabilities, and net worth
 - Consent-based Apple Wallet financial import through FinanceKit, with duplicate-safe transaction ingestion, merchant-category analysis, and spending totals attributed to each eligible card/account
 - Expenses added from Money or a trip are written back to the shared timeline; savings contributions remain separate from spending totals
 - Reading lists and movie watchlists with planned, in-progress, and completed states

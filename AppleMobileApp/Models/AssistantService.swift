@@ -26,18 +26,19 @@ final class SakhyaAssistant {
     var usesTerra: Bool { account.isConnected }
     var serviceLabel: String { account.isConnected ? "Private · Terra" : "Private · Offline insights" }
 
-    func prepare(model: AppModel) {
+    func prepare(model: AppModel, finance: FinanceWorkspace) {
         guard !didPrepare else { return }
         didPrepare = true
         let snapshot = AssistantSnapshot(
             question: "Give me a useful insight from this week",
             model: model,
+            finance: finance,
             calendarAgenda: model.calendarAgenda(on: .now)
         )
         messages = [AssistantMessage(role: .assistant, text: snapshot.welcomeInsight)]
     }
 
-    func ask(_ rawQuestion: String, model: AppModel) async {
+    func ask(_ rawQuestion: String, model: AppModel, finance: FinanceWorkspace) async {
         let question = rawQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty, !isResponding else { return }
 
@@ -46,6 +47,7 @@ final class SakhyaAssistant {
         let snapshot = AssistantSnapshot(
             question: question,
             model: model,
+            finance: finance,
             calendarAgenda: model.calendarAgenda(on: .now)
         )
         let answer = await AssistantEngine.answer(
@@ -102,9 +104,21 @@ private struct AssistantSnapshot: Sendable {
     let activitySources: [String]
     let sleepSources: [String]
     let spendingSources: [String]
+    let income: Double
+    let saved: Double
+    let invested: Double
+    let assets: Double
+    let liabilities: Double
+    let netWorth: Double
+    let unallocatedSurplus: Double
 
     @MainActor
-    init(question: String, model: AppModel, calendarAgenda: [CalendarAgendaItem]) {
+    init(
+        question: String,
+        model: AppModel,
+        finance: FinanceWorkspace,
+        calendarAgenda: [CalendarAgendaItem]
+    ) {
         let calendar = Calendar.current
         let now = Date.now
         let lowercased = question.lowercased()
@@ -163,6 +177,24 @@ private struct AssistantSnapshot: Sendable {
             },
             fallback: "Sakhya timeline"
         )
+        income = finance.moneyEntries
+            .filter { $0.kind == .income && $0.date >= start && $0.date <= end }
+            .reduce(0) { $0 + $1.amount }
+        invested = finance.moneyEntries
+            .filter { $0.kind == .investment && $0.date >= start && $0.date <= end }
+            .reduce(0) { $0 + $1.amount }
+        saved = finance.savingPlans
+            .flatMap(\.contributions)
+            .filter { $0.date >= start && $0.date <= end }
+            .reduce(0) { $0 + $1.amount }
+        assets = finance.balanceSheetItems
+            .filter(\.category.isAsset)
+            .reduce(0) { $0 + $1.balance }
+        liabilities = finance.balanceSheetItems
+            .filter { !$0.category.isAsset }
+            .reduce(0) { $0 + $1.balance }
+        netWorth = assets - liabilities
+        unallocatedSurplus = income - spending - saved - invested
 
         let listEntries = model.entries.filter { $0.category == .list }
         openListCount = listEntries.filter { !$0.isCompleted }.count
@@ -208,6 +240,11 @@ private struct AssistantSnapshot: Sendable {
             "Period: " + periodLabel,
             "Entries: " + String(entryCount),
             "Spending: " + spendingText,
+            "Income: " + income.formatted(.currency(code: currencyCode)),
+            "Saved: " + saved.formatted(.currency(code: currencyCode)),
+            "Invested: " + invested.formatted(.currency(code: currencyCode)),
+            "Net worth: " + netWorth.formatted(.currency(code: currencyCode)),
+            "Unallocated surplus: " + unallocatedSurplus.formatted(.currency(code: currencyCode)),
             "Active minutes: " + String(activeMinutes),
             "Sleep minutes: " + String(sleepMinutes),
             "Screen minutes: " + String(screenMinutes),
@@ -351,7 +388,18 @@ private struct AssistantSnapshot: Sendable {
                 RemoteContextTracker(name: "Routine check-ins", count: routineCount),
                 RemoteContextTracker(name: "Mindset and journal check-ins", count: journalCount)
             ],
-            money: RemoteMoneyContext(currency: currencyCode, spending: spending, period: periodLabel),
+            money: RemoteMoneyContext(
+                currency: currencyCode,
+                spending: spending,
+                income: income,
+                saved: saved,
+                invested: invested,
+                assets: assets,
+                liabilities: liabilities,
+                netWorth: netWorth,
+                unallocatedSurplus: unallocatedSurplus,
+                period: periodLabel
+            ),
             agenda: todayAgenda
         )
     }
@@ -392,7 +440,13 @@ private enum AssistantEngine {
         }
 
         if contains(query, ["spend", "expense", "money", "cost"]) {
-            return "You logged " + snapshot.spending.formatted(.currency(code: snapshot.currencyCode)) + " in spending for " + period + "."
+            return "For " + period + ", you recorded "
+                + snapshot.income.formatted(.currency(code: snapshot.currencyCode))
+                + " of income and "
+                + snapshot.spending.formatted(.currency(code: snapshot.currencyCode))
+                + " of spending. Recorded net worth is "
+                + snapshot.netWorth.formatted(.currency(code: snapshot.currencyCode))
+                + "."
         }
         if contains(query, ["screen", "phone time", "online time"]) {
             return "You logged " + duration(snapshot.screenMinutes) + " of screen time for " + period + "."
@@ -535,6 +589,13 @@ private struct RemoteContextTracker: Encodable {
 private struct RemoteMoneyContext: Encodable {
     let currency: String
     let spending: Double
+    let income: Double
+    let saved: Double
+    let invested: Double
+    let assets: Double
+    let liabilities: Double
+    let netWorth: Double
+    let unallocatedSurplus: Double
     let period: String
 }
 

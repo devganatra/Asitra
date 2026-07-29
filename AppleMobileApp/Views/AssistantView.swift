@@ -3,6 +3,7 @@ import SwiftUI
 
 struct AssistantChatView: View {
     @Environment(AppModel.self) private var model
+    @Environment(SystemFeatureModel.self) private var systemFeature
     @Environment(\.dismiss) private var dismiss
     @State private var assistant = SakhyaAssistant()
     @State private var question = ""
@@ -13,6 +14,7 @@ struct AssistantChatView: View {
         AssistantSuggestion(title: "My day", prompt: "Tell me about today", icon: "sun.max", tint: .orange),
         AssistantSuggestion(title: "Patterns", prompt: "What stands out in my week?", icon: "sparkles", tint: .purple),
         AssistantSuggestion(title: "Life balance", prompt: "How is my work-life balance?", icon: "circle.lefthalf.filled", tint: .indigo),
+        AssistantSuggestion(title: "Money", prompt: "Explain my money position", icon: "chart.pie", tint: .green),
         AssistantSuggestion(title: "Open items", prompt: "What needs my attention?", icon: "checklist", tint: .mint)
     ]
 
@@ -31,7 +33,7 @@ struct AssistantChatView: View {
             }
         }
         .onAppear {
-            assistant.prepare(model: model)
+            assistant.prepare(model: model, finance: systemFeature.financeWorkspace)
         }
     }
 
@@ -271,7 +273,13 @@ struct AssistantChatView: View {
         guard !value.isEmpty else { return }
         if voiceCapture.isRecording { voiceCapture.stop(discard: true) }
         question = ""
-        Task { await assistant.ask(value, model: model) }
+        Task {
+            await assistant.ask(
+                value,
+                model: model,
+                finance: systemFeature.financeWorkspace
+            )
+        }
     }
 }
 
