@@ -2021,7 +2021,8 @@ h3 {
 }
 
 .edit-modal,
-.settings-modal {
+.settings-modal,
+.money-entry-modal {
   width: min(470px, 100%);
   position: relative;
   z-index: 1;
@@ -2030,6 +2031,238 @@ h3 {
   border-radius: 22px;
   background: #f9faf7;
   box-shadow: var(--shadow);
+}
+
+.money-entry-modal {
+  width: min(620px, 100%);
+  max-height: min(780px, calc(100vh - 40px));
+  overflow: hidden;
+}
+
+.money-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.money-entry-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+  margin: 18px 0;
+  padding: 5px;
+  border-radius: 13px;
+  background: #edf1ec;
+}
+
+.money-entry-tabs button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 9px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.money-entry-tabs button.active {
+  color: var(--sage);
+  background: white;
+  box-shadow: 0 1px 5px rgba(33, 48, 39, 0.08);
+}
+
+.money-entry-form,
+.money-sakhya-form {
+  display: grid;
+  gap: 16px;
+}
+
+.money-entry-form label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.money-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.money-entry-form input,
+.money-entry-form select,
+.money-sakhya-form textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 11px;
+  outline: none;
+  color: var(--ink);
+  background: white;
+}
+
+.money-entry-form input:focus,
+.money-entry-form select:focus,
+.money-sakhya-form textarea:focus {
+  border-color: #7da18a;
+  box-shadow: 0 0 0 3px rgba(111, 143, 123, 0.12);
+}
+
+.money-entry-form .primary-button,
+.money-sakhya-form .primary-button {
+  width: 100%;
+}
+
+.sakhya-entry-prompt {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 14px;
+  border-radius: 13px;
+  color: var(--sage);
+  background: var(--sage-soft);
+}
+
+.sakhya-entry-prompt strong,
+.sakhya-entry-prompt span {
+  display: block;
+}
+
+.sakhya-entry-prompt span {
+  margin-top: 3px;
+  color: #617269;
+  font-size: 10px;
+}
+
+.money-sakhya-form textarea {
+  resize: vertical;
+  min-height: 108px;
+}
+
+.money-parse-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 12px;
+  border: 1px solid #c8decf;
+  border-radius: 11px;
+  color: #376447;
+  background: #edf7f0;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.pdf-import-panel {
+  min-height: 260px;
+}
+
+.pdf-dropzone {
+  min-height: 260px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 28px;
+  border: 1.5px dashed #a9bdb0;
+  border-radius: 16px;
+  color: var(--sage);
+  background: rgba(237, 244, 239, 0.58);
+  cursor: pointer;
+  text-align: center;
+}
+
+.pdf-dropzone span {
+  max-width: 390px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.pdf-dropzone input,
+.pdf-replace input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.pdf-review-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.pdf-review-heading strong,
+.pdf-review-heading span {
+  display: block;
+}
+
+.pdf-review-heading span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.pdf-replace {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--sage);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.pdf-transaction-list {
+  max-height: 390px;
+  overflow-y: auto;
+  margin-bottom: 15px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: white;
+}
+
+.pdf-transaction {
+  min-height: 62px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.pdf-transaction:last-child {
+  border-bottom: 0;
+}
+
+.pdf-transaction > span strong,
+.pdf-transaction > span small {
+  display: block;
+}
+
+.pdf-transaction > span strong {
+  font-size: 11px;
+}
+
+.pdf-transaction > span small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.pdf-transaction > b {
+  font-size: 11px;
+}
+
+.pdf-transaction > b.positive {
+  color: #3f7b53;
 }
 
 .settings-page-grid {
@@ -2443,6 +2676,34 @@ h3 {
     height: 100vh;
     border: 0;
     border-radius: 0;
+  }
+
+  .money-header-actions {
+    width: 100%;
+  }
+
+  .money-header-actions > button {
+    flex: 1;
+  }
+
+  .money-entry-modal {
+    align-self: end;
+    width: 100%;
+    max-height: calc(100vh - 16px);
+    padding: 20px;
+    border-radius: 22px 22px 0 0;
+  }
+
+  .money-form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .money-entry-tabs button {
+    font-size: 10px;
+  }
+
+  .pdf-review-heading {
+    align-items: flex-start;
   }
 }
 

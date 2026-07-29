@@ -1,5 +1,7 @@
 import Charts
+import PDFKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ExpensesView: View {
     @Environment(AppModel.self) private var model
@@ -15,6 +17,9 @@ struct ExpensesView: View {
     @State private var showingWalletRequirements = false
     @State private var moneyEntryKind: PersonalFinanceEntryKind?
     @State private var balanceSheetDraft: BalanceSheetItem?
+    @State private var importingStatement = false
+    @State private var statementImport: StatementImportDraft?
+    @State private var statementImportError: String?
 
     private var currencyCode: String { Locale.current.currency?.identifier ?? "EUR" }
     private var finance: FinanceWorkspace { systemFeature.financeWorkspace }
@@ -117,10 +122,29 @@ struct ExpensesView: View {
         .sheet(item: $balanceSheetDraft) { draft in
             BalanceSheetItemSheet(item: draft) { systemFeature.upsertBalanceSheetItem($0) }
         }
+        .sheet(item: $statementImport) { draft in
+            StatementImportReviewSheet(draft: draft) { transactions in
+                importStatementTransactions(transactions)
+            }
+        }
+        .fileImporter(isPresented: $importingStatement, allowedContentTypes: [.pdf]) { result in
+            readStatement(result)
+        }
         .alert("Apple Wallet connection", isPresented: $showingWalletRequirements) {
             Button("OK", role: .cancel) {}
         } message: {
             Text("Sakhya uses Apple FinanceKit—not unrestricted Apple Pay history. It works on supported iPhones after Apple grants Sakhya the managed FinanceKit entitlement, and you choose which eligible Wallet accounts and date range to share.")
+        }
+        .alert(
+            "Statement could not be imported",
+            isPresented: Binding(
+                get: { statementImportError != nil },
+                set: { if !$0 { statementImportError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { statementImportError = nil }
+        } message: {
+            Text(statementImportError ?? "Try a text-based bank statement PDF.")
         }
     }
 
@@ -135,6 +159,12 @@ struct ExpensesView: View {
             }
             Spacer()
             Button {
+                importingStatement = true
+            } label: {
+                Label("Import PDF", systemImage: "doc.text")
+            }
+            .buttonStyle(.bordered)
+            Button {
                 expenseTripID = nil
                 showingExpense = true
             } label: {
@@ -143,6 +173,75 @@ struct ExpensesView: View {
             .buttonStyle(.borderedProminent)
         }
         .padding()
+    }
+
+    private func readStatement(_ result: Result<URL, Error>) {
+        do {
+            let url = try result.get()
+            let hasAccess = url.startAccessingSecurityScopedResource()
+            defer { if hasAccess { url.stopAccessingSecurityScopedResource() } }
+            let transactions = try StatementPDFParser.parse(url: url)
+            guard !transactions.isEmpty else {
+                throw StatementImportError.noTransactions
+            }
+            statementImport = StatementImportDraft(fileName: url.lastPathComponent, transactions: transactions)
+        } catch {
+            statementImportError = error.localizedDescription
+        }
+    }
+
+    private func importStatementTransactions(_ transactions: [ImportedStatementTransaction]) {
+        let expenseKeys = Set(model.entries.compactMap { entry -> String? in
+            guard entry.category == .expense, let amount = entry.amount else { return nil }
+            return StatementPDFParser.fingerprint(
+                date: entry.timestamp,
+                kind: .expense,
+                amount: amount,
+                title: entry.title
+            )
+        })
+        let incomeKeys = Set(finance.moneyEntries.compactMap { entry -> String? in
+            guard entry.kind == .income else { return nil }
+            return StatementPDFParser.fingerprint(
+                date: entry.date,
+                kind: .income,
+                amount: entry.amount,
+                title: entry.note
+            )
+        })
+
+        for transaction in transactions where transaction.isSelected {
+            let key = StatementPDFParser.fingerprint(
+                date: transaction.date,
+                kind: transaction.kind,
+                amount: transaction.amount,
+                title: transaction.title
+            )
+            switch transaction.kind {
+            case .expense where !expenseKeys.contains(key):
+                model.add(
+                    LogEntry(
+                        timestamp: transaction.date,
+                        category: .expense,
+                        title: transaction.title,
+                        note: "Imported from PDF statement",
+                        amount: transaction.amount,
+                        lifeArea: .personal,
+                        deviceSource: currentDeviceSource
+                    ),
+                    syncToCalendar: false
+                )
+            case .income where !incomeKeys.contains(key):
+                systemFeature.addMoneyEntry(
+                    kind: .income,
+                    amount: transaction.amount,
+                    date: transaction.date,
+                    note: transaction.title
+                )
+            default:
+                break
+            }
+        }
     }
 
     private var positionOverview: some View {
@@ -864,6 +963,220 @@ private struct CardExpenseTotal: Identifiable {
     let currencyCode: String
     let amount: Double
     let transactionCount: Int
+}
+
+private enum ImportedStatementKind: String, Sendable {
+    case expense
+    case income
+}
+
+private struct ImportedStatementTransaction: Identifiable, Sendable {
+    let id: UUID
+    let kind: ImportedStatementKind
+    let title: String
+    let amount: Double
+    let date: Date
+    var isSelected: Bool
+}
+
+private struct StatementImportDraft: Identifiable, Sendable {
+    let id = UUID()
+    let fileName: String
+    let transactions: [ImportedStatementTransaction]
+}
+
+private enum StatementImportError: LocalizedError {
+    case unreadablePDF
+    case noTransactions
+
+    var errorDescription: String? {
+        switch self {
+        case .unreadablePDF:
+            "This PDF could not be read. Try an original statement rather than a scanned image."
+        case .noTransactions:
+            "No dated transactions with amounts were found. Try a text-based bank statement PDF."
+        }
+    }
+}
+
+private enum StatementPDFParser {
+    private static let datePattern = #"\b(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?\b"#
+    private static let amountPattern = #"([+-]?\s*(?:\d{1,3}(?:[.\s]\d{3})*|\d+)[,.]\d{2})\s*(?:€|EUR)?\s*([+-])?"#
+
+    static func parse(url: URL, now: Date = .now) throws -> [ImportedStatementTransaction] {
+        guard let document = PDFDocument(url: url), let text = document.string else {
+            throw StatementImportError.unreadablePDF
+        }
+        let dateRegex = try NSRegularExpression(pattern: datePattern)
+        let amountRegex = try NSRegularExpression(pattern: amountPattern, options: [.caseInsensitive])
+        var transactions: [ImportedStatementTransaction] = []
+        var seen = Set<String>()
+
+        for rawLine in text.components(separatedBy: .newlines) {
+            let line = rawLine.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !line.isEmpty,
+                  line.range(
+                    of: #"\b(opening|closing|available|new)\s+balance\b"#,
+                    options: [.regularExpression, .caseInsensitive]
+                  ) == nil
+            else { continue }
+
+            let range = NSRange(line.startIndex..., in: line)
+            guard let dateMatch = dateRegex.firstMatch(in: line, range: range),
+                  let date = parseDate(dateMatch, in: line, now: now)
+            else { continue }
+            let amountMatches = amountRegex.matches(in: line, range: range)
+            guard let amountMatch = amountMatches.last,
+                  let rawAmountRange = Range(amountMatch.range(at: 1), in: line)
+            else { continue }
+
+            let rawAmount = String(line[rawAmountRange])
+            guard let amount = localizedAmount(rawAmount), amount > 0, amount <= 1_000_000_000 else {
+                continue
+            }
+            let suffix = amountMatch.range(at: 2).location != NSNotFound
+                ? (Range(amountMatch.range(at: 2), in: line).map { String(line[$0]) } ?? "")
+                : ""
+            let signed = rawAmount.replacingOccurrences(of: " ", with: "") + suffix
+            let explicitlyPositive = signed.hasPrefix("+") ||
+                line.range(of: #"\bcredit\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+            let explicitlyNegative = signed.hasPrefix("-") || signed.hasSuffix("-")
+            let kind: ImportedStatementKind = explicitlyPositive && !explicitlyNegative ? .income : .expense
+
+            let dateText = Range(dateMatch.range, in: line).map { String(line[$0]) } ?? ""
+            let amountText = Range(amountMatch.range, in: line).map { String(line[$0]) } ?? rawAmount
+            let title = line
+                .replacingOccurrences(of: dateText, with: "")
+                .replacingOccurrences(of: amountText, with: "")
+                .replacingOccurrences(of: #"\b(?:EUR|€)\b"#, with: "", options: [.regularExpression, .caseInsensitive])
+                .replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
+                .trimmingCharacters(in: CharacterSet(charactersIn: " |:;,-"))
+            let safeTitle = String((title.isEmpty ? "Statement transaction" : title).prefix(160))
+            let key = fingerprint(date: date, kind: kind, amount: amount, title: safeTitle)
+            guard seen.insert(key).inserted else { continue }
+            transactions.append(
+                ImportedStatementTransaction(
+                    id: UUID(),
+                    kind: kind,
+                    title: safeTitle,
+                    amount: amount,
+                    date: date,
+                    isSelected: true
+                )
+            )
+            if transactions.count == 500 { break }
+        }
+        return transactions
+    }
+
+    static func fingerprint(
+        date: Date,
+        kind: ImportedStatementKind,
+        amount: Double,
+        title: String
+    ) -> String {
+        let parts = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        let day = String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+        return "\(day)|\(kind.rawValue)|\(String(format: "%.2f", amount))|\(title.lowercased())"
+    }
+
+    private static func parseDate(_ match: NSTextCheckingResult, in line: String, now: Date) -> Date? {
+        func number(at index: Int) -> Int? {
+            guard match.range(at: index).location != NSNotFound,
+                  let range = Range(match.range(at: index), in: line)
+            else { return nil }
+            return Int(line[range])
+        }
+        guard let day = number(at: 1), let month = number(at: 2) else { return nil }
+        var year = number(at: 3) ?? Calendar.current.component(.year, from: now)
+        if year < 100 { year += year < 70 ? 2_000 : 1_900 }
+        if number(at: 3) == nil,
+           month > Calendar.current.component(.month, from: now) + 1 {
+            year -= 1
+        }
+        return Calendar.current.date(from: DateComponents(year: year, month: month, day: day, hour: 12))
+    }
+
+    private static func localizedAmount(_ raw: String) -> Double? {
+        let compact = raw.replacingOccurrences(of: " ", with: "")
+        let comma = compact.lastIndex(of: ",")
+        let dot = compact.lastIndex(of: ".")
+        let separator: String.Index?
+        switch (comma, dot) {
+        case let (comma?, dot?):
+            separator = comma > dot ? comma : dot
+        case let (comma?, nil):
+            separator = comma
+        case let (nil, dot?):
+            separator = dot
+        case (nil, nil):
+            separator = nil
+        }
+        guard let separator else { return nil }
+        let integer = compact[..<separator].filter { $0.isNumber || $0 == "-" || $0 == "+" }
+        let decimal = compact[compact.index(after: separator)...].filter(\.isNumber)
+        guard decimal.count == 2 else { return nil }
+        return abs(Double("\(integer).\(decimal)") ?? 0)
+    }
+}
+
+private struct StatementImportReviewSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var transactions: [ImportedStatementTransaction]
+    let fileName: String
+    let onImport: ([ImportedStatementTransaction]) -> Void
+
+    init(draft: StatementImportDraft, onImport: @escaping ([ImportedStatementTransaction]) -> Void) {
+        _transactions = State(initialValue: draft.transactions)
+        fileName = draft.fileName
+        self.onImport = onImport
+    }
+
+    private var selectedCount: Int { transactions.filter(\.isSelected).count }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach($transactions) { $transaction in
+                        Toggle(isOn: $transaction.isSelected) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(transaction.title)
+                                    Text("\(transaction.date.formatted(date: .abbreviated, time: .omitted)) · \(transaction.kind.rawValue.capitalized)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Text(transaction.amount.formatted(.currency(code: Locale.current.currency?.identifier ?? "EUR")))
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(transaction.kind == .income ? .green : .primary)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("\(selectedCount) of \(transactions.count) selected")
+                } footer: {
+                    Text("Review the detected rows. Nothing is saved until you tap Import.")
+                }
+            }
+            .navigationTitle(fileName)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Import") {
+                        onImport(transactions)
+                        dismiss()
+                    }
+                    .disabled(selectedCount == 0)
+                }
+            }
+        }
+        .frame(minWidth: 520, minHeight: 520)
+    }
 }
 
 private struct MonthlyBudgetSheet: View {
