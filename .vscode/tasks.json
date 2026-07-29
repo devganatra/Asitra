@@ -41,7 +41,7 @@
     {
       "label": "Mac: Build",
       "type": "shell",
-      "command": "xcodebuild -project AppleMobileApp.xcodeproj -scheme AppleMobileApp -configuration Debug -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build",
+      "command": "xcodebuild -project AppleMobileApp.xcodeproj -scheme AppleMobileApp -configuration Debug -destination 'platform=macOS' build",
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
