@@ -72,6 +72,41 @@ test("rejects unauthenticated state access", async () => {
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
 });
 
+test("rejects unauthenticated assistant access", async () => {
+  const response = await fetch(`${origin}/api/assistant`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      origin,
+      "x-sakhya-request": "1",
+    },
+    body: JSON.stringify({
+      model: "gpt-5.6-terra",
+      messages: [{ role: "user", text: "Tell me about today" }],
+    }),
+  });
+  assert.equal(response.status, 401);
+  assert.match(response.headers.get("cache-control") ?? "", /no-store/);
+});
+
+test("keeps the model service disabled when its server secret is absent", async () => {
+  const response = await fetch(`${origin}/api/assistant`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      origin,
+      "oai-authenticated-user-email": "security-test@example.com",
+      "x-sakhya-request": "1",
+    },
+    body: JSON.stringify({
+      model: "gpt-5.6-terra",
+      messages: [{ role: "user", text: "Tell me about today" }],
+    }),
+  });
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).code, "AI_NOT_CONFIGURED");
+});
+
 test("ships the secured product source without starter artifacts", async () => {
   const [css, page, client, layout, worker, packageJson] = await Promise.all([
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
@@ -86,6 +121,8 @@ test("ships the secured product source without starter artifacts", async () => {
   assert.match(client, /\/api\/state/);
   assert.match(client, /toggleListening/);
   assert.match(client, /sendMessage/);
+  assert.match(client, /gpt-5\.6-terra/);
+  assert.match(client, /\/api\/assistant/);
   assert.match(client, /exportData/);
   assert.match(client, /validatePersistedState/);
   assert.match(client, /Remove the old plaintext browser copy/);

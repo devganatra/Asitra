@@ -97,6 +97,14 @@ type ChatMessage = {
   text: string;
 };
 
+type AIModel = "gpt-5.6-luna" | "gpt-5.6-terra" | "gpt-5.6-sol";
+
+const AI_MODELS: { id: AIModel; label: string; detail: string }[] = [
+  { id: "gpt-5.6-terra", label: "Everyday · Terra", detail: "Recommended" },
+  { id: "gpt-5.6-luna", label: "Quick · Luna", detail: "Fastest" },
+  { id: "gpt-5.6-sol", label: "Deep · Sol", detail: "Hard questions" },
+];
+
 type PersistedState = {
   entries: Entry[];
   lists: LifeList[];
@@ -301,6 +309,8 @@ export default function SakhyaWebApp() {
   const [trackerFamily, setTrackerFamily] = useState<TrackerFamily>("Health");
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [selectedAIModel, setSelectedAIModel] = useState<AIModel>("gpt-5.6-terra");
+  const [assistantThinking, setAssistantThinking] = useState(false);
   const [notice, setNotice] = useState<string>();
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -703,9 +713,61 @@ export default function SakhyaWebApp() {
     }));
   }
 
-  function sendMessage(text = chatInput) {
+  async function sendMessage(text = chatInput) {
     const question = text.trim();
-    if (!question) return;
+    if (!question || assistantThinking) return;
+    const userMessage: ChatMessage = { id: uid(), role: "user", text: question };
+    const conversation = [...messages, userMessage].slice(-12);
+    setMessages((current) => [...current, userMessage]);
+    setChatInput("");
+    setAssistantThinking(true);
+
+    try {
+      const response = await fetch("/api/assistant", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "content-type": "application/json",
+          "x-sakhya-request": "1",
+        },
+        body: JSON.stringify({
+          model: selectedAIModel,
+          messages: conversation.map(({ role, text }) => ({ role, text })),
+        }),
+      });
+      const result = (await response.json()) as {
+        answer?: string;
+        code?: string;
+        error?: string;
+      };
+      if (!response.ok || !result.answer) {
+        if (result.code === "AI_NOT_CONFIGURED") {
+          setNotice("Terra needs an OpenAI API key. Showing Sakhya’s local insight instead.");
+        } else {
+          setNotice(result.error ?? "Sakhya AI is temporarily unavailable.");
+        }
+        throw new Error(result.error ?? "AI unavailable");
+      }
+      setMessages((current) => [
+        ...current,
+        { id: uid(), role: "assistant", text: result.answer! },
+      ]);
+      return;
+    } catch {
+      // The deterministic local answer keeps core insights available offline
+      // and when the private AI service has not yet been configured.
+    } finally {
+      setAssistantThinking(false);
+    }
+
+    const answer = localAssistantAnswer(question);
+    setMessages((current) => [
+      ...current,
+      { id: uid(), role: "assistant", text: answer },
+    ]);
+  }
+
+  function localAssistantAnswer(question: string) {
     const lower = question.toLowerCase();
     let answer = `Across the last seven days, you recorded ${weekEntries.length} moments.`;
     if (/(today|day|schedule)/.test(lower)) {
@@ -721,12 +783,7 @@ export default function SakhyaWebApp() {
     } else if (/(pattern|insight|stand out|learn)/.test(lower)) {
       answer = todayInsight;
     }
-    setMessages((current) => [
-      ...current,
-      { id: uid(), role: "user", text: question },
-      { id: uid(), role: "assistant", text: answer },
-    ]);
-    setChatInput("");
+    return answer;
   }
 
   function openAssistant(initialQuestion?: string) {
@@ -1273,7 +1330,24 @@ export default function SakhyaWebApp() {
           <section className="assistant-sheet">
             <header>
               <div className="assistant-title"><span><Sparkles size={18} /></span><div><strong>Sakhya</strong><small><i /> Private data assistant</small></div></div>
-              <button onClick={() => setAssistantOpen(false)}><X size={19} /></button>
+              <div className="assistant-header-actions">
+                <label className="model-picker">
+                  <span>Model</span>
+                  <select
+                    value={selectedAIModel}
+                    onChange={(event) => setSelectedAIModel(event.target.value as AIModel)}
+                    disabled={assistantThinking}
+                    aria-label="Choose AI model"
+                  >
+                    {AI_MODELS.map((model) => (
+                      <option value={model.id} key={model.id}>
+                        {model.label} — {model.detail}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button className="assistant-close" onClick={() => setAssistantOpen(false)} aria-label="Close assistant"><X size={19} /></button>
+              </div>
             </header>
             <div className="chat-scroll">
               {messages.map((message) => (
@@ -1282,6 +1356,12 @@ export default function SakhyaWebApp() {
                   <p>{message.text}</p>
                 </div>
               ))}
+              {assistantThinking && (
+                <div className="message thinking">
+                  <span><Sparkles size={15} /></span>
+                  <p><i /><i /><i /><small>{AI_MODELS.find((model) => model.id === selectedAIModel)?.label} is thinking</small></p>
+                </div>
+              )}
               {messages.length === 1 && (
                 <div className="prompt-grid">
                   {[
@@ -1295,11 +1375,11 @@ export default function SakhyaWebApp() {
                 </div>
               )}
             </div>
-            <div className="privacy-line"><Lock size={13} /> Uses only data saved to your private Sakhya account.</div>
+            <div className="privacy-line"><Lock size={13} /> Your key stays on the server. AI requests are not stored by Sakhya.</div>
             <form className="chat-composer" onSubmit={(event) => { event.preventDefault(); sendMessage(); }}>
               <textarea value={chatInput} onChange={(event) => setChatInput(event.target.value)} placeholder="Ask about your day…" rows={1} />
               <button type="button" className={isListening ? "recording" : ""} onClick={() => toggleListening("chat")}><Mic size={17} /></button>
-              <button className="send-button" disabled={!chatInput.trim()}><Send size={16} /></button>
+              <button className="send-button" disabled={!chatInput.trim() || assistantThinking}><Send size={16} /></button>
             </form>
           </section>
         </div>

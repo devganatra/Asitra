@@ -1555,7 +1555,7 @@ h3 {
 }
 
 .assistant-sheet > header {
-  min-height: 70px;
+  min-height: 76px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1600,7 +1600,38 @@ h3 {
   background: #6bb184;
 }
 
-.assistant-sheet > header > button {
+.assistant-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.model-picker {
+  display: grid;
+  gap: 2px;
+}
+
+.model-picker > span {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.model-picker select {
+  width: 158px;
+  padding: 6px 27px 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  outline: 0;
+  color: var(--ink);
+  background: #f7f9f5;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.assistant-close {
   width: 34px;
   height: 34px;
   display: grid;
@@ -1653,6 +1684,40 @@ h3 {
   color: white;
   border-radius: 15px 15px 5px 15px;
   background: var(--sage);
+}
+
+.message.thinking p {
+  min-width: 190px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.message.thinking p > i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--moss);
+  animation: assistant-pulse 1s ease-in-out infinite;
+}
+
+.message.thinking p > i:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.message.thinking p > i:nth-child(3) {
+  animation-delay: 240ms;
+}
+
+.message.thinking small {
+  margin-left: 5px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+@keyframes assistant-pulse {
+  0%, 100% { opacity: 0.3; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-2px); }
 }
 
 .prompt-grid {
