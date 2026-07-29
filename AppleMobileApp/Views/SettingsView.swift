@@ -1,3 +1,4 @@
+import AuthenticationServices
 import SwiftUI
 #if os(iOS)
 import UIKit
@@ -9,6 +10,7 @@ struct SettingsView: View {
     @State private var importError: String?
     @State private var confirmation: DataConfirmation?
     @State private var dataMessage: String?
+    @State private var aiAccount = SakhyaAIAccount.shared
 
     var body: some View {
         @Bindable var model = model
@@ -80,6 +82,38 @@ struct SettingsView: View {
                 LabeledContent("Cross-device sync", value: "Private CloudKit")
                 LabeledContent("Manual capture", value: "Timeline")
                 LabeledContent("Apps & sensors", value: "Apple Health")
+            }
+
+            Section("Sakhya AI") {
+                LabeledContent("Model", value: "GPT-5.6 Terra")
+                LabeledContent("Status", value: aiAccount.isConnected ? "Connected" : "Offline insights")
+
+                if aiAccount.isConnected {
+                    Button("Disconnect AI account", role: .destructive) {
+                        Task { await aiAccount.disconnect() }
+                    }
+                } else {
+                    SignInWithAppleButton(.continue) { request in
+                        request.requestedScopes = []
+                    } onCompletion: { result in
+                        Task { await aiAccount.completeAppleAuthorization(result) }
+                    }
+                    .signInWithAppleButtonStyle(.black)
+                    .frame(height: 42)
+                    .disabled(aiAccount.isConnecting)
+                }
+
+                if aiAccount.isConnecting {
+                    ProgressView("Connecting Terra…")
+                }
+                if let error = aiAccount.errorMessage {
+                    Text(error)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                }
+                Text("Terra runs through Sakhya’s secure backend so the same model answers on Mac, iPhone, iPad and web. Sakhya sends calculated metrics with their source, not your complete database. The session is stored in Keychain and can be removed here.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Apple Reminders") {

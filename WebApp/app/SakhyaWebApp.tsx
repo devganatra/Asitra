@@ -64,6 +64,7 @@ type Entry = {
   amount?: number;
   minutes?: number;
   note?: string;
+  source?: string;
   photo?: string;
 };
 
@@ -97,14 +98,6 @@ type ChatMessage = {
   text: string;
 };
 
-type AIModel = "gpt-5.6-luna" | "gpt-5.6-terra" | "gpt-5.6-sol";
-
-const AI_MODELS: { id: AIModel; label: string; detail: string }[] = [
-  { id: "gpt-5.6-terra", label: "Everyday · Terra", detail: "Recommended" },
-  { id: "gpt-5.6-luna", label: "Quick · Luna", detail: "Fastest" },
-  { id: "gpt-5.6-sol", label: "Deep · Sol", detail: "Hard questions" },
-];
-
 type PersistedState = {
   entries: Entry[];
   lists: LifeList[];
@@ -135,15 +128,15 @@ function atDayOffset(days: number, hour: number, minute = 0) {
 
 const seedState: PersistedState = {
   entries: [
-    { id: "e1", title: "Morning walk by the river", kind: "movement", timestamp: atDayOffset(0, 7, 35), minutes: 32 },
+    { id: "e1", title: "Morning walk by the river", kind: "movement", timestamp: atDayOffset(0, 7, 35), minutes: 32, source: "WHOOP" },
     { id: "e2", title: "Deep work · product strategy", kind: "work", timestamp: atDayOffset(0, 9, 10), minutes: 95 },
     { id: "e3", title: "Coffee and groceries", kind: "expense", timestamp: atDayOffset(0, 11, 42), amount: 28.4 },
     { id: "e4", title: "Lunch · lentil bowl", kind: "food", timestamp: atDayOffset(0, 12, 35) },
     { id: "e5", title: "Read Atomic Habits", kind: "book", timestamp: atDayOffset(-1, 21, 5), minutes: 24 },
     { id: "e6", title: "Felt calm after an evening without screens", kind: "mindset", timestamp: atDayOffset(-1, 21, 40) },
     { id: "e7", title: "Dinner with friends", kind: "expense", timestamp: atDayOffset(-2, 19, 15), amount: 46.2 },
-    { id: "e8", title: "Strength training", kind: "movement", timestamp: atDayOffset(-2, 17, 50), minutes: 48 },
-    { id: "e9", title: "Slept well", kind: "sleep", timestamp: atDayOffset(-3, 7, 0), minutes: 448 },
+    { id: "e8", title: "Strength training", kind: "movement", timestamp: atDayOffset(-2, 17, 50), minutes: 48, source: "WHOOP" },
+    { id: "e9", title: "Slept well", kind: "sleep", timestamp: atDayOffset(-3, 7, 0), minutes: 448, source: "WHOOP" },
     { id: "e10", title: "Monthly train pass", kind: "expense", timestamp: atDayOffset(-4, 8, 5), amount: 59 },
   ],
   lists: [
@@ -309,7 +302,6 @@ export default function SakhyaWebApp() {
   const [trackerFamily, setTrackerFamily] = useState<TrackerFamily>("Health");
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [selectedAIModel, setSelectedAIModel] = useState<AIModel>("gpt-5.6-terra");
   const [assistantThinking, setAssistantThinking] = useState(false);
   const [notice, setNotice] = useState<string>();
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -731,7 +723,6 @@ export default function SakhyaWebApp() {
           "x-sakhya-request": "1",
         },
         body: JSON.stringify({
-          model: selectedAIModel,
           messages: conversation.map(({ role, text }) => ({ role, text })),
         }),
       });
@@ -1131,9 +1122,10 @@ export default function SakhyaWebApp() {
                 <Activity size={20} />
               </div>
               <div className="capability-row"><span>Calendar and Reminders</span><strong>Native app</strong></div>
-              <div className="capability-row"><span>Health and wearables</span><strong>Native app</strong></div>
-              <div className="capability-row"><span>Screen Time</span><strong>Native app</strong></div>
-              <div className="capability-row"><span>Web account storage</span><strong>Connected</strong></div>
+                  <div className="capability-row"><span>Health and wearables</span><strong>Native app</strong></div>
+                  <div className="capability-row"><span>Screen Time</span><strong>Native app</strong></div>
+                  <div className="capability-row"><span>Sakhya AI</span><strong>Terra · All devices</strong></div>
+                  <div className="capability-row"><span>Web account storage</span><strong>Connected</strong></div>
               <div className="native-note">
                 <ShieldCheck size={17} />
                 The interface is shared across devices. Apple-only integrations are collected by the native app and are not yet synchronized into the web store.
@@ -1256,7 +1248,13 @@ export default function SakhyaWebApp() {
                     <div>
                       <span className="entry-kind" style={{ color: meta.color }}>{meta.label}</span>
                       <strong>{entry.title}</strong>
-                      {(entry.minutes || entry.note) && <small>{minutesLabel(entry.minutes)}{entry.note ? ` · ${entry.note}` : ""}</small>}
+                          {(entry.minutes || entry.note || entry.source) && (
+                            <small>
+                              {[minutesLabel(entry.minutes), entry.note, entry.source ? `Source: ${entry.source}` : ""]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </small>
+                          )}
                     </div>
                     {entry.photo && (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -1331,21 +1329,10 @@ export default function SakhyaWebApp() {
             <header>
               <div className="assistant-title"><span><Sparkles size={18} /></span><div><strong>Sakhya</strong><small><i /> Private data assistant</small></div></div>
               <div className="assistant-header-actions">
-                <label className="model-picker">
+                <div className="model-picker" aria-label="AI model">
                   <span>Model</span>
-                  <select
-                    value={selectedAIModel}
-                    onChange={(event) => setSelectedAIModel(event.target.value as AIModel)}
-                    disabled={assistantThinking}
-                    aria-label="Choose AI model"
-                  >
-                    {AI_MODELS.map((model) => (
-                      <option value={model.id} key={model.id}>
-                        {model.label} — {model.detail}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                  <strong>Everyday · Terra</strong>
+                </div>
                 <button className="assistant-close" onClick={() => setAssistantOpen(false)} aria-label="Close assistant"><X size={19} /></button>
               </div>
             </header>
@@ -1359,7 +1346,7 @@ export default function SakhyaWebApp() {
               {assistantThinking && (
                 <div className="message thinking">
                   <span><Sparkles size={15} /></span>
-                  <p><i /><i /><i /><small>{AI_MODELS.find((model) => model.id === selectedAIModel)?.label} is thinking</small></p>
+                  <p><i /><i /><i /><small>Terra is thinking</small></p>
                 </div>
               )}
               {messages.length === 1 && (

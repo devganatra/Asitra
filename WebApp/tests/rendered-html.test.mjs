@@ -81,7 +81,6 @@ test("rejects unauthenticated assistant access", async () => {
       "x-sakhya-request": "1",
     },
     body: JSON.stringify({
-      model: "gpt-5.6-terra",
       messages: [{ role: "user", text: "Tell me about today" }],
     }),
   });
@@ -99,7 +98,6 @@ test("keeps the model service disabled when its server secret is absent", async 
       "x-sakhya-request": "1",
     },
     body: JSON.stringify({
-      model: "gpt-5.6-terra",
       messages: [{ role: "user", text: "Tell me about today" }],
     }),
   });
@@ -121,7 +119,7 @@ test("ships the secured product source without starter artifacts", async () => {
   assert.match(client, /\/api\/state/);
   assert.match(client, /toggleListening/);
   assert.match(client, /sendMessage/);
-  assert.match(client, /gpt-5\.6-terra/);
+  assert.match(client, /Everyday · Terra/);
   assert.match(client, /\/api\/assistant/);
   assert.match(client, /exportData/);
   assert.match(client, /validatePersistedState/);
@@ -139,4 +137,23 @@ test("ships the secured product source without starter artifacts", async () => {
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
   assert.doesNotMatch(client, /_sites-preview|codex-preview/);
 
+});
+
+test("protects the native assistant behind a signed session", async () => {
+  const response = await fetch(`${origin}/api/native/assistant`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      messages: [{ role: "user", text: "How did I recover?" }],
+      context: {
+        generatedAt: new Date().toISOString(),
+        verifiedMetrics: [],
+        entries: [],
+        lists: [],
+        trackers: [],
+      },
+    }),
+  });
+  assert.equal(response.status, 401);
+  assert.match(response.headers.get("cache-control") ?? "", /no-store/);
 });

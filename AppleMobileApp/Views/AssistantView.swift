@@ -1,3 +1,4 @@
+import AuthenticationServices
 import SwiftUI
 
 struct AssistantChatView: View {
@@ -58,7 +59,7 @@ struct AssistantChatView: View {
                     Circle()
                         .fill(.green)
                         .frame(width: 6, height: 6)
-                    Text(assistant.usesOnDeviceLanguageModel ? "Private · Apple Intelligence" : "Private · Local insights")
+                    Text(assistant.serviceLabel)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -104,8 +105,11 @@ struct AssistantChatView: View {
                     if assistant.messages.count == 1 {
                         suggestionGrid
                             .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        if !assistant.account.isConnected {
+                            terraConnection
+                        }
                         Label(
-                            "Your saved history is used as private context. It is not used to train a shared model.",
+                            "Only grounded summaries needed for your question are sent to the shared Sakhya model.",
                             systemImage: "lock.shield"
                         )
                         .font(.caption)
@@ -128,6 +132,36 @@ struct AssistantChatView: View {
                 }
             }
         }
+    }
+
+    private var terraConnection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Use the same AI everywhere")
+                .font(.subheadline.weight(.semibold))
+            Text("Connect with Apple to use Terra on Mac, iPhone, iPad and web. Your OpenAI key stays on Sakhya’s server.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            SignInWithAppleButton(.continue) { request in
+                request.requestedScopes = []
+            } onCompletion: { result in
+                Task { await assistant.completeAppleAuthorization(result) }
+            }
+            .signInWithAppleButtonStyle(.black)
+            .frame(height: 42)
+            .disabled(assistant.account.isConnecting)
+            if assistant.account.isConnecting {
+                ProgressView("Connecting Terra…")
+                    .controlSize(.small)
+            }
+            if let error = assistant.account.errorMessage {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
     }
 
     private var suggestionGrid: some View {

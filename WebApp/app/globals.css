@@ -1619,12 +1619,11 @@ h3 {
   text-transform: uppercase;
 }
 
-.model-picker select {
-  width: 158px;
-  padding: 6px 27px 6px 9px;
+.model-picker > strong {
+  min-width: 138px;
+  padding: 7px 10px;
   border: 1px solid var(--line);
   border-radius: 9px;
-  outline: 0;
   color: var(--ink);
   background: #f7f9f5;
   font-size: 10px;
