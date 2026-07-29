@@ -347,12 +347,15 @@
 			buildSettings = {
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = AppleMobileApp/AppleMobileApp.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = AppleMobileApp/AppleMobileApp.entitlements;
-				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = AppleMobileApp/AppleMobileAppMac.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
+				"CODE_SIGN_STYLE[sdk=macosx*]" = Manual;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
+				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Sakhya;
 				INFOPLIST_KEY_CFBundleName = Sakhya;

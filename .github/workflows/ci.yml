@@ -26,6 +26,14 @@ jobs:
           -destination 'platform=macOS'
           CODE_SIGNING_ALLOWED=NO
           build
+      - name: Build local Mac Debug without a development certificate
+        run: >-
+          xcodebuild
+          -project AppleMobileApp.xcodeproj
+          -scheme AppleMobileApp
+          -configuration Debug
+          -destination 'platform=macOS'
+          build
 
   ios:
     name: iOS Simulator
