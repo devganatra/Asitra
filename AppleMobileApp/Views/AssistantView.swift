@@ -35,6 +35,9 @@ struct AssistantChatView: View {
         .onAppear {
             assistant.prepare(model: model, finance: systemFeature.financeWorkspace)
         }
+        .task {
+            await assistant.account.refreshModelContract()
+        }
     }
 
     private var header: some View {
@@ -140,7 +143,7 @@ struct AssistantChatView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Use the same AI everywhere")
                 .font(.subheadline.weight(.semibold))
-            Text("Connect with Apple to use Terra on Mac, iPhone, iPad and web. Your OpenAI key stays on Sakhya’s server.")
+            Text("Connect with Apple to use \(assistant.account.modelLabel) on Mac, iPhone, iPad and web. Your OpenAI key stays on Sakhya’s server.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             SignInWithAppleButton(.continue) { request in
@@ -152,7 +155,7 @@ struct AssistantChatView: View {
             .frame(height: 42)
             .disabled(assistant.account.isConnecting)
             if assistant.account.isConnecting {
-                ProgressView("Connecting Terra…")
+                ProgressView("Connecting Sakhya AI…")
                     .controlSize(.small)
             }
             if let error = assistant.account.errorMessage {

@@ -2,6 +2,7 @@ import AuthenticationServices
 import Foundation
 import Observation
 import Security
+import SakhyaContracts
 
 @MainActor
 @Observable
@@ -11,6 +12,10 @@ final class SakhyaAIAccount {
     private(set) var isConnected: Bool
     private(set) var isConnecting = false
     private(set) var errorMessage: String?
+    private(set) var modelLabel = "Shared model"
+    private(set) var modelIdentifier: String?
+    private(set) var modelProfile = "Everyday"
+    private(set) var modelContractVersion: Int?
 
     private let sessionStore = SecureSessionStore()
     private let serviceURL = URL(string: "https://sakhya-everyday.deepanddev.chatgpt.site")!
@@ -22,6 +27,28 @@ final class SakhyaAIAccount {
     var sessionToken: String? {
         guard let session = sessionStore.read(), session.isValid else { return nil }
         return session.sessionToken
+    }
+
+    func refreshModelContract() async {
+        do {
+            let url = serviceURL.appending(path: "api/assistant/config")
+            let (data, response) = try await URLSession.shared.data(from: url)
+            guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else { return }
+            let contract = try JSONDecoder().decode(SakhyaAIContract.self, from: data)
+            modelLabel = contract.label
+            modelIdentifier = contract.model
+            modelProfile = contract.profile
+            modelContractVersion = contract.version
+        } catch {
+            // Offline insights remain available; retry when the screen appears again.
+        }
+    }
+
+    func apply(_ response: SakhyaAssistantResponse) {
+        modelLabel = response.label
+        modelIdentifier = response.model
+        modelProfile = response.profile
+        modelContractVersion = response.contractVersion
     }
 
     func completeAppleAuthorization(_ result: Result<ASAuthorization, Error>) async {

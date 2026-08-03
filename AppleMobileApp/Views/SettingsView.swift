@@ -85,7 +85,7 @@ struct SettingsView: View {
             }
 
             Section("Sakhya AI") {
-                LabeledContent("Model", value: "GPT-5.6 Terra")
+                LabeledContent("Model", value: aiAccount.modelIdentifier ?? aiAccount.modelLabel)
                 LabeledContent("Status", value: aiAccount.isConnected ? "Connected" : "Offline insights")
 
                 if aiAccount.isConnected {
@@ -104,14 +104,14 @@ struct SettingsView: View {
                 }
 
                 if aiAccount.isConnecting {
-                    ProgressView("Connecting Terra…")
+                    ProgressView("Connecting Sakhya AI…")
                 }
                 if let error = aiAccount.errorMessage {
                     Text(error)
                         .font(.footnote)
                         .foregroundStyle(.red)
                 }
-                Text("Terra runs through Sakhya’s secure backend so the same model answers on Mac, iPhone, iPad and web. Sakhya sends calculated metrics with their source, not your complete database. The session is stored in Keychain and can be removed here.")
+                Text("The shared Sakhya model runs through the secure backend, so Mac, iPhone, iPad and web use the same model contract. Sakhya sends calculated metrics with their source, not your complete database. The session is stored in Keychain and can be removed here.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -220,6 +220,9 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .navigationTitle("Settings")
+        .task {
+            await aiAccount.refreshModelContract()
+        }
         .alert("Fitness connection", isPresented: Binding(
             get: { importMessage != nil || importError != nil },
             set: { if !$0 { importMessage = nil; importError = nil } }

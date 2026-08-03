@@ -30,6 +30,36 @@ public protocol AIProvider: Sendable {
     func interpret(_ request: AIInterpretationRequest) async throws -> AIInterpretationResult
 }
 
+public struct SakhyaAIContract: Codable, Sendable, Equatable {
+    public let version: Int
+    public let profile: String
+    public let label: String
+    public let model: String
+
+    public init(version: Int, profile: String, label: String, model: String) {
+        self.version = version
+        self.profile = profile
+        self.label = label
+        self.model = model
+    }
+}
+
+public struct SakhyaAssistantResponse: Codable, Sendable, Equatable {
+    public let answer: String
+    public let model: String
+    public let label: String
+    public let profile: String
+    public let contractVersion: Int
+
+    public init(answer: String, model: String, label: String, profile: String, contractVersion: Int) {
+        self.answer = answer
+        self.model = model
+        self.label = label
+        self.profile = profile
+        self.contractVersion = contractVersion
+    }
+}
+
 public struct WearableSample: Codable, Sendable, Hashable {
     public var externalIdentifier: String
     public var timestamp: Date

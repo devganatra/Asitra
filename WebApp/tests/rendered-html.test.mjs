@@ -5,6 +5,7 @@ import test from "node:test";
 
 const port = 31_000 + (process.pid % 1_000);
 const origin = `http://localhost:${port}`;
+const signedOutHeaders = { "oai-authenticated-user-email": "" };
 let server;
 
 async function render() {
@@ -66,7 +67,10 @@ test("server-renders the Sakhya everyday app", async () => {
 });
 
 test("rejects unauthenticated state access", async () => {
-  const response = await fetch(`${origin}/api/state`, { redirect: "manual" });
+  const response = await fetch(`${origin}/api/state`, {
+    redirect: "manual",
+    headers: signedOutHeaders,
+  });
   assert.equal(response.status, 401);
   assert.match(response.headers.get("cache-control") ?? "", /no-store/);
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
@@ -76,6 +80,7 @@ test("rejects unauthenticated assistant access", async () => {
   const response = await fetch(`${origin}/api/assistant`, {
     method: "POST",
     headers: {
+      ...signedOutHeaders,
       "content-type": "application/json",
       origin,
       "x-sakhya-request": "1",
@@ -90,12 +95,14 @@ test("rejects unauthenticated assistant access", async () => {
 });
 
 test("protects shared lists behind authentication and same-origin mutations", async () => {
-  const unauthenticated = await fetch(`${origin}/api/shared-lists`);
+  const unauthenticated = await fetch(`${origin}/api/shared-lists`, {
+    headers: signedOutHeaders,
+  });
   assert.equal(unauthenticated.status, 401);
 
   const untrusted = await fetch(`${origin}/api/shared-lists`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { ...signedOutHeaders, "content-type": "application/json" },
     body: JSON.stringify({ action: "join", code: "AAAAAAAAAAAAAAAAAAAA" }),
   });
   assert.equal(untrusted.status, 403);
@@ -136,6 +143,37 @@ test("keeps the model service disabled when its server secret is absent", async 
   assert.equal((await response.json()).code, "AI_NOT_CONFIGURED");
 });
 
+test("publishes one safe AI contract for every client", async () => {
+  const response = await fetch(`${origin}/api/assistant/config`, { cache: "no-store" });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    version: 1,
+    profile: "Everyday",
+    label: "Terra",
+    model: "gpt-5.6-terra",
+    provider: "openai",
+  });
+});
+
+test("keeps web and Apple assistant routes on the shared model service", async () => {
+  const [service, webRoute, nativeRoute, webClient, appleClient, appleAccount] = await Promise.all([
+    readFile(new URL("../app/api/assistant/service.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/assistant/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/native/assistant/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/SakhyaWebApp.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../../AppleMobileApp/Models/AssistantService.swift", import.meta.url), "utf8"),
+    readFile(new URL("../../AppleMobileApp/Models/SakhyaAIAccount.swift", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(service, /model: SAKHYA_AI_CONTRACT\.model/);
+  assert.match(webRoute, /answerWithSakhyaAI/);
+  assert.match(nativeRoute, /answerWithSakhyaAI/);
+  assert.match(webClient, /fetch\("\/api\/assistant\/config"/);
+  assert.match(appleAccount, /api\/assistant\/config/);
+  assert.match(appleClient, /SakhyaAssistantResponse/);
+  assert.doesNotMatch(`${appleClient}\n${appleAccount}`, /gpt-5\.6-/);
+});
+
 test("ships the secured product source without starter artifacts", async () => {
   const [css, page, client, layout, worker, packageJson] = await Promise.all([
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
@@ -153,7 +191,7 @@ test("ships the secured product source without starter artifacts", async () => {
   assert.match(client, /event\.key === "Enter" && !event\.shiftKey/);
   assert.match(client, /aria-label="Send message"/);
   assert.match(client, /"Stop voice input" : "Start voice input"/);
-  assert.match(client, /Everyday · Terra/);
+  assert.match(client, /aiContract\.profile.*aiContract\.label/);
   assert.match(client, /\/api\/assistant/);
   assert.match(client, /exportData/);
   assert.match(client, /validatePersistedState/);
