@@ -55,14 +55,7 @@ async function appleClientSecret(runtime: AuthEnvironment): Promise<string> {
     .sign(key);
 }
 
-let cachedAuth: Promise<Awaited<ReturnType<typeof buildAuth>>> | undefined;
-
-export function createAuth() {
-  cachedAuth ??= buildAuth();
-  return cachedAuth;
-}
-
-async function buildAuth() {
+export async function createAuth() {
   const runtime = authEnvironment();
   const availability = authProviderAvailability();
   if (!availability.configured || !runtime.DB || !runtime.BETTER_AUTH_SECRET) return null;
