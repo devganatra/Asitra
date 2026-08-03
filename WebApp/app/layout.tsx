@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { headers } from "next/headers";
 import "./globals.css";
+import { ASITRA_RELEASE } from "./release";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -49,6 +50,9 @@ export async function generateMetadata(): Promise<Metadata> {
       title,
       description,
       images: [`${origin}/og.png`],
+    },
+    other: {
+      "asitra-release": ASITRA_RELEASE,
     },
   };
 }

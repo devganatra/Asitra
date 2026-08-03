@@ -1,5 +1,6 @@
 import { jsonResponse } from "../security";
+import { ASITRA_RELEASE } from "../../release";
 
 export async function GET() {
-  return jsonResponse({ status: "ok", service: "asitra-web", version: "0.2.0-beta.1" });
+  return jsonResponse({ status: "ok", service: "asitra-web", version: ASITRA_RELEASE });
 }

@@ -116,7 +116,10 @@ test("shows independent public sign-in without exposing provider secrets", async
 
   const login = await integrationFetch("/login", { headers: signedOutHeaders });
   assert.equal(login.status, 200);
-  assert.match(await login.text(), /Welcome to Asitra/);
+  const loginHTML = await login.text();
+  assert.match(loginHTML, /Welcome to Asitra/);
+  assert.match(loginHTML, /Release 0\.2\.0-beta\.1/);
+  assert.match(loginHTML, /name="asitra-release" content="0\.2\.0-beta\.1"/);
 
   const providers = await integrationFetch("/api/auth/providers");
   assert.equal(providers.status, 200);
@@ -133,6 +136,27 @@ test("shows independent public sign-in without exposing provider secrets", async
   const oauthBody = await oauth.json();
   assert.match(oauthBody.url, /^https:\/\/accounts\.google\.com\//);
   assert.doesNotMatch(JSON.stringify(oauthBody), /integration-test-google-secret/);
+});
+
+test("publishes one traceable release number", async () => {
+  const response = await integrationFetch("/api/health");
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    status: "ok",
+    service: "asitra-web",
+    version: "0.2.0-beta.1",
+  });
+
+  const [releaseSource, healthSource, clientSource, loginSource] = await Promise.all([
+    readFile(new URL("../app/release.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/health/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/AsitraWebApp.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/login/LoginPage.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(releaseSource, /ASITRA_RELEASE = "0\.2\.0-beta\.1"/);
+  assert.match(healthSource, /version: ASITRA_RELEASE/);
+  assert.match(clientSource, /ASITRA_RELEASE_LABEL/);
+  assert.match(loginSource, /ASITRA_RELEASE_LABEL/);
 });
 
 test("publishes public trust, privacy, and terms pages", async () => {
