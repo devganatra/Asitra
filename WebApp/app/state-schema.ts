@@ -122,6 +122,8 @@ export function validatePersistedState(value: unknown, options: ValidationOption
   });
 
   return {
+    onboardingCompleted:
+      source.onboardingCompleted === undefined ? true : Boolean(source.onboardingCompleted),
     entries,
     lists,
     trackers,
