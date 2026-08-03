@@ -86,12 +86,24 @@ export async function DELETE(request: Request) {
     .prepare("SELECT object_key AS objectKey FROM attachments WHERE user_id = ?")
     .bind(userId)
     .all<{ objectKey: string }>();
+  const ownedLists = await db
+    .prepare("SELECT id FROM shared_lists WHERE owner_id = ?")
+    .bind(userId)
+    .all<{ id: string }>();
   await Promise.all(rows.results.map((row) => uploads().delete(row.objectKey)));
+  for (const list of ownedLists.results) {
+    await db.batch([
+      db.prepare("DELETE FROM shared_list_invites WHERE list_id = ?").bind(list.id),
+      db.prepare("DELETE FROM shared_list_members WHERE list_id = ?").bind(list.id),
+      db.prepare("DELETE FROM shared_lists WHERE id = ?").bind(list.id),
+    ]);
+  }
   await db.batch([
     db.prepare("DELETE FROM attachments WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM request_usage WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM native_ai_usage WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM native_sessions WHERE user_id = ?").bind(userId),
+    db.prepare("DELETE FROM shared_list_members WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM user_states WHERE user_id = ?").bind(userId),
   ]);
   return jsonResponse({ ok: true });

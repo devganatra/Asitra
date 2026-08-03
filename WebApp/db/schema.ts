@@ -48,3 +48,28 @@ export const requestUsage = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.userId, table.scope, table.windowStart] })],
 );
+
+export const sharedLists = sqliteTable("shared_lists", {
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id").notNull(),
+  listJson: text("list_json").notNull(),
+  version: integer("version").notNull().default(1),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const sharedListMembers = sqliteTable(
+  "shared_list_members",
+  {
+    listId: text("list_id").notNull(),
+    userId: text("user_id").notNull(),
+    role: text("role").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.listId, table.userId] }), index("shared_list_members_user_index").on(table.userId)],
+);
+
+export const sharedListInvites = sqliteTable("shared_list_invites", {
+  tokenHash: text("token_hash").primaryKey(),
+  listId: text("list_id").notNull(),
+  expiresAt: text("expires_at").notNull(),
+  createdAt: text("created_at").notNull(),
+});

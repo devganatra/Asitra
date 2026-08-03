@@ -393,10 +393,15 @@ export default function SakhyaWebApp() {
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [aiConsent, setAIConsent] = useState(false);
+  const [sharingOpen, setSharingOpen] = useState(false);
+  const [inviteCode, setInviteCode] = useState("");
+  const [joinCode, setJoinCode] = useState("");
+  const [sharingOwner, setSharingOwner] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const stateVersionRef = useRef(0);
   const accountDeletedRef = useRef(false);
+  const sharedListMetaRef = useRef<Record<string, { version: number; owner: boolean }>>({});
 
   async function loadState() {
     try {
@@ -420,6 +425,7 @@ export default function SakhyaWebApp() {
             setNotice("Your secure account copy is ready. The old browser copy was kept as requested.");
           }
         }
+        await loadSharedLists();
         setHydrated(true);
         return;
       }
@@ -427,6 +433,7 @@ export default function SakhyaWebApp() {
         const payload = (await response.json()) as { state: unknown; version: number };
         stateVersionRef.current = payload.version;
         setState(validatePersistedState(payload.state) as PersistedState);
+        await loadSharedLists();
         setHydrated(true);
         return;
       }
@@ -435,6 +442,21 @@ export default function SakhyaWebApp() {
       setNotice("Secure storage could not be reached. No existing browser data was changed.");
       setHydrated(true);
     }
+  }
+
+  async function loadSharedLists() {
+    const response = await fetch("/api/shared-lists", { cache: "no-store", credentials: "same-origin" });
+    if (!response.ok) return;
+    const payload = (await response.json()) as { lists?: Array<{ list: LifeList; version: number; owner: boolean }> };
+    const shared = payload.lists ?? [];
+    sharedListMetaRef.current = Object.fromEntries(shared.map((item) => [item.list.id, { version: item.version, owner: item.owner }]));
+    setState((current) => ({
+      ...current,
+      lists: [
+        ...current.lists.filter((list) => !shared.some((item) => item.list.id === list.id)),
+        ...shared.map((item) => item.list),
+      ],
+    }));
   }
 
   async function saveState(nextState: PersistedState) {
@@ -708,19 +730,11 @@ export default function SakhyaWebApp() {
   }
 
   function toggleListItem(listId: string, itemId: string) {
-    setState((current) => ({
-      ...current,
-      lists: current.lists.map((list) =>
-        list.id === listId
-          ? {
-              ...list,
-              items: list.items.map((item) =>
-                item.id === itemId ? { ...item, done: !item.done } : item,
-              ),
-            }
-          : list,
-      ),
-    }));
+    const list = state.lists.find((candidate) => candidate.id === listId);
+    if (!list) return;
+    const updated = { ...list, items: list.items.map((item) => item.id === itemId ? { ...item, done: !item.done } : item) };
+    setState((current) => ({ ...current, lists: current.lists.map((item) => item.id === listId ? updated : item) }));
+    if (updated.shared) void updateSharedList(updated);
   }
 
   function addListItem(event: FormEvent) {
@@ -732,18 +746,9 @@ export default function SakhyaWebApp() {
       kind: "list",
       timestamp: new Date().toISOString(),
     };
-    setState((current) => ({
-      ...current,
-      entries: [entry, ...current.entries],
-      lists: current.lists.map((list) =>
-        list.id === selectedList.id
-          ? {
-              ...list,
-              items: [{ id: uid(), text: newListItem.trim(), done: false }, ...list.items],
-            }
-          : list,
-      ),
-    }));
+    const updated = { ...selectedList, items: [{ id: uid(), text: newListItem.trim(), done: false }, ...selectedList.items] };
+    setState((current) => ({ ...current, entries: [entry, ...current.entries], lists: current.lists.map((list) => list.id === selectedList.id ? updated : list) }));
+    if (updated.shared) void updateSharedList(updated);
     setNewListItem("");
   }
 
@@ -762,16 +767,91 @@ export default function SakhyaWebApp() {
     setSelectedListId(list.id);
   }
 
-  function toggleListSharing() {
+  async function toggleListSharing() {
     if (!selectedList) return;
+    const existingMeta = sharedListMetaRef.current[selectedList.id];
+    if (selectedList.shared && existingMeta && !existingMeta.owner) {
+      setInviteCode("MEMBER");
+      setSharingOwner(false);
+      setSharingOpen(true);
+      return;
+    }
+    const action = selectedList.shared ? "invite" : "share";
+    const response = await fetch("/api/shared-lists", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json", "x-sakhya-request": "1" },
+      body: JSON.stringify({ action, list: { ...selectedList, shared: true } }),
+    });
+    const result = (await response.json()) as { list?: LifeList; version?: number; owner?: boolean; inviteCode?: string; error?: string };
+    if (!response.ok || !result.list || typeof result.version !== "number") {
+      setNotice(result.error ?? "Sharing could not be enabled.");
+      return;
+    }
+    sharedListMetaRef.current[result.list.id] = { version: result.version, owner: Boolean(result.owner) };
+    setState((current) => ({ ...current, lists: current.lists.map((list) => list.id === result.list!.id ? result.list! : list) }));
+    setInviteCode(result.inviteCode ?? "");
+    setSharingOwner(Boolean(result.owner));
+    setSharingOpen(true);
+  }
+
+  async function updateSharedList(list: LifeList) {
+    const meta = sharedListMetaRef.current[list.id];
+    if (!meta) return;
+    const response = await fetch("/api/shared-lists", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json", "x-sakhya-request": "1" },
+      body: JSON.stringify({ action: "update", list, version: meta.version }),
+    });
+    const result = (await response.json()) as { list?: LifeList; version?: number; owner?: boolean; code?: string; error?: string };
+    if (!response.ok || !result.list || typeof result.version !== "number") {
+      setNotice(result.code === "LIST_CONFLICT" ? "This shared list changed elsewhere. Reload before editing it again." : result.error ?? "The shared list could not sync.");
+      return;
+    }
+    sharedListMetaRef.current[list.id] = { version: result.version, owner: Boolean(result.owner) };
+    setState((current) => ({ ...current, lists: current.lists.map((item) => item.id === list.id ? result.list! : item) }));
+  }
+
+  async function joinSharedList() {
+    const response = await fetch("/api/shared-lists", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json", "x-sakhya-request": "1" },
+      body: JSON.stringify({ action: "join", code: joinCode }),
+    });
+    const result = (await response.json()) as { list?: LifeList; version?: number; owner?: boolean; error?: string };
+    if (!response.ok || !result.list || typeof result.version !== "number") {
+      setNotice(result.error ?? "The invite could not be joined.");
+      return;
+    }
+    sharedListMetaRef.current[result.list.id] = { version: result.version, owner: Boolean(result.owner) };
+    setState((current) => ({ ...current, lists: [...current.lists.filter((list) => list.id !== result.list!.id), result.list!] }));
+    setSelectedListId(result.list.id);
+    setJoinCode("");
+    setSharingOpen(false);
+    setNotice(`Joined “${result.list.name}”.`);
+  }
+
+  async function stopSharing() {
+    if (!selectedList) return;
+    const owner = sharedListMetaRef.current[selectedList.id]?.owner;
+    if (!window.confirm(owner ? "Stop sharing this list? Other members will lose access." : "Leave this shared list?")) return;
+    const response = await fetch(`/api/shared-lists?id=${encodeURIComponent(selectedList.id)}`, {
+      method: "DELETE",
+      credentials: "same-origin",
+      headers: { "x-sakhya-request": "1" },
+    });
+    if (!response.ok) { setNotice("Sharing could not be stopped."); return; }
+    delete sharedListMetaRef.current[selectedList.id];
     setState((current) => ({
       ...current,
-      lists: current.lists.map((list) =>
-        list.id === selectedList.id
-          ? { ...list, shared: !list.shared, members: list.shared ? 1 : 2 }
-          : list,
-      ),
+      lists: owner
+        ? current.lists.map((list) => list.id === selectedList.id ? { ...list, shared: false, members: 1 } : list)
+        : current.lists.filter((list) => list.id !== selectedList.id),
     }));
+    setSharingOpen(false);
+    setNotice(owner ? "The list is private again." : "You left the shared list.");
   }
 
   function addTracker() {
@@ -1217,7 +1297,7 @@ export default function SakhyaWebApp() {
             eyebrow="Commitments"
             title="Lists"
             description="Everything you want to remember, privately or together."
-            action={<button className="primary-button" onClick={addNewList}><Plus size={17} /> New list</button>}
+            action={<div className="header-actions"><button className="secondary-button" onClick={() => { setInviteCode(""); setSharingOwner(false); setSharingOpen(true); }}><Users size={17} /> Join list</button><button className="primary-button" onClick={addNewList}><Plus size={17} /> New list</button></div>}
           />
           <div className="lists-layout">
             <div className="list-rail">
@@ -1246,7 +1326,7 @@ export default function SakhyaWebApp() {
                     <div className="eyebrow">{selectedList.shared ? "Shared list" : "Private list"}</div>
                     <h2>{selectedList.name}</h2>
                   </div>
-                  <button className="secondary-button" onClick={toggleListSharing}>
+                  <button className="secondary-button" onClick={() => void toggleListSharing()}>
                     {selectedList.shared ? <Users size={16} /> : <Lock size={16} />}
                     {selectedList.shared ? "Manage sharing" : "Share"}
                   </button>
@@ -1500,7 +1580,7 @@ export default function SakhyaWebApp() {
                 <section className="panel trip-panel">
                   <div className="trip-visual"><span>SEPT 12–15</span><strong>Lisbon</strong></div>
                   <div><span className="eyebrow">Trip plan</span><h2>€420 left</h2><p>€280 spent from €700</p></div>
-                  <button className="icon-button"><ArrowRight size={18} /></button>
+                  <button className="icon-button" onClick={() => setNotice("Trip budgets are visible here; editable trip planning is scheduled for the next beta.")} aria-label="Trip plan information"><ArrowRight size={18} /></button>
                 </section>
               </div>
             </>
@@ -1923,6 +2003,33 @@ export default function SakhyaWebApp() {
             <p>This removes your timeline, lists, trackers, financial records, sessions and uploaded photos. Export a backup first if needed.</p>
             <label>Type DELETE MY ACCOUNT<input value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} /></label>
             <button className="danger-button" disabled={deleteConfirmation !== "DELETE MY ACCOUNT"} onClick={() => void deleteAccount()}>Permanently delete my data</button>
+          </section>
+        </div>
+      )}
+      {sharingOpen && (
+        <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Shared list access">
+          <button className="modal-backdrop" onClick={() => setSharingOpen(false)} aria-label="Close sharing" />
+          <section className="edit-modal">
+            <div className="section-heading"><div><span className="eyebrow">Shared lists</span><h2>{inviteCode === "MEMBER" ? "Shared access" : inviteCode ? "Invite people" : "Join a list"}</h2></div><button className="icon-button" onClick={() => setSharingOpen(false)} aria-label="Close"><X size={18} /></button></div>
+            {inviteCode === "MEMBER" ? (
+              <>
+                <p>You can add and complete items on this shared list. Only its owner can create invitations or stop sharing it.</p>
+                <button className="danger-button" onClick={() => void stopSharing()}>Leave shared list</button>
+              </>
+            ) : inviteCode ? (
+              <>
+                <p>Send this one-time code to one person. It expires in seven days and disappears after it is used.</p>
+                <div className="invite-code">{inviteCode}</div>
+                <button className="secondary-button" onClick={() => void navigator.clipboard.writeText(inviteCode)}>Copy invite code</button>
+                {selectedList?.shared && sharingOwner && <button className="danger-button" onClick={() => void stopSharing()}>Stop sharing</button>}
+              </>
+            ) : (
+              <>
+                <p>Paste the private invite code sent by the list owner.</p>
+                <label>Invite code<input value={joinCode} onChange={(event) => setJoinCode(event.target.value.toUpperCase().replace(/[^A-Z2-9]/g, "").slice(0, 20))} /></label>
+                <button className="primary-button" disabled={joinCode.length !== 20} onClick={() => void joinSharedList()}>Join shared list</button>
+              </>
+            )}
           </section>
         </div>
       )}

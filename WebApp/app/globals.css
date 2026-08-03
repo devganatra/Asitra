@@ -2855,3 +2855,14 @@ h3 {
 }
 .danger-button:disabled { opacity: 0.45; }
 .danger-row { color: #9d392f; }
+.header-actions { display: flex; align-items: center; gap: 9px; }
+.invite-code {
+  padding: 16px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 14px;
+  background: var(--canvas);
+  font: 700 18px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.12em;
+  text-align: center;
+  overflow-wrap: anywhere;
+}

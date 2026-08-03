@@ -89,6 +89,18 @@ test("rejects unauthenticated assistant access", async () => {
   assert.match(response.headers.get("cache-control") ?? "", /no-store/);
 });
 
+test("protects shared lists behind authentication and same-origin mutations", async () => {
+  const unauthenticated = await fetch(`${origin}/api/shared-lists`);
+  assert.equal(unauthenticated.status, 401);
+
+  const untrusted = await fetch(`${origin}/api/shared-lists`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "join", code: "AAAAAAAAAAAAAAAAAAAA" }),
+  });
+  assert.equal(untrusted.status, 403);
+});
+
 test("requires explicit consent before AI receives account context", async () => {
   const response = await fetch(`${origin}/api/assistant`, {
     method: "POST",
