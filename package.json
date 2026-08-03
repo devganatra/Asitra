@@ -1,0 +1,13 @@
+{
+  "name": "sakhya-monorepo",
+  "version": "0.2.0-beta.1",
+  "private": true,
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "build": "npm --prefix WebApp ci && npm --prefix WebApp run build && mkdir -p dist && cp -R WebApp/dist/. dist/",
+    "test": "npm --prefix WebApp test",
+    "lint": "npm --prefix WebApp run lint"
+  }
+}

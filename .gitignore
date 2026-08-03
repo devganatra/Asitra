@@ -1,6 +1,7 @@
 # Xcode
 DerivedData/
 build/
+dist/
 !WebApp/build/
 !WebApp/build/sites-vite-plugin.ts
 *.xcuserstate
