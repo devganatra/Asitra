@@ -25,7 +25,7 @@ export async function generateMetadata(): Promise<Metadata> {
     "localhost:3000";
   const host = isAllowedHost(requestedHost)
     ? requestedHost
-    : "sakhya-everyday.deepanddev.chatgpt.site";
+    : "asitra.app";
   const protocol =
     requestHeaders.get("x-forwarded-proto") ??
     (host.startsWith("localhost") ? "http" : "https");

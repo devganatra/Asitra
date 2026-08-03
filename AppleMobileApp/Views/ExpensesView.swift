@@ -1500,7 +1500,7 @@ private struct UnifiedFinanceEntrySheet: View {
 }
 
 private enum RemoteFinanceClassifier {
-    private static let endpoint = URL(string: "https://sakhya-everyday.deepanddev.chatgpt.site/api/native/finance/classify")!
+    private static let endpoint = URL(string: "https://asitra.app/api/native/finance/classify")!
 
     static func classify(_ text: String, sessionToken: String) async throws -> UnifiedFinanceDraft {
         var request = URLRequest(url: endpoint)

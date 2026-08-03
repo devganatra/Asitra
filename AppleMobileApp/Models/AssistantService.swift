@@ -510,7 +510,7 @@ private enum AssistantEngine {
 
 private enum RemoteAsitraAssistant {
     private static let endpoint = URL(
-        string: "https://sakhya-everyday.deepanddev.chatgpt.site/api/native/assistant"
+        string: "https://asitra.app/api/native/assistant"
     )!
 
     static func answer(
