@@ -1,4 +1,4 @@
-import { authenticatedUserKey, database, isTrustedMutation, jsonResponse } from "../security";
+import { authenticatedUserKey, consumeRateLimit, database, isTrustedMutation, jsonResponse } from "../security";
 
 const MAX_BODY_BYTES = 64_000;
 
@@ -14,6 +14,7 @@ type SharedList = {
 export async function GET(request: Request) {
   const userId = await authenticatedUserKey(request);
   if (!userId) return jsonResponse({ error: "Authentication required." }, 401);
+  if (!(await consumeRateLimit(userId, "shared-list-write", 90))) return jsonResponse({ error: "Too many list updates. Try again shortly." }, 429);
   const result = await database()
     .prepare(
       `SELECT l.id, l.owner_id AS ownerId, l.list_json AS listJson, l.version,
@@ -38,6 +39,7 @@ export async function POST(request: Request) {
   if (!isTrustedMutation(request)) return jsonResponse({ error: "Untrusted request." }, 403);
   const userId = await authenticatedUserKey(request);
   if (!userId) return jsonResponse({ error: "Authentication required." }, 401);
+  if (!(await consumeRateLimit(userId, "shared-list-delete", 30))) return jsonResponse({ error: "Too many list changes. Try again shortly." }, 429);
   const body = await readBody(request);
   if (!body) return jsonResponse({ error: "Invalid sharing request." }, 400);
   const action = body.action;

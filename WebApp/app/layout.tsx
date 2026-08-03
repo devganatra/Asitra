@@ -56,6 +56,8 @@ export async function generateMetadata(): Promise<Metadata> {
 function isAllowedHost(host: string): boolean {
   return (
     /^localhost(?::\d+)?$/i.test(host) ||
+    /^(?:www\.)?asitra\.app$/i.test(host) ||
+    /^devganatra\.github\.io$/i.test(host) ||
     /^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.chatgpt\.site$/i.test(host)
   );
 }

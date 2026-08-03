@@ -16,6 +16,7 @@ final class AsitraAIAccount {
     private(set) var modelIdentifier: String?
     private(set) var modelProfile = "Everyday"
     private(set) var modelContractVersion: Int?
+    private(set) var aiConsent = false
 
     private let sessionStore = SecureSessionStore()
     private let serviceURL = URL(string: "https://sakhya-everyday.deepanddev.chatgpt.site")!
@@ -41,6 +42,43 @@ final class AsitraAIAccount {
             modelContractVersion = contract.version
         } catch {
             // Offline insights remain available; retry when the screen appears again.
+        }
+    }
+
+    func refreshConsent() async {
+        guard let token = sessionToken else {
+            aiConsent = false
+            return
+        }
+        var request = URLRequest(url: serviceURL.appending(path: "api/native/consent"))
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 15
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else { return }
+            aiConsent = try JSONDecoder().decode(ConsentResponse.self, from: data).granted
+        } catch {
+            aiConsent = false
+        }
+    }
+
+    func setAIConsent(_ granted: Bool) async {
+        guard let token = sessionToken else {
+            aiConsent = false
+            return
+        }
+        var request = URLRequest(url: serviceURL.appending(path: "api/native/consent"))
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try? JSONEncoder().encode(ConsentRequest(granted: granted))
+        request.timeoutInterval = 15
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else { return }
+            aiConsent = try JSONDecoder().decode(ConsentResponse.self, from: data).granted
+        } catch {
+            // Keep the previous server-confirmed choice when offline.
         }
     }
 
@@ -77,6 +115,7 @@ final class AsitraAIAccount {
             let session = try JSONDecoder().decode(SessionResponse.self, from: data)
             try sessionStore.save(session)
             isConnected = true
+            await refreshConsent()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -92,12 +131,21 @@ final class AsitraAIAccount {
         }
         sessionStore.delete()
         isConnected = false
+        aiConsent = false
         errorMessage = nil
     }
 }
 
 private struct SessionRequest: Encodable {
     let identityToken: String
+}
+
+private struct ConsentRequest: Encodable {
+    let granted: Bool
+}
+
+private struct ConsentResponse: Decodable {
+    let granted: Bool
 }
 
 private struct SessionResponse: Codable {

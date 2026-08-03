@@ -1,7 +1,10 @@
 import { env } from "cloudflare:workers";
 import { accountKeyForEmail } from "../account-identity";
+import { betterAuthSession } from "../auth/server";
 
 export async function authenticatedUserKey(request: Request): Promise<string | null> {
+  const session = await betterAuthSession(request);
+  if (session?.user.id) return session.user.id;
   return accountKeyForEmail(request.headers.get("oai-authenticated-user-email") ?? "");
 }
 
@@ -13,6 +16,13 @@ export function database(): D1Database {
 export function uploads(): R2Bucket {
   if (!env.UPLOADS) throw new Error("Secure attachment storage is unavailable.");
   return env.UPLOADS;
+}
+
+export async function hasStoredConsent(userId: string, purpose: string): Promise<boolean> {
+  const row = await database().prepare(
+    "SELECT granted FROM user_consents WHERE user_id = ? AND purpose = ?",
+  ).bind(userId, purpose).first<{ granted: number }>();
+  return Boolean(row?.granted);
 }
 
 export async function consumeRateLimit(
@@ -34,6 +44,18 @@ export async function consumeRateLimit(
     .bind(userId, scope, windowStart, limit)
     .run();
   return Number(result.meta.changes ?? 0) > 0;
+}
+
+export async function consumeAnonymousRateLimit(
+  request: Request,
+  scope: string,
+  limit: number,
+  windowMinutes: number,
+): Promise<boolean> {
+  const address = request.headers.get("cf-connecting-ip") ?? request.headers.get("x-real-ip") ?? "unknown";
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(address));
+  const key = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return consumeRateLimit(`anonymous:${key}`, scope, limit, windowMinutes);
 }
 
 export function isTrustedMutation(request: Request): boolean {

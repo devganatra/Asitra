@@ -37,6 +37,7 @@ struct AssistantChatView: View {
         }
         .task {
             await assistant.account.refreshModelContract()
+            await assistant.account.refreshConsent()
         }
     }
 
@@ -113,6 +114,9 @@ struct AssistantChatView: View {
                         if !assistant.account.isConnected {
                             terraConnection
                         }
+                        if assistant.account.isConnected {
+                            aiPrivacyChoice
+                        }
                         Label(
                             "Only grounded summaries needed for your question are sent to the shared Asitra model.",
                             systemImage: "lock.shield"
@@ -137,6 +141,23 @@ struct AssistantChatView: View {
                 }
             }
         }
+    }
+
+    private var aiPrivacyChoice: some View {
+        Toggle(isOn: Binding(
+            get: { assistant.account.aiConsent },
+            set: { granted in Task { await assistant.account.setAIConsent(granted) } }
+        )) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Allow AI analysis")
+                    .font(.subheadline.weight(.semibold))
+                Text("Send only relevant Asitra context to the server-side model. Turn off anytime.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(14)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
     }
 
     private var terraConnection: some View {

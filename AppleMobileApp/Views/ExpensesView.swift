@@ -1478,6 +1478,10 @@ private struct UnifiedFinanceEntrySheet: View {
             error = "That entry is ambiguous. Connect Terra in Asitra AI, or use Guided."
             return
         }
+        guard AsitraAIAccount.shared.aiConsent else {
+            error = "Allow AI analysis in Asitra AI first, or use Guided."
+            return
+        }
         isClassifying = true
         defer { isClassifying = false }
         do {

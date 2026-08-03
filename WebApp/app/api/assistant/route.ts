@@ -2,6 +2,7 @@ import {
   authenticatedUserKey,
   consumeRateLimit,
   database,
+  hasStoredConsent,
   isTrustedMutation,
   jsonResponse,
 } from "../security";
@@ -46,6 +47,10 @@ export async function POST(request: Request) {
     messages = validateMessages(body.messages);
   } catch {
     return jsonResponse({ error: "Invalid assistant request." }, 400);
+  }
+
+  if (!(await hasStoredConsent(userId, "ai_analysis"))) {
+    return jsonResponse({ error: "AI data consent is required.", code: "AI_CONSENT_REQUIRED" }, 403);
   }
 
   try {
