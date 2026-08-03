@@ -30,7 +30,7 @@ public protocol AIProvider: Sendable {
     func interpret(_ request: AIInterpretationRequest) async throws -> AIInterpretationResult
 }
 
-public struct SakhyaAIContract: Codable, Sendable, Equatable {
+public struct AsitraAIContract: Codable, Sendable, Equatable {
     public let version: Int
     public let profile: String
     public let label: String
@@ -44,7 +44,7 @@ public struct SakhyaAIContract: Codable, Sendable, Equatable {
     }
 }
 
-public struct SakhyaAssistantResponse: Codable, Sendable, Equatable {
+public struct AsitraAssistantResponse: Codable, Sendable, Equatable {
     public let answer: String
     public let model: String
     public let label: String

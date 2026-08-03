@@ -3,7 +3,7 @@ import SwiftData
 
 struct LocalDataSnapshot {
     var entries: [LogEntry]
-    var lists: [SakhyaList]
+    var lists: [AsitraList]
     var recentlyDeleted: [DeletedEntry]
 }
 
@@ -43,8 +43,8 @@ protocol SyncOutboxRepository {
 
 @MainActor
 protocol ListRepository {
-    func loadLists() throws -> [SakhyaList]
-    func save(lists: [SakhyaList]) throws
+    func loadLists() throws -> [AsitraList]
+    func save(lists: [AsitraList]) throws
 }
 
 @MainActor
@@ -149,7 +149,7 @@ final class ListRecord {
     var revision: Int?
     var modifiedByDevice: String?
 
-    init(list: SakhyaList, payload: Data) {
+    init(list: AsitraList, payload: Data) {
         id = list.id
         name = list.name
         kind = list.kind.rawValue
@@ -158,7 +158,7 @@ final class ListRecord {
         apply(list, isNew: true)
     }
 
-    func apply(_ list: SakhyaList, isNew: Bool = false) {
+    func apply(_ list: AsitraList, isNew: Bool = false) {
         name = list.name
         kind = list.kind.rawValue
         access = list.access.rawValue
@@ -245,6 +245,9 @@ enum PersistenceController {
             SyncOutboxRecord.self,
             SystemWorkspaceRecord.self
         ])
+        // Keep the original on-disk location so the rebrand never strands an
+        // existing user's SwiftData store. This is an implementation detail;
+        // the product name shown to users is Asitra.
         let databaseDirectory = URL.applicationSupportDirectory
             .appending(path: "Sakhya/Database", directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: databaseDirectory, withIntermediateDirectories: true)
@@ -462,16 +465,16 @@ final class SwiftDataListRepository: ListRepository {
     private let context: ModelContext
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
-    private var cachedLists: [UUID: SakhyaList] = [:]
+    private var cachedLists: [UUID: AsitraList] = [:]
 
     init(container: ModelContainer) {
         context = container.mainContext
     }
 
-    func loadLists() throws -> [SakhyaList] {
+    func loadLists() throws -> [AsitraList] {
         var backfilled = false
-        let values = try context.fetch(FetchDescriptor<ListRecord>()).compactMap { record -> SakhyaList? in
-            guard let list = try? decoder.decode(SakhyaList.self, from: record.payload) else { return nil }
+        let values = try context.fetch(FetchDescriptor<ListRecord>()).compactMap { record -> AsitraList? in
+            guard let list = try? decoder.decode(AsitraList.self, from: record.payload) else { return nil }
             if record.revision == nil {
                 record.apply(list, isNew: true)
                 backfilled = true
@@ -483,7 +486,7 @@ final class SwiftDataListRepository: ListRepository {
         return values
     }
 
-    func save(lists: [SakhyaList]) throws {
+    func save(lists: [AsitraList]) throws {
         let existing = try context.fetch(FetchDescriptor<ListRecord>())
         let byID = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
         let retained = Set(lists.map(\.id))

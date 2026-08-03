@@ -5,7 +5,7 @@ struct ListsView: View {
     @Environment(AppModel.self) private var model
     @State private var selectedListID: UUID?
     @State private var showingNewList = false
-    @State private var listToManage: SakhyaList?
+    @State private var listToManage: AsitraList?
 
     private var listEntries: [LogEntry] {
         model.entries.filter {
@@ -13,7 +13,7 @@ struct ListsView: View {
         }
     }
 
-    private var selectedList: SakhyaList? { model.list(withID: selectedListID) }
+    private var selectedList: AsitraList? { model.list(withID: selectedListID) }
     private var allListEntryCount: Int { model.entries.filter { $0.category == .list }.count }
 
     private var pending: [LogEntry] { listEntries.filter { !$0.isCompleted } }
@@ -223,7 +223,7 @@ private struct ListSelectionCard: View {
 }
 
 private struct SharedListBanner: View {
-    let list: SakhyaList
+    let list: AsitraList
     let manage: () -> Void
 
     var body: some View {
@@ -236,7 +236,7 @@ private struct SharedListBanner: View {
                     .font(.subheadline.bold())
                 Text(list.isCloudConnected
                     ? "Changes from everyone appear here and in the timeline."
-                    : "Connect Sakhya to its CloudKit container before sending invitations.")
+                    : "Connect Asitra to its CloudKit container before sending invitations.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -310,12 +310,12 @@ private struct NewListView: View {
 private struct ManageListView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
-    @State private var draft: SakhyaList
+    @State private var draft: AsitraList
     @State private var showingCloudKitNotice = false
     @State private var sharingError: String?
     @State private var isPreparingShare = false
 
-    init(list: SakhyaList) {
+    init(list: AsitraList) {
         _draft = State(initialValue: list)
     }
 
@@ -413,7 +413,7 @@ private struct ManageListView: View {
             .alert("iCloud setup required", isPresented: $showingCloudKitNotice) {
                 Button("OK", role: .cancel) {}
             } message: {
-                Text("The collaboration flow is ready, but invitations need Sakhya’s CloudKit container and Apple Developer signing to be configured first.")
+                Text("The collaboration flow is ready, but invitations need Asitra’s CloudKit container and Apple Developer signing to be configured first.")
             }
             .alert("Sharing unavailable", isPresented: Binding(
                 get: { sharingError != nil },
@@ -509,7 +509,7 @@ struct LibraryView: View {
                     ContentUnavailableView {
                         Label("No tracker here yet", systemImage: family.systemImage)
                     } description: {
-                        Text("Create one and Sakhya will offer the right fields automatically.")
+                        Text("Create one and Asitra will offer the right fields automatically.")
                     } actions: {
                         Button("Create tracker") { showingCreator = true }
                             .buttonStyle(.borderedProminent)

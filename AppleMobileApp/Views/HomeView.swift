@@ -112,7 +112,7 @@ struct HomeView: View {
             Label("Capture evidence", systemImage: "sparkles")
                 .font(.headline)
 
-            Text("Type or talk naturally. Sakhya organizes it before anything is saved.")
+            Text("Type or talk naturally. Asitra organizes it before anything is saved.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -339,7 +339,7 @@ struct HomeView: View {
         Task {
             defer { isAnalyzingImage = false }
             guard let data = try? await item.loadTransferable(type: Data.self) else {
-                captureError = "Sakhya could not load that photo."
+                captureError = "Asitra could not load that photo."
                 return
             }
             quickPhotoData = data
@@ -616,7 +616,7 @@ private struct CalendarEntryPreview: View {
                 Section {
                     Label("Review before saving", systemImage: "checkmark.shield")
                         .font(.headline)
-                    Text("Nothing will be added to Sakhya or Apple Calendar until you confirm.")
+                    Text("Nothing will be added to Asitra or Apple Calendar until you confirm.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -1407,7 +1407,7 @@ private struct AddEntryView: View {
     private var lifeArea: LifeArea { selectedLifeArea ?? suggestion.lifeArea }
     private var deviceSource: DeviceSource? { selectedDevice ?? suggestion.deviceSource }
     private var listKind: ListKind { selectedListKind ?? suggestion.listKind ?? .task }
-    private var destinationList: SakhyaList? {
+    private var destinationList: AsitraList? {
         model.list(withID: selectedListID) ?? model.suggestedList(for: input, kind: listKind)
     }
 

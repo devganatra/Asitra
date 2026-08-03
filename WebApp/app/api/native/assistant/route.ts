@@ -1,11 +1,11 @@
 import { jsonResponse } from "../../security";
 import {
   AIConfigurationError,
-  answerWithSakhyaAI,
-  publicSakhyaAIContract,
+  answerWithAsitraAI,
+  publicAsitraAIContract,
   type AssistantMessage,
   type GroundedMetric,
-  type SakhyaAssistantContext,
+  type AsitraAssistantContext,
 } from "../../assistant/service";
 import { authenticatedNativeUser, consumeNativeAIRateLimit } from "../security";
 
@@ -15,7 +15,7 @@ const MAX_MESSAGE_LENGTH = 2_000;
 
 export async function POST(request: Request) {
   const userId = await authenticatedNativeUser(request);
-  if (!userId) return jsonResponse({ error: "Sakhya AI sign-in is required." }, 401);
+  if (!userId) return jsonResponse({ error: "Asitra AI sign-in is required." }, 401);
   if (!(await consumeNativeAIRateLimit(userId))) {
     return jsonResponse({ error: "The hourly AI limit has been reached. Try again shortly." }, 429);
   }
@@ -35,12 +35,12 @@ export async function POST(request: Request) {
     const body = JSON.parse(bodyText) as { messages?: unknown; context?: unknown };
     const messages = validateMessages(body.messages);
     const context = validateContext(body.context);
-    const result = await answerWithSakhyaAI({
+    const result = await answerWithAsitraAI({
       userIdentifier: userId,
       messages,
       context,
     });
-    const contract = publicSakhyaAIContract();
+    const contract = publicAsitraAIContract();
     return jsonResponse({
       answer: result.answer,
       model: result.model,
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
       return jsonResponse({ error: error.message, code: "AI_NOT_CONFIGURED" }, 503);
     }
     console.error("Native assistant error", error);
-    return jsonResponse({ error: "Sakhya AI is temporarily unavailable." }, 502);
+    return jsonResponse({ error: "Asitra AI is temporarily unavailable." }, 502);
   }
 }
 
@@ -80,7 +80,7 @@ function validateMessages(value: unknown): AssistantMessage[] {
   });
 }
 
-function validateContext(value: unknown): SakhyaAssistantContext {
+function validateContext(value: unknown): AsitraAssistantContext {
   const source = record(value);
   const generatedAt = shortString(source.generatedAt, 64);
   if (!Number.isFinite(Date.parse(generatedAt))) throw new Error("Invalid context date.");

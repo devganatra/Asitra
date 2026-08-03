@@ -40,9 +40,12 @@ export function isTrustedMutation(request: Request): boolean {
   const url = new URL(request.url);
   const origin = request.headers.get("origin");
   const fetchSite = request.headers.get("sec-fetch-site");
+  const appRequest =
+    request.headers.get("x-asitra-request") === "1" ||
+    request.headers.get("x-sakhya-request") === "1";
   return (
     origin === url.origin &&
-    request.headers.get("x-sakhya-request") === "1" &&
+    appRequest &&
     (!fetchSite || fetchSite === "same-origin")
   );
 }

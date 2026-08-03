@@ -1,13 +1,13 @@
-# Sakhya Web
+# Asitra Web
 
-The responsive web companion for Sakhya. It follows the same everyday structure as the native Apple app:
+The responsive web companion for Asitra. It follows the same everyday structure as the native Apple app:
 
 - **Today** — natural-language capture, voice dictation, photos, calendar strip, daily system, and editable timeline
 - **Lists** — private lists and versioned shared lists with expiring one-time invite codes
 - **Track** — health, habits, learning/media, and mindset check-ins
-- **Money** — cash flow, personal surplus allocation, balance sheet/net worth, monthly spending, savings progress, trip planning, typed entry, natural Sakhya commands, and reviewed PDF statement import
+- **Money** — cash flow, personal surplus allocation, balance sheet/net worth, monthly spending, savings progress, trip planning, typed entry, natural Asitra commands, and reviewed PDF statement import
 - **Balance** — work/personal context and cross-life signals
-- **Ask Sakhya** — one shared Terra-powered assistant for web, Mac, iPhone, and iPad
+- **Ask Asitra** — one shared Terra-powered assistant for web, Mac, iPhone, and iPad
 
 ## Run locally
 
@@ -30,7 +30,7 @@ Web data remains separate from Apple-only services. The signed native bridge cur
 
 ## Shared AI and grounded health context
 
-The web and Apple clients call the same server-side AI service. Web users must explicitly enable AI analysis before any account context is sent. Requests are limited to 20 per hour on web and use OpenAI's no-store option. Sakhya calculates totals, durations, budget values, and balance scores before invoking the model. Those values are sent as `verifiedMetrics` with their source (for example, WHOOP via Apple Health), while recent timeline entries are supporting context. The model explains patterns but does not calculate authoritative health or financial values.
+The web and Apple clients call the same server-side AI service. Web users must explicitly enable AI analysis before any account context is sent. Requests are limited to 20 per hour on web and use OpenAI's no-store option. Asitra calculates totals, durations, budget values, and balance scores before invoking the model. Those values are sent as `verifiedMetrics` with their source (for example, WHOOP via Apple Health), while recent timeline entries are supporting context. The model explains patterns but does not calculate authoritative health or financial values.
 
 The native apps authenticate to `/api/native/session` with Sign in with Apple. The server verifies Apple's signature and audience, issues a random 30-day session, stores only its SHA-256 hash, and rate-limits native AI requests. The OpenAI API key never ships in an app or browser.
 
@@ -47,7 +47,7 @@ CUSTOM_AI_API_KEY=...
 CUSTOM_AI_MODEL=your-model-id
 ```
 
-Do not point the production service at localhost, a private IP, or an unauthenticated inference server. The gateway must provide authentication, encryption in transit, rate limits, monitoring, and an appropriate privacy policy. Changing this configuration switches the model for every Sakhya client without an app update.
+Do not point the production service at localhost, a private IP, or an unauthenticated inference server. The gateway must provide authentication, encryption in transit, rate limits, monitoring, and an appropriate privacy policy. Changing this configuration switches the model for every Asitra client without an app update.
 
 ## Validate
 

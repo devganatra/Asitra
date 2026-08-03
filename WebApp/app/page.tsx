@@ -1,9 +1,9 @@
 import { chatGPTSignOutPath, requireChatGPTUser } from "./chatgpt-auth";
-import SakhyaWebApp from "./SakhyaWebApp";
+import AsitraWebApp from "./AsitraWebApp";
 
 export const dynamic = "force-dynamic";
 
 export default async function Page() {
   const user = await requireChatGPTUser("/");
-  return <SakhyaWebApp userName={user.displayName} logoutPath={chatGPTSignOutPath("/")} />;
+  return <AsitraWebApp userName={user.displayName} logoutPath={chatGPTSignOutPath("/")} />;
 }

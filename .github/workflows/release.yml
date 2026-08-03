@@ -24,7 +24,7 @@ jobs:
           project_version="$(sed -n 's/.*MARKETING_VERSION = \([^;]*\);/\1/p' AppleMobileApp.xcodeproj/project.pbxproj | head -1)"
           test "$expected_version" = "$project_version"
 
-      - name: Build Sakhya for Mac
+      - name: Build Asitra for Mac
         run: >-
           xcodebuild
           -project AppleMobileApp.xcodeproj
@@ -34,7 +34,7 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
           build
 
-      - name: Build Sakhya for iPhone and iPad Simulator
+      - name: Build Asitra for iPhone and iPad Simulator
         run: >-
           xcodebuild
           -project AppleMobileApp.xcodeproj
@@ -52,4 +52,4 @@ jobs:
           --prerelease
           --verify-tag
           --generate-notes
-          --title "Sakhya ${GITHUB_REF_NAME#v}"
+          --title "Asitra ${GITHUB_REF_NAME#v}"

@@ -8,7 +8,7 @@ import {
 
 const now = new Date("2026-07-29T12:00:00.000Z");
 
-test("understands typed Sakhya expense and income instructions", () => {
+test("understands typed Asitra expense and income instructions", () => {
   const expense = parseMoneyInstruction("Spent €24.50 on groceries yesterday", now);
   assert.equal(expense?.kind, "expense");
   assert.equal(expense?.amount, 24.5);

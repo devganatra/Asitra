@@ -1,6 +1,6 @@
-# Releasing Sakhya
+# Releasing Asitra
 
-Sakhya uses two related release channels:
+Asitra uses two related release channels:
 
 1. GitHub prereleases preserve source history, release notes, and validation results.
 2. TestFlight delivers signed beta builds that people can install on iPhone and iPad.
@@ -21,7 +21,7 @@ The marketing version must contain only numbers and periods. The beta label belo
 4. Tag the merged commit and push the tag:
 
    ```bash
-   git tag -a v0.1.0-beta.1 -m "Sakhya 0.1.0 Beta 1"
+   git tag -a v0.1.0-beta.1 -m "Asitra 0.1.0 Beta 1"
    git push origin v0.1.0-beta.1
    ```
 
@@ -33,8 +33,8 @@ The release workflow verifies Mac and iOS Simulator builds before creating a Git
 2. Sign in under Xcode > Settings > Accounts.
 3. Connect and trust the device.
 4. Open `AppleMobileApp.xcodeproj`.
-5. Select the Sakhya target and choose your team under Signing & Capabilities.
-6. Confirm that `com.devganatra.sakhya` is available to the team. Change it to another unique reverse-domain identifier if needed.
+5. Select the `AppleMobileApp` target (display name: Asitra) and choose your team under Signing & Capabilities.
+6. Confirm that the existing `com.devganatra.sakhya` bundle identifier belongs to the team. It is retained so the rebrand remains an update of the same application rather than creating a second app.
 7. Select the connected device and press Run.
 
 This route is suitable for development. TestFlight is the better route for repeatable beta installation and updates.
@@ -51,12 +51,12 @@ Prerequisites:
 
 Steps:
 
-1. In Xcode, select the Sakhya scheme and **Any iOS Device (arm64)**.
+1. In Xcode, select the `AppleMobileApp` scheme and **Any iOS Device (arm64)**.
 2. Choose Product > Archive.
 3. In Organizer, select the archive and click Distribute App.
 4. Choose **TestFlight & App Store** or **TestFlight Internal Only**.
 5. Keep automatic signing and symbol upload enabled, then upload.
-6. In App Store Connect > Sakhya > TestFlight, wait for processing.
+6. In App Store Connect > Asitra > TestFlight, wait for processing.
 7. Add Beta 1 to an internal testing group and enter the following What to Test text:
 
    > Test Quick Capture, the calendar, private and shared-list setup, reminders, Health import, and timeline-to-tracker updates. Shared-list live invitations are not enabled in this build.

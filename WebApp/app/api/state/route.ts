@@ -39,7 +39,7 @@ export async function PUT(request: Request) {
     }
     state = validatePersistedState(JSON.parse(body));
   } catch {
-    return jsonResponse({ error: "Invalid Sakhya state." }, 400);
+    return jsonResponse({ error: "Invalid Asitra state." }, 400);
   }
 
   const updatedAt = new Date().toISOString();
@@ -77,7 +77,10 @@ export async function DELETE(request: Request) {
   if (!isTrustedMutation(request)) return jsonResponse({ error: "Untrusted request." }, 403);
   const userId = await authenticatedUserKey(request);
   if (!userId) return jsonResponse({ error: "Authentication required." }, 401);
-  if (request.headers.get("x-sakhya-confirm-delete") !== "DELETE MY ACCOUNT") {
+  const confirmation =
+    request.headers.get("x-asitra-confirm-delete") ??
+    request.headers.get("x-sakhya-confirm-delete");
+  if (confirmation !== "DELETE MY ACCOUNT") {
     return jsonResponse({ error: "Account deletion confirmation is required." }, 400);
   }
 

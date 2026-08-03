@@ -1,7 +1,7 @@
 import Foundation
 
 enum SampleDataFactory {
-    static func make(days: Int, lists: [SakhyaList], now: Date = .now) -> [LogEntry] {
+    static func make(days: Int, lists: [AsitraList], now: Date = .now) -> [LogEntry] {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: now)
         let groceries = lists.first { $0.kind == .grocery }?.id

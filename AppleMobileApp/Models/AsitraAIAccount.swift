@@ -2,12 +2,12 @@ import AuthenticationServices
 import Foundation
 import Observation
 import Security
-import SakhyaContracts
+import AsitraContracts
 
 @MainActor
 @Observable
-final class SakhyaAIAccount {
-    static let shared = SakhyaAIAccount()
+final class AsitraAIAccount {
+    static let shared = AsitraAIAccount()
 
     private(set) var isConnected: Bool
     private(set) var isConnecting = false
@@ -34,7 +34,7 @@ final class SakhyaAIAccount {
             let url = serviceURL.appending(path: "api/assistant/config")
             let (data, response) = try await URLSession.shared.data(from: url)
             guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else { return }
-            let contract = try JSONDecoder().decode(SakhyaAIContract.self, from: data)
+            let contract = try JSONDecoder().decode(AsitraAIContract.self, from: data)
             modelLabel = contract.label
             modelIdentifier = contract.model
             modelProfile = contract.profile
@@ -44,7 +44,7 @@ final class SakhyaAIAccount {
         }
     }
 
-    func apply(_ response: SakhyaAssistantResponse) {
+    func apply(_ response: AsitraAssistantResponse) {
         modelLabel = response.label
         modelIdentifier = response.model
         modelProfile = response.profile
@@ -62,7 +62,7 @@ final class SakhyaAIAccount {
             guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
                   let tokenData = credential.identityToken,
                   let identityToken = String(data: tokenData, encoding: .utf8) else {
-                throw SakhyaAIAccountError.missingIdentityToken
+                throw AsitraAIAccountError.missingIdentityToken
             }
             var request = URLRequest(url: serviceURL.appending(path: "api/native/session"))
             request.httpMethod = "POST"
@@ -72,7 +72,7 @@ final class SakhyaAIAccount {
 
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
-                throw SakhyaAIAccountError.signInRejected
+                throw AsitraAIAccountError.signInRejected
             }
             let session = try JSONDecoder().decode(SessionResponse.self, from: data)
             try sessionStore.save(session)
@@ -139,7 +139,7 @@ private struct SecureSessionStore {
             kSecValueData as String: data
         ]
         guard SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess else {
-            throw SakhyaAIAccountError.secureStorageFailed
+            throw AsitraAIAccountError.secureStorageFailed
         }
     }
 
@@ -153,7 +153,7 @@ private struct SecureSessionStore {
     }
 }
 
-private enum SakhyaAIAccountError: LocalizedError {
+private enum AsitraAIAccountError: LocalizedError {
     case missingIdentityToken
     case signInRejected
     case secureStorageFailed
@@ -163,7 +163,7 @@ private enum SakhyaAIAccountError: LocalizedError {
         case .missingIdentityToken:
             "Apple did not provide a usable identity token."
         case .signInRejected:
-            "Sakhya could not verify this Apple sign-in."
+            "Asitra could not verify this Apple sign-in."
         case .secureStorageFailed:
             "The secure AI session could not be saved in Keychain."
         }

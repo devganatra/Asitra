@@ -241,7 +241,7 @@ enum IntelligentCaptureError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidImage: "Sakhya could not read this image."
+        case .invalidImage: "Asitra could not read this image."
         case .speechUnavailable: "Speech recognition is currently unavailable."
         case .microphoneUnavailable: "No microphone input is available."
         }

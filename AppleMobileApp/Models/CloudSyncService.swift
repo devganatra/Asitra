@@ -10,7 +10,7 @@ struct DeletedEntry: Identifiable, Codable, Hashable {
 
 struct CloudSnapshot: Codable {
     var entries: [LogEntry]
-    var lists: [SakhyaList]
+    var lists: [AsitraList]
     var recentlyDeleted: [DeletedEntry]
     var attachments: [String: Data]
     var updatedAt: Date
@@ -20,6 +20,7 @@ struct CloudSnapshot: Codable {
 enum CloudSyncService {
     private static let container = CKContainer(identifier: "iCloud.com.devganatra.sakhya")
     private static let recordID = CKRecord.ID(recordName: "primary-snapshot")
+    // CloudKit record identifiers are permanent compatibility contracts.
     private static let recordType = "SakhyaSnapshot"
 
     static var isConfigured: Bool {
@@ -138,6 +139,6 @@ enum CloudSyncError: LocalizedError {
     case notConfigured
 
     var errorDescription: String? {
-        "CloudKit requires a signed build with the Sakhya iCloud container entitlement."
+        "CloudKit requires a signed build with the Asitra iCloud container entitlement."
     }
 }

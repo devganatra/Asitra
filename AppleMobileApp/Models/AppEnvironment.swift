@@ -1,5 +1,5 @@
 import Foundation
-import SakhyaContracts
+import AsitraContracts
 import SwiftData
 
 @MainActor
@@ -41,7 +41,7 @@ struct CaptureTimelineEntryUseCase {
     func makeEntry(
         text: String,
         selectedDate: Date,
-        destination: SakhyaList?,
+        destination: AsitraList?,
         deviceSource: DeviceSource,
         captureNote: String,
         calendarOverride: CalendarCaptureOverride?

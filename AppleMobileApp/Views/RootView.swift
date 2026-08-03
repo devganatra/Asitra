@@ -12,7 +12,7 @@ struct RootView: View {
                 Label(section.rawValue, systemImage: section.systemImage)
                     .tag(section)
             }
-            .navigationTitle("Sakhya")
+            .navigationTitle("Asitra")
         } detail: {
             destination(for: model.selectedSection ?? .today)
         }
@@ -21,7 +21,7 @@ struct RootView: View {
             Button {
                 showingAssistant = true
             } label: {
-                Label("Ask Sakhya", systemImage: "sparkles")
+                Label("Ask Asitra", systemImage: "sparkles")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
                     .padding(.horizontal, 16)
@@ -36,8 +36,8 @@ struct RootView: View {
             .buttonStyle(.plain)
             .padding(.horizontal, 18)
             .padding(.vertical, 10)
-            .accessibilityLabel("Ask Sakhya")
-            .help("Ask Sakhya about your stats")
+            .accessibilityLabel("Ask Asitra")
+            .help("Ask Asitra about your stats")
         }
         .sheet(isPresented: $showingAssistant) {
             AssistantChatView()
