@@ -2,6 +2,17 @@
 
 All notable changes to Sakhya are recorded here.
 
+## Beta 1 maintenance — 2026-08-03
+
+### Fixed
+
+- Natural-language dates and times now place timeline entries at the requested time.
+- Reminder, shopping, and travel-list commands take priority over incidental food or movement words.
+- Hiking, journal, and mindset phrases are classified consistently.
+- Captured list items route to reminders, groceries, or travel lists and preserve due labels.
+- Work-life totals now use recorded durations consistently.
+- The floating Sakhya assistant opens reliably and exposes its dialog state accessibly.
+
 ## 0.1.0 Beta 1 — 2026-07-14
 
 ### Added
