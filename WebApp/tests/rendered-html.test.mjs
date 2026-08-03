@@ -359,6 +359,9 @@ test("ships the secured product source without starter artifacts", async () => {
   assert.match(client, /Show getting-started tour/);
   assert.match(client, /Account menu for/);
   assert.match(client, /End this Asitra session on this browser/);
+  assert.match(client, /fetch\(logoutPath, \{[\s\S]*?"content-type": "application\/json"[\s\S]*?body: JSON\.stringify\(\{\}\)/);
+  assert.match(client, /if \(!response\?\.ok\)[\s\S]*?session is still active/);
+  assert.match(client, /window\.location\.replace\("\/login"\)/);
   assert.match(client, /onboardingCompleted/);
   assert.match(stateRoute, /WHERE user_id = \?/);
   assert.match(client, /Today/);
