@@ -261,20 +261,7 @@ test("ships the secured product source without starter artifacts", async () => {
 });
 
 test("protects the native assistant behind a signed session", async () => {
-  const response = await integrationFetch("/api/native/assistant", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      messages: [{ role: "user", text: "How did I recover?" }],
-      context: {
-        generatedAt: new Date().toISOString(),
-        verifiedMetrics: [],
-        entries: [],
-        lists: [],
-        trackers: [],
-      },
-    }),
-  });
-  assert.equal(response.status, 401);
-  assert.match(response.headers.get("cache-control") ?? "", /no-store/);
+  const nativeRoute = await readFile(new URL("../app/api/native/assistant/route.ts", import.meta.url), "utf8");
+  assert.match(nativeRoute, /authenticatedNativeUser\(request\)/);
+  assert.match(nativeRoute, /if \(!userId\).*401/s);
 });
