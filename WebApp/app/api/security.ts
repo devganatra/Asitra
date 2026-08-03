@@ -1,11 +1,8 @@
 import { env } from "cloudflare:workers";
-import { getChatGPTUser } from "../chatgpt-auth";
 import { accountKeyForEmail } from "../account-identity";
 
-export async function authenticatedUserKey(request?: Request): Promise<string | null> {
-  const directEmail = request?.headers.get("oai-authenticated-user-email")?.trim();
-  const user = directEmail ? null : request ? null : await getChatGPTUser();
-  return accountKeyForEmail(directEmail ?? user?.email ?? "");
+export async function authenticatedUserKey(request: Request): Promise<string | null> {
+  return accountKeyForEmail(request.headers.get("oai-authenticated-user-email") ?? "");
 }
 
 export function database(): D1Database {
