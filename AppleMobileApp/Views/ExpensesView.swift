@@ -132,7 +132,7 @@ struct ExpensesView: View {
         .alert("Apple Wallet connection", isPresented: $showingWalletRequirements) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text("Sakhya uses Apple FinanceKit—not unrestricted Apple Pay history. It works on supported iPhones after Apple grants Sakhya the managed FinanceKit entitlement, and you choose which eligible Wallet accounts and date range to share.")
+            Text("Asitra uses Apple FinanceKit—not unrestricted Apple Pay history. It works on supported iPhones after Apple grants Asitra the managed FinanceKit entitlement, and you choose which eligible Wallet accounts and date range to share.")
         }
         .alert(
             "Statement could not be imported",
@@ -284,7 +284,7 @@ struct ExpensesView: View {
                 financeEntryDraft = UnifiedFinanceDraft()
             } label: {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Tell Sakhya what changed").font(.headline)
+                    Text("Tell Asitra what changed").font(.headline)
                     Text("“Paid €32 for groceries” · “Salary €3,200” · “Savings balance €8,400”")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -1282,7 +1282,7 @@ private struct NewTripSheet: View {
     @State private var start = Date.now
     @State private var end = Calendar.current.date(byAdding: .day, value: 5, to: .now) ?? .now
     var body: some View {
-        MoneyFormShell(title: "Plan a trip", explanation: "Set one total amount first. Sakhya will show how much remains as you spend.") {
+        MoneyFormShell(title: "Plan a trip", explanation: "Set one total amount first. Asitra will show how much remains as you spend.") {
             TextField("Trip name", text: $name)
             TextField("Destination", text: $destination)
             TextField("Total budget", text: $budget)
@@ -1398,7 +1398,7 @@ private struct UnifiedFinanceEntrySheet: View {
             Form {
                 Section {
                     Picker("Entry method", selection: $mode) {
-                        Text("Tell Sakhya").tag(0)
+                        Text("Tell Asitra").tag(0)
                         Text("Guided").tag(1)
                     }
                     .pickerStyle(.segmented)
@@ -1474,8 +1474,8 @@ private struct UnifiedFinanceEntrySheet: View {
             applyReview(parsed)
             return
         }
-        guard let token = SakhyaAIAccount.shared.sessionToken else {
-            error = "That entry is ambiguous. Connect Terra in Sakhya AI, or use Guided."
+        guard let token = AsitraAIAccount.shared.sessionToken else {
+            error = "That entry is ambiguous. Connect Terra in Asitra AI, or use Guided."
             return
         }
         isClassifying = true
@@ -1483,7 +1483,7 @@ private struct UnifiedFinanceEntrySheet: View {
         do {
             applyReview(try await RemoteFinanceClassifier.classify(naturalText, sessionToken: token))
         } catch {
-            self.error = "Sakhya could not classify that safely. Use Guided instead."
+            self.error = "Asitra could not classify that safely. Use Guided instead."
         }
     }
 

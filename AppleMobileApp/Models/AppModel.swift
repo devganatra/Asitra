@@ -41,7 +41,7 @@ final class AppModel {
         get { timelineFeature.entries }
         set { timelineFeature.entries = newValue }
     }
-    private(set) var lists: [SakhyaList] = []
+    private(set) var lists: [AsitraList] = []
     private(set) var recentlyDeleted: [DeletedEntry] {
         get { timelineFeature.recentlyDeleted }
         set { timelineFeature.recentlyDeleted = newValue }
@@ -98,14 +98,14 @@ final class AppModel {
 
         if timelineRepository.isInitialized {
             try? timelineFeature.load()
-            lists = (try? listRepository.loadLists()).flatMap { $0.isEmpty ? nil : $0 } ?? SakhyaList.defaults
+            lists = (try? listRepository.loadLists()).flatMap { $0.isEmpty ? nil : $0 } ?? AsitraList.defaults
         } else {
             if let data = defaults.data(forKey: listsStorageKey),
-               let savedLists = try? JSONDecoder().decode([SakhyaList].self, from: data),
+               let savedLists = try? JSONDecoder().decode([AsitraList].self, from: data),
                !savedLists.isEmpty {
                 lists = savedLists
             } else {
-                lists = SakhyaList.defaults
+                lists = AsitraList.defaults
             }
             let storedData = defaults.data(forKey: storageKey) ?? defaults.data(forKey: legacyStorageKey)
             if let storedData,
@@ -179,7 +179,7 @@ final class AppModel {
         calendarOverride: CalendarCaptureOverride? = nil
     ) {
         let suggestion = SmartCapture(text: text)
-        let destination: SakhyaList?
+        let destination: AsitraList?
         if let kind = suggestion.listKind {
             destination = suggestedList(for: text, kind: kind)
         } else {
@@ -275,7 +275,7 @@ final class AppModel {
                         identifier: identifier,
                         title: entry.calendarTitle ?? calendarTitle(from: entry.title),
                         location: entry.calendarLocation,
-                        notes: entry.note.isEmpty ? "Updated from Sakhya" : "Updated from Sakhya\n\n\(entry.note)",
+                        notes: entry.note.isEmpty ? "Updated from Asitra" : "Updated from Asitra\n\n\(entry.note)",
                         startDate: start,
                         endDate: end,
                         reminderLeadMinutes: entry.reminderLeadMinutes
@@ -304,11 +304,11 @@ final class AppModel {
         }
     }
 
-    func defaultList(for kind: ListKind) -> SakhyaList? {
+    func defaultList(for kind: ListKind) -> AsitraList? {
         lists.first { $0.kind == kind && $0.isDefault } ?? lists.first { $0.kind == kind }
     }
 
-    func suggestedList(for text: String, kind: ListKind) -> SakhyaList? {
+    func suggestedList(for text: String, kind: ListKind) -> AsitraList? {
         let normalized = text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
         if let namedList = lists.first(where: { list in
             guard list.kind == kind, !list.isDefault else { return false }
@@ -320,14 +320,14 @@ final class AppModel {
         return defaultList(for: kind)
     }
 
-    func list(withID id: UUID?) -> SakhyaList? {
+    func list(withID id: UUID?) -> AsitraList? {
         guard let id else { return nil }
         return lists.first { $0.id == id }
     }
 
     @discardableResult
     func createList(name: String, kind: ListKind, access: ListAccess) -> UUID {
-        let list = SakhyaList(
+        let list = AsitraList(
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             kind: kind,
             access: access
@@ -337,7 +337,7 @@ final class AppModel {
         return list.id
     }
 
-    func updateList(_ list: SakhyaList) {
+    func updateList(_ list: AsitraList) {
         guard let index = lists.firstIndex(where: { $0.id == list.id }) else { return }
         lists[index] = list
         for entryIndex in entries.indices where entries[entryIndex].listID == list.id {
@@ -346,7 +346,7 @@ final class AppModel {
         save()
     }
 
-    func deleteList(_ list: SakhyaList) {
+    func deleteList(_ list: AsitraList) {
         guard !list.isDefault else { return }
         let fallbackID = defaultList(for: list.kind)?.id
         for index in entries.indices where entries[index].listID == list.id {
@@ -357,7 +357,7 @@ final class AppModel {
         save()
     }
 
-    func prepareSharing(for list: SakhyaList) async throws {
+    func prepareSharing(for list: AsitraList) async throws {
         guard list.access == .shared else { return }
         let shareRecordName = try await sharedListRepository.prepareShare(for: list)
         guard let index = lists.firstIndex(where: { $0.id == list.id }) else { return }
@@ -535,7 +535,7 @@ final class AppModel {
         syncEnabled = false
         removeAllLocalAttachments()
         entries = []
-        lists = SakhyaList.defaults
+        lists = AsitraList.defaults
         recentlyDeleted = []
         lastCloudSync = nil
         UserDefaults.standard.removeObject(forKey: lastCloudSyncKey)
@@ -549,10 +549,10 @@ final class AppModel {
         syncEnabled = false
         removeAllLocalAttachments()
         entries = []
-        lists = SakhyaList.defaults
+        lists = AsitraList.defaults
         recentlyDeleted = []
         save()
-        cloudStatus = "All Sakhya data deleted"
+        cloudStatus = "All Asitra data deleted"
     }
 
     func connectAppleReminders() async {
@@ -657,6 +657,7 @@ final class AppModel {
     private var attachmentsDirectory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
+        // Preserve the legacy attachment location across the Asitra rebrand.
         let directory = base.appendingPathComponent("Sakhya/Attachments", isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         #if os(iOS)
@@ -759,7 +760,7 @@ final class AppModel {
 
     private func apply(_ snapshot: CloudSnapshot) {
         entries = snapshot.entries
-        lists = snapshot.lists.isEmpty ? SakhyaList.defaults : snapshot.lists
+        lists = snapshot.lists.isEmpty ? AsitraList.defaults : snapshot.lists
         recentlyDeleted = snapshot.recentlyDeleted
         for (filename, data) in snapshot.attachments {
             try? data.write(
@@ -822,7 +823,7 @@ final class AppModel {
             guard granted else { return }
 
             let content = UNMutableNotificationContent()
-            content.title = entry.listKind?.displayName ?? "Sakhya reminder"
+            content.title = entry.listKind?.displayName ?? "Asitra reminder"
             content.body = entry.title
             content.sound = .default
 
@@ -838,7 +839,7 @@ final class AppModel {
             do {
                 let identifier = try await AppleReminderService.shared.createReminder(
                     title: entry.title,
-                    notes: entry.note.isEmpty ? "Created from Sakhya" : "\(entry.note)\n\nCreated from Sakhya",
+                    notes: entry.note.isEmpty ? "Created from Asitra" : "\(entry.note)\n\nCreated from Asitra",
                     dueDate: entry.dueDate
                 )
                 guard let index = entries.firstIndex(where: { $0.id == entry.id }) else { return }
@@ -865,7 +866,7 @@ final class AppModel {
                 let eventID = try await AppleReminderService.shared.createCalendarEvent(
                     title: entry.calendarTitle ?? calendarTitle(from: entry.title),
                     location: entry.calendarLocation,
-                    notes: "Created from Sakhya\n\n\(entry.title)",
+                    notes: "Created from Asitra\n\n\(entry.title)",
                     startDate: startDate,
                     endDate: endDate,
                     reminderLeadMinutes: entry.reminderLeadMinutes
@@ -878,7 +879,7 @@ final class AppModel {
                     let dueDate = startDate.addingTimeInterval(TimeInterval(-lead * 60))
                     let reminderID = try await AppleReminderService.shared.createReminder(
                         title: "Upcoming: \(calendarTitle(from: entry.title))",
-                        notes: "Linked to the Sakhya meeting at \(startDate.formatted(date: .abbreviated, time: .shortened)).",
+                        notes: "Linked to the Asitra meeting at \(startDate.formatted(date: .abbreviated, time: .shortened)).",
                         dueDate: dueDate
                     )
                     entries[index].appleReminderIdentifier = reminderID
@@ -1085,7 +1086,7 @@ struct ListMember: Identifiable, Codable, Hashable {
     var isOwner = false
 }
 
-struct SakhyaList: Identifiable, Codable, Hashable {
+struct AsitraList: Identifiable, Codable, Hashable {
     var id = UUID()
     var name: String
     var kind: ListKind
@@ -1100,8 +1101,8 @@ struct SakhyaList: Identifiable, Codable, Hashable {
         access == .shared && collaborationStatus == .active && cloudShareRecordName != nil
     }
 
-    static let defaults: [SakhyaList] = ListKind.allCases.map { kind in
-        SakhyaList(name: kind.displayName, kind: kind, isDefault: true)
+    static let defaults: [AsitraList] = ListKind.allCases.map { kind in
+        AsitraList(name: kind.displayName, kind: kind, isDefault: true)
     }
 }
 

@@ -24,11 +24,11 @@
 		A10000000000000000000012 /* FeatureModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000012 /* FeatureModels.swift */; };
 		A10000000000000000000013 /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000013 /* AppEnvironment.swift */; };
 		A10000000000000000000014 /* IntegrationProviders.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000014 /* IntegrationProviders.swift */; };
-		A10000000000000000000015 /* SakhyaContracts in Frameworks */ = {isa = PBXBuildFile; productRef = H10000000000000000000001 /* SakhyaContracts */; };
+		A10000000000000000000015 /* AsitraContracts in Frameworks */ = {isa = PBXBuildFile; productRef = H10000000000000000000001 /* AsitraContracts */; };
 		A10000000000000000000016 /* SystemFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000015 /* SystemFeature.swift */; };
 		A10000000000000000000017 /* TodaySystemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000016 /* TodaySystemView.swift */; };
 		A10000000000000000000018 /* ExpensesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000017 /* ExpensesView.swift */; };
-		A10000000000000000000019 /* SakhyaAIAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000018 /* SakhyaAIAccount.swift */; };
+		A10000000000000000000019 /* AsitraAIAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000018 /* AsitraAIAccount.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -38,7 +38,7 @@
 		B10000000000000000000004 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		B10000000000000000000005 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		B10000000000000000000006 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-		B10000000000000000000007 /* Sakhya.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Sakhya.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10000000000000000000007 /* Asitra.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Asitra.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B10000000000000000000008 /* FitnessImportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FitnessImportService.swift; sourceTree = "<group>"; };
 		B10000000000000000000009 /* AppleMobileApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AppleMobileApp.entitlements; sourceTree = "<group>"; };
 		B1000000000000000000000A /* AppleReminderService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleReminderService.swift; sourceTree = "<group>"; };
@@ -55,7 +55,7 @@
 		B10000000000000000000015 /* SystemFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemFeature.swift; sourceTree = "<group>"; };
 		B10000000000000000000016 /* TodaySystemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodaySystemView.swift; sourceTree = "<group>"; };
 		B10000000000000000000017 /* ExpensesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpensesView.swift; sourceTree = "<group>"; };
-		B10000000000000000000018 /* SakhyaAIAccount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SakhyaAIAccount.swift; sourceTree = "<group>"; };
+		B10000000000000000000018 /* AsitraAIAccount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsitraAIAccount.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -63,7 +63,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A10000000000000000000015 /* SakhyaContracts in Frameworks */,
+				A10000000000000000000015 /* AsitraContracts in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -107,7 +107,7 @@
 				B10000000000000000000012 /* FeatureModels.swift */,
 				B10000000000000000000015 /* SystemFeature.swift */,
 				B10000000000000000000014 /* IntegrationProviders.swift */,
-				B10000000000000000000018 /* SakhyaAIAccount.swift */,
+				B10000000000000000000018 /* AsitraAIAccount.swift */,
 				B10000000000000000000008 /* FitnessImportService.swift */,
 				B1000000000000000000000A /* AppleReminderService.swift */,
 				B1000000000000000000000B /* IntelligentCaptureService.swift */,
@@ -135,7 +135,7 @@
 		D10000000000000000000006 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				B10000000000000000000007 /* Sakhya.app */,
+				B10000000000000000000007 /* Asitra.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -157,10 +157,10 @@
 			);
 			name = AppleMobileApp;
 			packageProductDependencies = (
-				H10000000000000000000001 /* SakhyaContracts */,
+				H10000000000000000000001 /* AsitraContracts */,
 			);
 			productName = AppleMobileApp;
-			productReference = B10000000000000000000007 /* Sakhya.app */;
+			productReference = B10000000000000000000007 /* Asitra.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -188,7 +188,7 @@
 			);
 			mainGroup = D10000000000000000000001;
 			packageReferences = (
-				G10000000000000000000001 /* XCLocalSwiftPackageReference "Packages/SakhyaContracts" */,
+				G10000000000000000000001 /* XCLocalSwiftPackageReference "Packages/AsitraContracts" */,
 			);
 			productRefGroup = D10000000000000000000006 /* Products */;
 			projectDirPath = "";
@@ -220,7 +220,7 @@
 				A10000000000000000000012 /* FeatureModels.swift in Sources */,
 				A10000000000000000000013 /* AppEnvironment.swift in Sources */,
 				A10000000000000000000014 /* IntegrationProviders.swift in Sources */,
-				A10000000000000000000019 /* SakhyaAIAccount.swift in Sources */,
+				A10000000000000000000019 /* AsitraAIAccount.swift in Sources */,
 				A10000000000000000000016 /* SystemFeature.swift in Sources */,
 				A10000000000000000000003 /* RootView.swift in Sources */,
 				A10000000000000000000004 /* HomeView.swift in Sources */,
@@ -357,15 +357,15 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = NO;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = Sakhya;
-				INFOPLIST_KEY_CFBundleName = Sakhya;
+				INFOPLIST_KEY_CFBundleDisplayName = Asitra;
+				INFOPLIST_KEY_CFBundleName = Asitra;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Sakhya adds meetings you describe to Apple Calendar and reads your schedule when you ask about your day.";
-				INFOPLIST_KEY_NSFinancialDataUsageDescription = "Sakhya reads financial accounts and transactions you choose to share from Apple Wallet to organize spending by card and improve your private money analysis.";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "Sakhya reads workouts and sleep so fitness data can appear in your private daily timeline.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Sakhya records voice notes that you choose to add to your private timeline.";
-				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Sakhya creates and updates Apple reminders from your timeline so you can use native alerts, lists, and reminder features.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Sakhya transcribes your voice notes so they can be organized in your timeline.";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Asitra adds meetings you describe to Apple Calendar and reads your schedule when you ask about your day.";
+				INFOPLIST_KEY_NSFinancialDataUsageDescription = "Asitra reads financial accounts and transactions you choose to share from Apple Wallet to organize spending by card and improve your private money analysis.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Asitra reads workouts and sleep so fitness data can appear in your private daily timeline.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Asitra records voice notes that you choose to add to your private timeline.";
+				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Asitra creates and updates Apple reminders from your timeline so you can use native alerts, lists, and reminder features.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Asitra transcribes your voice notes so they can be organized in your timeline.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -374,7 +374,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.devganatra.sakhya;
-				PRODUCT_NAME = Sakhya;
+				PRODUCT_NAME = Asitra;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
 				SUPPORTS_MACCATALYST = NO;
@@ -396,15 +396,15 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = Sakhya;
-				INFOPLIST_KEY_CFBundleName = Sakhya;
+				INFOPLIST_KEY_CFBundleDisplayName = Asitra;
+				INFOPLIST_KEY_CFBundleName = Asitra;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Sakhya adds meetings you describe to Apple Calendar and reads your schedule when you ask about your day.";
-				INFOPLIST_KEY_NSFinancialDataUsageDescription = "Sakhya reads financial accounts and transactions you choose to share from Apple Wallet to organize spending by card and improve your private money analysis.";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "Sakhya reads workouts and sleep so fitness data can appear in your private daily timeline.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Sakhya records voice notes that you choose to add to your private timeline.";
-				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Sakhya creates and updates Apple reminders from your timeline so you can use native alerts, lists, and reminder features.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Sakhya transcribes your voice notes so they can be organized in your timeline.";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Asitra adds meetings you describe to Apple Calendar and reads your schedule when you ask about your day.";
+				INFOPLIST_KEY_NSFinancialDataUsageDescription = "Asitra reads financial accounts and transactions you choose to share from Apple Wallet to organize spending by card and improve your private money analysis.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Asitra reads workouts and sleep so fitness data can appear in your private daily timeline.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Asitra records voice notes that you choose to add to your private timeline.";
+				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Asitra creates and updates Apple reminders from your timeline so you can use native alerts, lists, and reminder features.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Asitra transcribes your voice notes so they can be organized in your timeline.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -413,7 +413,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.devganatra.sakhya;
-				PRODUCT_NAME = Sakhya;
+				PRODUCT_NAME = Asitra;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
 				SUPPORTS_MACCATALYST = NO;
@@ -447,17 +447,17 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		G10000000000000000000001 /* XCLocalSwiftPackageReference "Packages/SakhyaContracts" */ = {
+		G10000000000000000000001 /* XCLocalSwiftPackageReference "Packages/AsitraContracts" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = Packages/SakhyaContracts;
+			relativePath = Packages/AsitraContracts;
 		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		H10000000000000000000001 /* SakhyaContracts */ = {
+		H10000000000000000000001 /* AsitraContracts */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = G10000000000000000000001 /* XCLocalSwiftPackageReference "Packages/SakhyaContracts" */;
-			productName = SakhyaContracts;
+			package = G10000000000000000000001 /* XCLocalSwiftPackageReference "Packages/AsitraContracts" */;
+			productName = AsitraContracts;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

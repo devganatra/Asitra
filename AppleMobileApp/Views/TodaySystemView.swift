@@ -586,7 +586,7 @@ struct TodaySystemView: View {
                                 .font(.subheadline)
                         }
                     } else {
-                        Label("A short reflection helps Sakhya improve tomorrow’s process.", systemImage: "lightbulb")
+                        Label("A short reflection helps Asitra improve tomorrow’s process.", systemImage: "lightbulb")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

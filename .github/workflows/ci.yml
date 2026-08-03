@@ -34,8 +34,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Test shared Swift contracts
-        run: swift test --package-path Packages/SakhyaContracts
-      - name: Build Sakhya for Mac
+        run: swift test --package-path Packages/AsitraContracts
+      - name: Build Asitra for Mac
         run: >-
           xcodebuild
           -project AppleMobileApp.xcodeproj
@@ -58,7 +58,7 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - name: Build Sakhya for iPhone and iPad Simulator
+      - name: Build Asitra for iPhone and iPad Simulator
         run: >-
           xcodebuild
           -project AppleMobileApp.xcodeproj

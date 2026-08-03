@@ -8,9 +8,9 @@ import {
 import { validatePersistedState } from "../../state-schema";
 import {
   AIConfigurationError,
-  answerWithSakhyaAI,
-  assertSakhyaAIConfigured,
-  publicSakhyaAIContract,
+  answerWithAsitraAI,
+  assertAsitraAIConfigured,
+  publicAsitraAIContract,
   type AssistantMessage,
   type GroundedMetric,
 } from "./service";
@@ -49,7 +49,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    assertSakhyaAIConfigured();
+    assertAsitraAIConfigured();
   } catch (error) {
     if (error instanceof AIConfigurationError) {
       return jsonResponse({ error: error.message, code: "AI_NOT_CONFIGURED" }, 503);
@@ -71,12 +71,12 @@ export async function POST(request: Request) {
 
   const state = row ? validatePersistedState(JSON.parse(row.stateJson)) : null;
   try {
-    const result = await answerWithSakhyaAI({
+    const result = await answerWithAsitraAI({
       userIdentifier: userId,
       messages,
       context: buildContext(state),
     });
-    const contract = publicSakhyaAIContract();
+    const contract = publicAsitraAIContract();
     return jsonResponse({
       answer: result.answer,
       model: result.model,
@@ -89,8 +89,8 @@ export async function POST(request: Request) {
     if (error instanceof AIConfigurationError) {
       return jsonResponse({ error: error.message, code: "AI_NOT_CONFIGURED" }, 503);
     }
-    console.error("Sakhya assistant error", error);
-    return jsonResponse({ error: "Sakhya AI is temporarily unavailable." }, 502);
+    console.error("Asitra assistant error", error);
+    return jsonResponse({ error: "Asitra AI is temporarily unavailable." }, 502);
   }
 }
 
@@ -182,7 +182,7 @@ function buildVerifiedMetrics(
         .filter((entry) => entry.kind === kind && entry.source)
         .map((entry) => entry.source!),
     );
-    return sources.size ? Array.from(sources).sort().join(", ") : "Sakhya timeline";
+    return sources.size ? Array.from(sources).sort().join(", ") : "Asitra timeline";
   };
   return [
     {
@@ -204,7 +204,7 @@ function buildVerifiedMetrics(
       value: sumMinutes("work"),
       unit: "minutes",
       period: "last 7 days",
-      source: "Sakhya timeline",
+      source: "Asitra timeline",
     },
     {
       name: "spending",
@@ -220,28 +220,28 @@ function buildVerifiedMetrics(
       value: money.income,
       unit: "EUR",
       period: "current month",
-      source: "Sakhya money records",
+      source: "Asitra money records",
     },
     {
       name: "saved",
       value: money.saved,
       unit: "EUR",
       period: "current month",
-      source: "Sakhya money records",
+      source: "Asitra money records",
     },
     {
       name: "invested",
       value: money.invested,
       unit: "EUR",
       period: "current month",
-      source: "Sakhya money records",
+      source: "Asitra money records",
     },
     {
       name: "net worth",
       value: money.netWorth,
       unit: "EUR",
       period: "latest balances",
-      source: "Sakhya balance sheet",
+      source: "Asitra balance sheet",
     },
   ];
 }

@@ -1,7 +1,7 @@
 import AuthenticationServices
 import Foundation
 import Observation
-import SakhyaContracts
+import AsitraContracts
 
 struct AssistantMessage: Identifiable, Hashable {
     enum Role: String, Hashable { case user, assistant }
@@ -13,7 +13,7 @@ struct AssistantMessage: Identifiable, Hashable {
 
 @MainActor
 @Observable
-final class SakhyaAssistant {
+final class AsitraAssistant {
     private(set) var messages: [AssistantMessage] = [
         AssistantMessage(
             role: .assistant,
@@ -22,7 +22,7 @@ final class SakhyaAssistant {
     ]
     private(set) var isResponding = false
     private var didPrepare = false
-    let account = SakhyaAIAccount.shared
+    let account = AsitraAIAccount.shared
 
     var serviceLabel: String {
         account.isConnected
@@ -70,7 +70,7 @@ final class SakhyaAssistant {
             messages.append(
                 AssistantMessage(
                     role: .assistant,
-                    text: "\(account.modelLabel) is connected. I’ll use the same Sakhya model as the web app while keeping calculations grounded in your saved data."
+                    text: "\(account.modelLabel) is connected. I’ll use the same Asitra model as the web app while keeping calculations grounded in your saved data."
                 )
             )
         }
@@ -169,17 +169,17 @@ private struct AssistantSnapshot: Sendable {
         journalCount = matching.filter { $0.category == .journal || $0.category == .mood }.count
         activitySources = Self.sources(
             matching.filter { $0.category == .fitness }.compactMap(\.fitnessSource),
-            fallback: "Sakhya timeline"
+            fallback: "Asitra timeline"
         )
         sleepSources = Self.sources(
             matching.filter { $0.category == .sleep }.compactMap(\.fitnessSource),
-            fallback: "Sakhya timeline"
+            fallback: "Asitra timeline"
         )
         spendingSources = Self.sources(
             matching.filter { $0.category == .expense }.compactMap { entry in
                 entry.financialInstitutionName ?? entry.fitnessSource
             },
-            fallback: "Sakhya timeline"
+            fallback: "Asitra timeline"
         )
         income = finance.moneyEntries
             .filter { $0.kind == .income && $0.date >= start && $0.date <= end }
@@ -359,28 +359,28 @@ private struct AssistantSnapshot: Sendable {
                     value: Double(screenMinutes),
                     unit: "minutes",
                     period: periodLabel,
-                    source: "Sakhya timeline"
+                    source: "Asitra timeline"
                 ),
                 RemoteGroundedMetric(
                     name: "work time",
                     value: Double(workMinutes),
                     unit: "minutes",
                     period: periodLabel,
-                    source: "Sakhya timeline"
+                    source: "Asitra timeline"
                 ),
                 RemoteGroundedMetric(
                     name: "personal time",
                     value: Double(personalMinutes),
                     unit: "minutes",
                     period: periodLabel,
-                    source: "Sakhya timeline"
+                    source: "Asitra timeline"
                 ),
                 RemoteGroundedMetric(
                     name: "work-life balance score",
                     value: Double(balanceScore),
                     unit: "out of 100",
                     period: periodLabel,
-                    source: "Sakhya balance engine"
+                    source: "Asitra balance engine"
                 )
             ],
             entries: recentEvents.map(RemoteContextEntry.init(summary:)),
@@ -419,12 +419,12 @@ private enum AssistantEngine {
     ) async -> String {
         if let sessionToken {
             do {
-                let response = try await RemoteSakhyaAssistant.answer(
+                let response = try await RemoteAsitraAssistant.answer(
                     conversation: conversation,
                     context: snapshot.remoteContext,
                     sessionToken: sessionToken
                 )
-                SakhyaAIAccount.shared.apply(response)
+                AsitraAIAccount.shared.apply(response)
                 return response.answer
             } catch {
                 return fallbackAnswer(question: question, snapshot: snapshot)
@@ -440,7 +440,7 @@ private enum AssistantEngine {
 
         if query.contains("today") && contains(query, ["tell", "agenda", "plan", "schedule", "what", "today"]) {
             let agenda = snapshot.todayAgenda.isEmpty
-                ? "Nothing is scheduled in Sakhya or the connected Apple Calendar."
+                ? "Nothing is scheduled in Asitra or the connected Apple Calendar."
                 : "Your schedule: " + snapshot.todayAgenda.joined(separator: "; ") + "."
             return agenda + " You have " + String(snapshot.openListCount) + " open list items and logged " + duration(snapshot.activeMinutes) + " of activity today."
         }
@@ -508,7 +508,7 @@ private enum AssistantEngine {
 
 }
 
-private enum RemoteSakhyaAssistant {
+private enum RemoteAsitraAssistant {
     private static let endpoint = URL(
         string: "https://sakhya-everyday.deepanddev.chatgpt.site/api/native/assistant"
     )!
@@ -517,7 +517,7 @@ private enum RemoteSakhyaAssistant {
         conversation: [AssistantMessage],
         context: RemoteAssistantContext,
         sessionToken: String
-    ) async throws -> SakhyaAssistantResponse {
+    ) async throws -> AsitraAssistantResponse {
         let body = RemoteAssistantRequest(
             messages: conversation.map {
                 RemoteAssistantMessage(
@@ -537,7 +537,7 @@ private enum RemoteSakhyaAssistant {
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
             throw RemoteAssistantError.invalidResponse
         }
-        let result = try JSONDecoder().decode(SakhyaAssistantResponse.self, from: data)
+        let result = try JSONDecoder().decode(AsitraAssistantResponse.self, from: data)
         guard !result.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw RemoteAssistantError.invalidResponse
         }

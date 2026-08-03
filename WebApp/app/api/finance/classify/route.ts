@@ -6,9 +6,9 @@ import {
 } from "../../security";
 import {
   AIConfigurationError,
-  assertSakhyaAIConfigured,
-  classifyFinanceWithSakhyaAI,
-  publicSakhyaAIContract,
+  assertAsitraAIConfigured,
+  classifyFinanceWithAsitraAI,
+  publicAsitraAIContract,
 } from "../../assistant/service";
 
 const MAX_TEXT_LENGTH = 1_000;
@@ -31,23 +31,23 @@ export async function POST(request: Request) {
   }
 
   try {
-    assertSakhyaAIConfigured();
+    assertAsitraAIConfigured();
     if (!(await consumeRateLimit(userId, "finance-ai", 30))) {
       return jsonResponse({ error: "Your hourly AI limit has been reached.", code: "AI_RATE_LIMIT" }, 429);
     }
-    const result = await classifyFinanceWithSakhyaAI({
+    const result = await classifyFinanceWithAsitraAI({
       userIdentifier: userId,
       text,
       today: new Date().toISOString(),
       timezone,
     });
-    const contract = publicSakhyaAIContract();
+    const contract = publicAsitraAIContract();
     return jsonResponse({ ...result, label: contract.label, profile: contract.profile });
   } catch (error) {
     if (error instanceof AIConfigurationError) {
       return jsonResponse({ error: error.message, code: "AI_NOT_CONFIGURED" }, 503);
     }
     console.error("Finance classification error", error);
-    return jsonResponse({ error: "Sakhya could not classify that safely. Use the guided form instead." }, 502);
+    return jsonResponse({ error: "Asitra could not classify that safely. Use the guided form instead." }, 502);
   }
 }

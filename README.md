@@ -1,6 +1,6 @@
-# Sakhya
+# Asitra
 
-A daily companion for iPhone, iPad, and Mac. Write naturally in one capture box and Sakhya organizes routines, work, purchases, exercise, meals, mindset, journal entries, ideas, books, movies, shopping lists, and reminders into one chronological timeline.
+**Your everyday assistant.** Asitra works across iPhone, iPad, Mac, and web. Write naturally in one capture box and it organizes routines, work, purchases, exercise, meals, mindset, journal entries, ideas, books, movies, shopping lists, and reminders into one chronological timeline.
 
 ## Open and run
 
@@ -12,9 +12,9 @@ Before installing on a physical device, select the app target and choose your Ap
 
 ## Web app
 
-The responsive web companion lives in `WebApp/`. It mirrors Today, Lists, Track, Money, Balance, voice capture, editable timeline entries, local data management, and the conversational Sakhya assistant.
+The responsive web companion lives in `WebApp/`. It mirrors Today, Lists, Track, Money, Balance, voice capture, editable timeline entries, local data management, and the conversational Asitra assistant.
 
-The web version is browser-local and offline-first. Apple Health, Screen Time, Calendar, Reminders, and CloudKit remain native integrations until a signed account bridge is introduced. See `WebApp/README.md` for local setup and validation.
+The web version uses authenticated, account-isolated storage and keeps Apple Health, Screen Time, Calendar, Reminders, and CloudKit as native integrations. See `WebApp/README.md` for local setup and validation.
 
 ## Install Beta 1 on iPhone or iPad
 
@@ -43,7 +43,7 @@ For your own device, connect the iPhone or iPad to the Mac, select it as the run
 - Personal money-position overview with monthly cash flow, a zero-based personal P&L allocation view, and an editable balance sheet for assets, liabilities, and net worth
 - Consent-based Apple Wallet financial import through FinanceKit, with duplicate-safe transaction ingestion, merchant-category analysis, and spending totals attributed to each eligible card/account
 - Expenses added from Money or a trip are written back to the shared timeline; savings contributions remain separate from spending totals
-- Money can be entered with a normal form, a natural Sakhya instruction, or a reviewed PDF bank-statement import; duplicate statement rows are skipped
+- Money can be entered with a normal form, a natural Asitra instruction, or a reviewed PDF bank-statement import; duplicate statement rows are skipped
 - Reading lists and movie watchlists with planned, in-progress, and completed states
 - Contextual analysis: spending in Money, health and personal progress in Track, daily totals in Today, and cross-life guidance in Balance
 - Work, personal, rest, and screen-time attribution by phone, tablet, Mac, web, or offline activity
@@ -52,14 +52,14 @@ For your own device, connect the iPhone or iPad to the Mac, select it as the run
 - Local notifications for reminders with a detected or selected date and time
 - Apple Health import for workouts and sleep, including source attribution for WHOOP, Apple Watch, and other Health-compatible apps
 - One event pipeline: manual, app, and sensor entries share the same timeline and automatically update category trackers
-- Timeline entries can be edited in place; linked Apple Calendar events and Apple Reminders are updated when their Sakhya entry changes
+- Timeline entries can be edited in place; linked Apple Calendar events and Apple Reminders are updated when their Asitra entry changes
 - Calendar creation requires scheduling intent, so retrospective phrases such as “worked three hours” remain timeline evidence instead of becoming appointments
 - A lightweight tracker builder focused on Health, Habits, Learning & Media, and Mindset; money stays in Money and commitments stay in Lists
 - Tracker check-ins ask only for relevant details and write the result back to the shared timeline
 - Reading and watching activity resolves into one list item with a current status and full timeline history
 - Native Apple Reminders export with due dates, alerts, completion, and deletion synchronization
 - Automatic Apple Calendar mirroring for every new personal entry, with exact detected time ranges and optional linked reminders
-- “Tell me my today” assistant summaries combining the Sakhya timeline, due reminders, and connected Apple Calendar events
+- “Tell me my today” assistant summaries combining the Asitra timeline, due reminders, and connected Apple Calendar events
 - Browse and add entries on previous dates
 - Local persistence between launches, with an offline working copy on every device
 - Adaptive navigation shared across all platforms
@@ -75,7 +75,7 @@ For your own device, connect the iPhone or iPad to the Mac, select it as the run
 - Typed SwiftData records are the offline source of truth. Records include revision, device, and modification metadata, and a durable outbox records unsynchronized mutations.
 - CloudKit receives per-entry and per-list outbox mutations. The snapshot path is retained temporarily for incoming compatibility while record-level change-token fetching is completed.
 - Shared lists use a private CloudKit root record and `CKShare`; CloudKit is initialized only when sharing is requested so unsigned local builds stay usable.
-- `Packages/SakhyaContracts` is a local Swift package containing the stable AI and wearable integration contracts.
+- `Packages/AsitraContracts` is a local Swift package containing the stable AI and wearable integration contracts.
 - On-device and remote AI providers, plus HTTP wearable providers, are replaceable adapters. Tokens are supplied at runtime and are never embedded in the app.
 - `RootView` provides adaptive split navigation.
 - `HomeView` is the daily timeline and entry flow.
@@ -85,15 +85,15 @@ The deployment targets are iOS/iPadOS 17 and macOS 14.
 
 ## Data storage
 
-- Entries, lists, and Recently Deleted metadata are stored in SwiftData under `Application Support/Sakhya/Database`.
+- Entries, lists, and Recently Deleted metadata are stored in SwiftData. Existing installations retain the legacy `Application Support/Sakhya/Database` path so the Asitra rebrand does not split or lose local data.
 - On iPhone and iPad, the database directory uses Data Protection and photos, voice notes, and temporary CloudKit snapshots use complete file protection. Temporary CloudKit archive files are removed immediately after upload.
 - On the first SwiftData launch, legacy JSON records are copied from UserDefaults. The legacy copy is retained as a non-destructive migration fallback.
-- Photos and voice notes are stored in the app's private `Application Support/Sakhya/Attachments` folder. Older `Dayline/Attachments` files remain readable and are not removed during migration.
+- Photos and voice notes remain in the app's private legacy `Application Support/Sakhya/Attachments` folder for compatibility. Older `Dayline/Attachments` files also remain readable and are not removed during migration.
 - When iCloud sync is enabled, record-level mutations are sent from the durable outbox and the compatibility snapshot continues to carry metadata and attachment assets. Shared lists have dedicated CloudKit records and `CKShare` metadata.
 - Settings → Data Management shows local usage and gives separate controls for sample data, Recently Deleted, clearing only this device, or deleting both the iCloud and local copies.
 - The web companion requires authenticated access, stores structured data in per-user D1 records, keeps validated images in private per-user R2 objects, and sends strict browser security headers. Legacy browser state is migrated only after a validated secure save succeeds, and its old plaintext copy is removed only after user confirmation.
 
-To activate CloudKit, select your Apple Developer team in Xcode, add the `iCloud.com.devganatra.sakhya` container to the App ID, and enable the iCloud/CloudKit capability for the target. Xcode will then attach the included platform entitlement configuration to the signed app. It is intentionally not attached to unsigned Mac builds, so the app continues to build and work locally before developer signing is configured.
+To activate CloudKit, select your Apple Developer team in Xcode, add the legacy `iCloud.com.devganatra.sakhya` container to the App ID, and enable the iCloud/CloudKit capability for the target. The identifier is intentionally retained so existing Asitra users keep the same private cloud data. Xcode will then attach the included platform entitlement configuration to the signed app. It is intentionally not attached to unsigned Mac builds, so the app continues to build and work locally before developer signing is configured.
 
 ## Platform integrations still requiring developer configuration
 

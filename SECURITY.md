@@ -1,4 +1,4 @@
-# Sakhya Security
+# Asitra Security
 
 Report suspected security or privacy issues privately to `ganatra.dev@gmail.com`. Do not include real journal, health, location, or financial records in the first message.
 

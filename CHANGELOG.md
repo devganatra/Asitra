@@ -1,6 +1,15 @@
 # Changelog
 
-All notable changes to Sakhya are recorded here.
+All notable changes to Asitra are recorded here.
+
+## Asitra rebrand — 2026-08-03
+
+### Changed
+
+- Renamed the product, Apple display name, web experience, AI assistant, shared contracts, release metadata, and documentation from Sakhya to Asitra.
+- Adopted the tagline “Your everyday assistant.”
+- Replaced the web favicon and social-sharing card with the Asitra identity.
+- Retained legacy bundle, CloudKit, Keychain, preferences, and local-storage identifiers so existing accounts and data continue working after the rename.
 
 ## Beta 1 maintenance — 2026-08-03
 
@@ -11,7 +20,7 @@ All notable changes to Sakhya are recorded here.
 - Hiking, journal, and mindset phrases are classified consistently.
 - Captured list items route to reminders, groceries, or travel lists and preserve due labels.
 - Work-life totals now use recorded durations consistently.
-- The floating Sakhya assistant opens reliably and exposes its dialog state accessibly.
+- The floating Asitra assistant opens reliably and exposes its dialog state accessibly.
 - Returning to Today after viewing a future reminder now resets the calendar to the current day.
 
 ## 0.1.0 Beta 1 — 2026-07-14

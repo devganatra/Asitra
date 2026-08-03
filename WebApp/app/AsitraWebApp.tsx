@@ -40,7 +40,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { SAKHYA_AI_CONTRACT, type SakhyaAIContract } from "./ai-contract";
+import { ASITRA_AI_CONTRACT, type AsitraAIContract } from "./ai-contract";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   extractPdfText,
@@ -342,9 +342,9 @@ type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 const onboardingSteps = [
   {
     icon: Sparkles,
-    eyebrow: "Your everyday system",
+    eyebrow: "Your everyday assistant",
     title: "Capture life in one place",
-    body: "Type or talk naturally from Today. Sakhya turns each moment into the right timeline entry, list item, tracker or money record.",
+    body: "Type or talk naturally from Today. Asitra turns each moment into the right timeline entry, list item, tracker or money record.",
     example: "Try: “Walked 30 minutes and spent €8 on lunch.”",
   },
   {
@@ -357,8 +357,8 @@ const onboardingSteps = [
   {
     icon: Sparkles,
     eyebrow: "Contextual intelligence",
-    title: "Ask Sakhya about your life",
-    body: "Use the floating Ask Sakhya button for summaries and patterns based only on the information relevant to your question.",
+    title: "Ask Asitra about your life",
+    body: "Use the floating Ask Asitra button for summaries and patterns based only on the information relevant to your question.",
     example: "AI analysis stays optional and asks for your permission.",
   },
   {
@@ -370,7 +370,7 @@ const onboardingSteps = [
   },
 ];
 
-export default function SakhyaWebApp({ userName, logoutPath }: { userName: string; logoutPath: string }) {
+export default function AsitraWebApp({ userName, logoutPath }: { userName: string; logoutPath: string }) {
   const [section, setSection] = useState<Section>("today");
   const [state, setState] = useState<PersistedState>(emptyState);
   const [hydrated, setHydrated] = useState(false);
@@ -389,7 +389,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [assistantThinking, setAssistantThinking] = useState(false);
   const [moneyEntryOpen, setMoneyEntryOpen] = useState(false);
-  const [moneyEntryMode, setMoneyEntryMode] = useState<"type" | "pdf" | "sakhya">("sakhya");
+  const [moneyEntryMode, setMoneyEntryMode] = useState<"type" | "pdf" | "asitra">("asitra");
   const [moneyDraft, setMoneyDraft] = useState<MoneyDraft>(EMPTY_MONEY_DRAFT);
   const [moneyInstruction, setMoneyInstruction] = useState("");
   const [moneyReview, setMoneyReview] = useState<ParsedMoneyInstruction>();
@@ -404,7 +404,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [aiConsent, setAIConsent] = useState(false);
-  const [aiContract, setAIContract] = useState<SakhyaAIContract>(SAKHYA_AI_CONTRACT);
+  const [aiContract, setAIContract] = useState<AsitraAIContract>(ASITRA_AI_CONTRACT);
   const [sharingOpen, setSharingOpen] = useState(false);
   const [inviteCode, setInviteCode] = useState("");
   const [joinCode, setJoinCode] = useState("");
@@ -486,7 +486,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
       credentials: "same-origin",
       headers: {
         "content-type": "application/json",
-        "x-sakhya-request": "1",
+        "x-asitra-request": "1",
         "if-match": String(stateVersionRef.current),
       },
       body: JSON.stringify(validated),
@@ -494,7 +494,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
     const result = (await response.json()) as { version?: number; code?: string; error?: string };
     if (!response.ok) {
       if (result.code === "STATE_CONFLICT") {
-        throw new Error("Your data changed on another device. Reload Sakhya before editing again.");
+        throw new Error("Your data changed on another device. Reload Asitra before editing again.");
       }
       throw new Error(result.error ?? "Secure storage rejected the update.");
     }
@@ -523,7 +523,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
   useEffect(() => {
     void fetch("/api/assistant/config", { cache: "no-store" })
       .then(async (response) => {
-        if (response.ok) setAIContract((await response.json()) as SakhyaAIContract);
+        if (response.ok) setAIContract((await response.json()) as AsitraAIContract);
       })
       .catch(() => undefined);
   }, []);
@@ -649,7 +649,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
         <main>
           <div className="page-shell">
             <section className="hero">
-              <span className="eyebrow">Sakhya</span>
+              <span className="eyebrow">Asitra</span>
               <h1>Preparing your day…</h1>
               <p>Loading your private account workspace.</p>
             </section>
@@ -766,7 +766,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
       credentials: "same-origin",
       headers: {
         "content-type": file.type,
-        "x-sakhya-request": "1",
+        "x-asitra-request": "1",
       },
       body: file,
     });
@@ -835,7 +835,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
     const response = await fetch("/api/shared-lists", {
       method: "POST",
       credentials: "same-origin",
-      headers: { "content-type": "application/json", "x-sakhya-request": "1" },
+      headers: { "content-type": "application/json", "x-asitra-request": "1" },
       body: JSON.stringify({ action, list: { ...selectedList, shared: true } }),
     });
     const result = (await response.json()) as { list?: LifeList; version?: number; owner?: boolean; inviteCode?: string; error?: string };
@@ -856,7 +856,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
     const response = await fetch("/api/shared-lists", {
       method: "POST",
       credentials: "same-origin",
-      headers: { "content-type": "application/json", "x-sakhya-request": "1" },
+      headers: { "content-type": "application/json", "x-asitra-request": "1" },
       body: JSON.stringify({ action: "update", list, version: meta.version }),
     });
     const result = (await response.json()) as { list?: LifeList; version?: number; owner?: boolean; code?: string; error?: string };
@@ -872,7 +872,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
     const response = await fetch("/api/shared-lists", {
       method: "POST",
       credentials: "same-origin",
-      headers: { "content-type": "application/json", "x-sakhya-request": "1" },
+      headers: { "content-type": "application/json", "x-asitra-request": "1" },
       body: JSON.stringify({ action: "join", code: joinCode }),
     });
     const result = (await response.json()) as { list?: LifeList; version?: number; owner?: boolean; error?: string };
@@ -895,7 +895,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
     const response = await fetch(`/api/shared-lists?id=${encodeURIComponent(selectedList.id)}`, {
       method: "DELETE",
       credentials: "same-origin",
-      headers: { "x-sakhya-request": "1" },
+      headers: { "x-asitra-request": "1" },
     });
     if (!response.ok) { setNotice("Sharing could not be stopped."); return; }
     delete sharedListMetaRef.current[selectedList.id];
@@ -960,7 +960,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
     setNotice(`${tracker.name} check-in added to the timeline.`);
   }
 
-  function openMoneyEntry(kind: MoneyDraft["kind"] = "expense", mode: typeof moneyEntryMode = "sakhya") {
+  function openMoneyEntry(kind: MoneyDraft["kind"] = "expense", mode: typeof moneyEntryMode = "asitra") {
     setMoneyDraft({ ...EMPTY_MONEY_DRAFT, kind, balanceCategory: kind === "liability" ? "creditCard" : "cash", date: new Date().toISOString().slice(0, 10) });
     setMoneyEntryMode(mode);
     setMoneyInstruction("");
@@ -1037,7 +1037,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
       return;
     }
     if (!aiConsent) {
-      setNotice("That entry is ambiguous. Enable AI data sharing in Sakhya AI, or use the guided form.");
+      setNotice("That entry is ambiguous. Enable AI data sharing in Asitra AI, or use the guided form.");
       return;
     }
     setMoneyClassifying(true);
@@ -1045,14 +1045,14 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
       const response = await fetch("/api/finance/classify", {
         method: "POST",
         credentials: "same-origin",
-        headers: { "content-type": "application/json", "x-sakhya-request": "1" },
+        headers: { "content-type": "application/json", "x-asitra-request": "1" },
         body: JSON.stringify({ text: moneyInstruction, consent: true, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
       });
       const body = await response.json() as { classification?: ParsedMoneyInstruction; error?: string };
-      if (!response.ok || !body.classification) throw new Error(body.error || "Sakhya could not classify that entry.");
+      if (!response.ok || !body.classification) throw new Error(body.error || "Asitra could not classify that entry.");
       setMoneyReview(body.classification);
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Sakhya could not classify that entry.");
+      setNotice(error instanceof Error ? error.message : "Asitra could not classify that entry.");
     } finally {
       setMoneyClassifying(false);
     }
@@ -1192,7 +1192,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
         credentials: "same-origin",
         headers: {
           "content-type": "application/json",
-          "x-sakhya-request": "1",
+          "x-asitra-request": "1",
         },
         body: JSON.stringify({
           messages: conversation.map(({ role, text }) => ({ role, text })),
@@ -1214,9 +1214,9 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
         } else if (result.code === "AI_RATE_LIMIT") {
           setNotice("Your hourly AI limit is reached. Local insights remain available.");
         } else if (result.code === "AI_NOT_CONFIGURED") {
-          setNotice(`${aiContract.label} needs an OpenAI API key. Showing Sakhya’s local insight instead.`);
+          setNotice(`${aiContract.label} needs an OpenAI API key. Showing Asitra’s local insight instead.`);
         } else {
-          setNotice(result.error ?? "Sakhya AI is temporarily unavailable.");
+          setNotice(result.error ?? "Asitra AI is temporarily unavailable.");
         }
         throw new Error(result.error ?? "AI unavailable");
       }
@@ -1323,8 +1323,8 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
       method: "DELETE",
       credentials: "same-origin",
       headers: {
-        "x-sakhya-request": "1",
-        "x-sakhya-confirm-delete": deleteConfirmation,
+        "x-asitra-request": "1",
+        "x-asitra-confirm-delete": deleteConfirmation,
       },
     });
     if (!response.ok) {
@@ -1336,7 +1336,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
     setDeleteAccountOpen(false);
     setState(emptyState);
     stateVersionRef.current = 0;
-    setNotice("Your Sakhya account data and uploaded photos were deleted.");
+    setNotice("Your Asitra account data and uploaded photos were deleted.");
   }
 
   function exportData() {
@@ -1344,7 +1344,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
     const href = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = href;
-    anchor.download = `sakhya-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.download = `asitra-backup-${new Date().toISOString().slice(0, 10)}.json`;
     anchor.click();
     URL.revokeObjectURL(href);
   }
@@ -1354,7 +1354,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
     if (!file) return;
     event.target.value = "";
     if (file.size > MAX_BACKUP_BYTES || (file.type && file.type !== "application/json")) {
-      setNotice("Choose a Sakhya JSON backup under 2 MB.");
+      setNotice("Choose an Asitra JSON backup under 2 MB.");
       return;
     }
     const reader = new FileReader();
@@ -1364,9 +1364,9 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
           allowLegacyDataImages: false,
         }) as PersistedState;
         setState(imported);
-        setNotice("Your Sakhya backup was imported.");
+        setNotice("Your Asitra backup was imported.");
       } catch {
-        setNotice("That file is not a valid Sakhya backup.");
+        setNotice("That file is not a valid Asitra backup.");
       }
     };
     reader.readAsText(file);
@@ -1449,7 +1449,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
                 </div>
                 <div className="native-note">
                   <ShieldCheck size={17} />
-                  Apple Reminders sync is available through the native Sakhya app.
+                  Apple Reminders sync is available through the native Asitra app.
                 </div>
               </section>
             )}
@@ -1553,7 +1553,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
           <section className="money-capture-card">
             <div className="money-capture-icon"><Sparkles size={20} /></div>
             <button className="money-capture-main" onClick={() => openMoneyEntry()}>
-              <strong>Tell Sakhya what changed</strong>
+              <strong>Tell Asitra what changed</strong>
               <span>“Paid €32 for groceries” · “Salary €3,200” · “My savings account balance is €8,400”</span>
             </button>
             <button className="money-import-shortcut" onClick={() => openMoneyEntry("expense", "pdf")}><FileText size={16} /> Import PDF</button>
@@ -1700,7 +1700,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
               <h2>{balanceScore > 72 ? "Your rhythm looks sustainable." : "Your week needs a little more room."}</h2>
               <p>{todayInsight}</p>
               <button className="text-button" onClick={() => openAssistant("How is my work-life balance?")}>
-                Ask Sakhya about this <ArrowRight size={15} />
+                Ask Asitra about this <ArrowRight size={15} />
               </button>
             </div>
           </div>
@@ -1726,7 +1726,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
           </div>
           <div className="native-note wide">
             <ShieldCheck size={17} />
-            Automatic Screen Time and Apple Health data require the native Sakhya app. Web entries still contribute to your balance.
+            Automatic Screen Time and Apple Health data require the native Asitra app. Web entries still contribute to your balance.
           </div>
         </div>
       );
@@ -1736,7 +1736,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
       return (
         <div className="page-shell">
           <PageHeader
-            eyebrow="Sakhya"
+            eyebrow="Asitra"
             title="Settings"
             description="Manage your data and understand which capabilities are available on this device."
           />
@@ -1750,15 +1750,15 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
                 <ShieldCheck size={23} />
                 <div>
                   <strong>Private account storage</strong>
-                  <span>Your web data is isolated by account and protected by the private Sakhya service.</span>
+                  <span>Your web data is isolated by account and protected by the private Asitra service.</span>
                 </div>
               </div>
               <button className="settings-row" onClick={exportData}><Download size={18} /><span><strong>Export backup</strong><small>Download all entries, lists and plans</small></span><ArrowRight size={16} /></button>
-              <label className="settings-row"><Upload size={18} /><span><strong>Import backup</strong><small>Restore a Sakhya JSON file</small></span><ArrowRight size={16} /><input type="file" accept=".json,application/json" onChange={importData} hidden /></label>
+              <label className="settings-row"><Upload size={18} /><span><strong>Import backup</strong><small>Restore an Asitra JSON file</small></span><ArrowRight size={16} /><input type="file" accept=".json,application/json" onChange={importData} hidden /></label>
               <button className="settings-row" onClick={resetData}><RotateCcw size={18} /><span><strong>Restore sample workspace</strong><small>Requires confirmation</small></span><ArrowRight size={16} /></button>
               <button className="settings-row" onClick={() => setPolicyOpen(true)}><ShieldCheck size={18} /><span><strong>Privacy and AI</strong><small>See how your journal, health and money data are used</small></span><ArrowRight size={16} /></button>
               <button className="settings-row" onClick={() => { setOnboardingStep(0); setOnboardingOpen(true); }}><Sparkles size={18} /><span><strong>Show getting-started tour</strong><small>See how capture, views and privacy work</small></span><ArrowRight size={16} /></button>
-              <a className="settings-row logout-row" href={logoutPath}><LogOut size={18} /><span><strong>Log out</strong><small>End this Sakhya session on this browser</small></span><ArrowRight size={16} /></a>
+              <a className="settings-row logout-row" href={logoutPath}><LogOut size={18} /><span><strong>Log out</strong><small>End this Asitra session on this browser</small></span><ArrowRight size={16} /></a>
               <button className="settings-row danger-row" onClick={() => setDeleteAccountOpen(true)}><X size={18} /><span><strong>Delete account data</strong><small>Permanently remove records and uploaded photos</small></span><ArrowRight size={16} /></button>
             </section>
             <section className="panel settings-page-card">
@@ -1769,7 +1769,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
               <div className="capability-row"><span>Calendar and Reminders</span><strong>Native app</strong></div>
                   <div className="capability-row"><span>Health and wearables</span><strong>Native app</strong></div>
                   <div className="capability-row"><span>Screen Time</span><strong>Native app</strong></div>
-                  <div className="capability-row"><span>Sakhya AI</span><strong>{aiConsent ? "Terra allowed" : "Local only"}</strong></div>
+                  <div className="capability-row"><span>Asitra AI</span><strong>{aiConsent ? "Terra allowed" : "Local only"}</strong></div>
                   <div className="capability-row"><span>Web account storage</span><strong>Connected</strong></div>
               <div className="native-note">
                 <ShieldCheck size={17} />
@@ -1812,7 +1812,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
             <div className="capture-mark"><Sparkles size={19} /></div>
             <div>
               <strong>Capture evidence</strong>
-              <small>Type or talk naturally. Sakhya organizes it before anything is saved.</small>
+              <small>Type or talk naturally. Asitra organizes it before anything is saved.</small>
             </div>
           </div>
           <textarea
@@ -1923,8 +1923,8 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
     <div className="app-frame">
       <aside className={`sidebar ${mobileMenu ? "open" : ""}`}>
         <div className="brand">
-          <span className="brand-mark">S</span>
-          <div><strong>Sakhya</strong><small>Your everyday system</small></div>
+          <span className="brand-mark">A</span>
+          <div><strong>Asitra</strong><small>Your everyday assistant</small></div>
           <button className="mobile-close" onClick={() => setMobileMenu(false)}><X size={20} /></button>
         </div>
         <nav>
@@ -1955,7 +1955,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
       <main>
         <header className="topbar">
           <button className="menu-button" onClick={() => setMobileMenu(true)}><Menu size={21} /></button>
-          <div className="mobile-brand"><span className="brand-mark small">S</span><strong>Sakhya</strong></div>
+          <div className="mobile-brand"><span className="brand-mark small">A</span><strong>Asitra</strong></div>
           <button className="search-button" onClick={() => setSearchOpen(true)}><Search size={17} /><span>Search your life</span><kbd>⌘ K</kbd></button>
           <div className="account-menu-wrap">
             <button
@@ -1982,14 +1982,14 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
         {mainContent}
       </main>
       <button type="button" className="assistant-fab" aria-haspopup="dialog" aria-expanded={assistantOpen} onClick={() => openAssistant()}>
-        <Sparkles size={18} /><span>Ask Sakhya</span>
+        <Sparkles size={18} /><span>Ask Asitra</span>
       </button>
       {onboardingOpen && (() => {
         const step = onboardingSteps[onboardingStep];
         const StepIcon = step.icon;
         const isLastStep = onboardingStep === onboardingSteps.length - 1;
         return (
-          <div className="modal-layer onboarding-layer" role="dialog" aria-modal="true" aria-label="Welcome to Sakhya">
+          <div className="modal-layer onboarding-layer" role="dialog" aria-modal="true" aria-label="Welcome to Asitra">
             <div className="onboarding-card">
               <div className="onboarding-progress" aria-label={`Step ${onboardingStep + 1} of ${onboardingSteps.length}`}>
                 {onboardingSteps.map((item, index) => <span key={item.title} className={index <= onboardingStep ? "active" : ""} />)}
@@ -2007,7 +2007,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
                   <button className="text-button" onClick={finishOnboarding}>Explore myself</button>
                 )}
                 <button className="primary-button" onClick={() => isLastStep ? finishOnboarding() : setOnboardingStep((current) => current + 1)}>
-                  {isLastStep ? "Start using Sakhya" : "Continue"} <ArrowRight size={16} />
+                  {isLastStep ? "Start using Asitra" : "Continue"} <ArrowRight size={16} />
                 </button>
               </div>
             </div>
@@ -2042,11 +2042,11 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
         </div>
       )}
       {assistantOpen && (
-        <div className="modal-layer assistant-layer" role="dialog" aria-modal="true" aria-label="Ask Sakhya">
+        <div className="modal-layer assistant-layer" role="dialog" aria-modal="true" aria-label="Ask Asitra">
           <button className="modal-backdrop" onClick={() => setAssistantOpen(false)} aria-label="Close assistant" />
           <section className="assistant-sheet">
             <header>
-              <div className="assistant-title"><span><Sparkles size={18} /></span><div><strong>Sakhya</strong><small><i /> Private data assistant</small></div></div>
+              <div className="assistant-title"><span><Sparkles size={18} /></span><div><strong>Asitra</strong><small><i /> Private data assistant</small></div></div>
               <div className="assistant-header-actions">
                 <div className="model-picker" aria-label="AI model">
                   <span>Model</span>
@@ -2083,7 +2083,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
             </div>
             <label className="ai-consent-row">
               <input type="checkbox" checked={aiConsent} onChange={(event) => setAIConsent(event.target.checked)} />
-              <span><strong>Allow AI analysis</strong><small>Send the question and relevant recent Sakhya records to OpenAI. Turn this off to use local insights only.</small></span>
+              <span><strong>Allow AI analysis</strong><small>Send the question and relevant recent Asitra records to OpenAI. Turn this off to use local insights only.</small></span>
             </label>
             <div className="privacy-line"><Lock size={13} /> Your key stays on the server. Requests use no-store processing and are limited to 20 per hour.</div>
             <form className="chat-composer" onSubmit={(event) => { event.preventDefault(); sendMessage(); }}>
@@ -2139,8 +2139,8 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
           <button className="modal-backdrop" onClick={() => setPolicyOpen(false)} aria-label="Close privacy information" />
           <section className="policy-modal">
             <div className="section-heading"><div><span className="eyebrow">Your control</span><h2>Privacy and AI</h2></div><button className="icon-button" onClick={() => setPolicyOpen(false)} aria-label="Close"><X size={18} /></button></div>
-            <p>Your account records are stored privately for Sakhya’s timeline, lists, trackers and money views. Uploaded photos are private and require your signed-in account.</p>
-            <p>AI is optional. When enabled, Sakhya sends your question and a limited selection of relevant records from the last 90 days to OpenAI to answer it. Sakhya requests no-store processing and never puts the API key in your browser.</p>
+            <p>Your account records are stored privately for Asitra’s timeline, lists, trackers and money views. Uploaded photos are private and require your signed-in account.</p>
+            <p>AI is optional. When enabled, Asitra sends your question and a limited selection of relevant records from the last 90 days to OpenAI to answer it. Asitra requests no-store processing and never puts the API key in your browser.</p>
             <p>Health and financial information is shown for personal organization, not medical, tax, investment or accounting advice. You can export your data or permanently delete it at any time.</p>
             <p><strong>Launch policy version:</strong> 3 August 2026. Contact: ganatra.dev@gmail.com</p>
           </section>
@@ -2193,7 +2193,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
               <button type="button" className="icon-button" onClick={() => setMoneyEntryOpen(false)} aria-label="Close"><X size={18} /></button>
             </div>
             <div className="money-entry-tabs" role="tablist" aria-label="Money entry method">
-              <button className={moneyEntryMode === "sakhya" ? "active" : ""} onClick={() => { setMoneyEntryMode("sakhya"); setMoneyReview(undefined); }}>Tell Sakhya</button>
+              <button className={moneyEntryMode === "asitra" ? "active" : ""} onClick={() => { setMoneyEntryMode("asitra"); setMoneyReview(undefined); }}>Tell Asitra</button>
               <button className={moneyEntryMode === "type" ? "active" : ""} onClick={() => setMoneyEntryMode("type")}>Guided</button>
               <button className={moneyEntryMode === "pdf" ? "active" : ""} onClick={() => setMoneyEntryMode("pdf")}>Statement</button>
             </div>
@@ -2209,10 +2209,10 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
                 <button className="primary-button" disabled={!moneyDraft.amount.trim()}>{moneyDraft.existingBalanceID ? "Update once" : "Add once"}</button>
               </form>
             )}
-            {moneyEntryMode === "sakhya" && (
-              <form className="money-sakhya-form" onSubmit={submitMoneyInstruction}>
+            {moneyEntryMode === "asitra" && (
+              <form className="money-asitra-form" onSubmit={submitMoneyInstruction}>
                 {!moneyReview ? <>
-                  <div className="sakhya-entry-prompt"><Sparkles size={18} /><div><strong>Say it your way</strong><span>Finance rules classify clear entries locally. Terra helps only when the meaning is ambiguous.</span></div></div>
+                  <div className="asitra-entry-prompt"><Sparkles size={18} /><div><strong>Say it your way</strong><span>Finance rules classify clear entries locally. Terra helps only when the meaning is ambiguous.</span></div></div>
                   <textarea autoFocus rows={4} value={moneyInstruction} onChange={(event) => setMoneyInstruction(event.target.value)} placeholder="Paid €24.50 for groceries yesterday, or my savings account balance is €8,400" />
                   {parseMoneyInstruction(moneyInstruction) && <div className="money-parse-preview"><CheckCircle2 size={16} /><span>Ready to review · {currency.format(parseMoneyInstruction(moneyInstruction)!.amount)} · {parseMoneyInstruction(moneyInstruction)!.kind}</span></div>}
                   <button className="primary-button" disabled={!moneyInstruction.trim() || moneyClassifying}>{moneyClassifying ? "Understanding…" : "Review entry"}</button>
@@ -2221,7 +2221,7 @@ export default function SakhyaWebApp({ userName, logoutPath }: { userName: strin
                   <div className="money-review-amount">{currency.format(moneyReview.amount)}</div>
                   <div className="money-review-grid"><span>Type<strong>{moneyReview.kind}</strong></span><span>Date<strong>{new Date(moneyReview.date).toLocaleDateString()}</strong></span></div>
                   <p>{moneyReview.title}</p>
-                  <small>This one record will feed every relevant money view. Sakhya never lets the model calculate your totals.</small>
+                  <small>This one record will feed every relevant money view. Asitra never lets the model calculate your totals.</small>
                   <div className="money-review-actions"><button type="button" className="secondary-button" onClick={() => setMoneyReview(undefined)}>Edit</button><button type="button" className="primary-button" onClick={confirmMoneyReview}>Confirm &amp; add once</button></div>
                 </div>}
               </form>

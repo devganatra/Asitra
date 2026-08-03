@@ -31,7 +31,7 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   if (!(await revokeNativeSession(request))) {
-    return jsonResponse({ error: "Sakhya AI sign-in is required." }, 401);
+    return jsonResponse({ error: "Asitra AI sign-in is required." }, 401);
   }
   return new Response(null, {
     status: 204,

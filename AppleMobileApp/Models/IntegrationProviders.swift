@@ -1,6 +1,6 @@
 import CloudKit
 import Foundation
-import SakhyaContracts
+import AsitraContracts
 
 #if canImport(FinanceKit) && os(iOS)
 import FinanceKit
@@ -120,14 +120,14 @@ enum FinancialDataError: LocalizedError {
 
 @MainActor
 protocol SharedListRepository {
-    func prepareShare(for list: SakhyaList) async throws -> String
+    func prepareShare(for list: AsitraList) async throws -> String
 }
 
 @MainActor
 struct CloudKitSharedListRepository: SharedListRepository {
     private let containerIdentifier = "iCloud.com.devganatra.sakhya"
 
-    func prepareShare(for list: SakhyaList) async throws -> String {
+    func prepareShare(for list: AsitraList) async throws -> String {
         // Construct CloudKit only when sharing is requested. Eager construction can
         // trap at app startup when the current build is unsigned or lacks iCloud.
         let container = CKContainer(identifier: containerIdentifier)
@@ -137,6 +137,7 @@ struct CloudKitSharedListRepository: SharedListRepository {
         do {
             root = try await database.record(for: rootID)
         } catch let error as CKError where error.code == .unknownItem {
+            // Retain the original record type so existing shared lists continue to resolve.
             root = CKRecord(recordType: "SakhyaSharedList", recordID: rootID)
         }
         root["listID"] = list.id.uuidString as CKRecordValue

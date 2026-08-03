@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { SAKHYA_AI_CONTRACT } from "../../ai-contract";
+import { ASITRA_AI_CONTRACT } from "../../ai-contract";
 
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com";
 const MAX_CONTEXT_CHARACTERS = 48_000;
@@ -17,7 +17,7 @@ export type GroundedMetric = {
   source: string;
 };
 
-export type SakhyaAssistantContext = {
+export type AsitraAssistantContext = {
   generatedAt: string;
   timezone?: string;
   verifiedMetrics: GroundedMetric[];
@@ -67,33 +67,33 @@ export class AIConfigurationError extends Error {
   }
 }
 
-export function assertSakhyaAIConfigured(): { model: string; provider: string } {
+export function assertAsitraAIConfigured(): { model: string; provider: string } {
   const configuration = providerConfiguration(env as unknown as AIEnvironment);
   return { model: configuration.model, provider: configuration.provider };
 }
 
-export function publicSakhyaAIContract() {
+export function publicAsitraAIContract() {
   const configuration = env as unknown as AIEnvironment;
   const provider = configuration.AI_PROVIDER?.trim().toLowerCase() || "openai";
   if (provider === "openai-compatible" && configuration.CUSTOM_AI_MODEL?.trim()) {
     return {
-      ...SAKHYA_AI_CONTRACT,
+      ...ASITRA_AI_CONTRACT,
       label: "Custom",
       model: configuration.CUSTOM_AI_MODEL.trim(),
       provider,
     };
   }
-  return { ...SAKHYA_AI_CONTRACT, provider: "openai" };
+  return { ...ASITRA_AI_CONTRACT, provider: "openai" };
 }
 
-export async function answerWithSakhyaAI(input: {
+export async function answerWithAsitraAI(input: {
   userIdentifier: string;
   messages: AssistantMessage[];
-  context: SakhyaAssistantContext;
+  context: AsitraAssistantContext;
 }): Promise<{ answer: string; model: string; provider: string }> {
   const configuration = providerConfiguration(env as unknown as AIEnvironment);
   const conversation = input.messages
-    .map((message) => `${message.role === "user" ? "User" : "Sakhya"}: ${message.text}`)
+    .map((message) => `${message.role === "user" ? "User" : "Asitra"}: ${message.text}`)
     .join("\n");
   const serializedContext = JSON.stringify(input.context);
   if (serializedContext.length > MAX_CONTEXT_CHARACTERS) {
@@ -101,7 +101,7 @@ export async function answerWithSakhyaAI(input: {
   }
 
   const instructions = [
-    "You are Sakhya, a calm and practical everyday coach.",
+    "You are Asitra, a calm and practical everyday assistant.",
     "Treat verifiedMetrics as calculated facts. Never recalculate or contradict them.",
     "Use entries only as supporting context and never invent events, measurements, causal relationships, or completed actions.",
     "When describing a pattern, name the evidence and distinguish correlation from causation.",
@@ -111,7 +111,7 @@ export async function answerWithSakhyaAI(input: {
     "Never claim to have changed a calendar, reminder, list, payment, or record.",
     "Lead with the answer, include the material caveat, and end with at most one practical next step.",
   ].join(" ");
-  const prompt = `Grounded Sakhya context:\n${serializedContext}\n\nConversation:\n${conversation}`;
+  const prompt = `Grounded Asitra context:\n${serializedContext}\n\nConversation:\n${conversation}`;
 
   if (configuration.provider === "openai") {
     const response = await fetch(`${configuration.baseURL}/v1/responses`, {
@@ -169,7 +169,7 @@ export async function answerWithSakhyaAI(input: {
   return { answer, model: configuration.model, provider: configuration.provider };
 }
 
-export async function classifyFinanceWithSakhyaAI(input: {
+export async function classifyFinanceWithAsitraAI(input: {
   userIdentifier: string;
   text: string;
   today: string;
@@ -259,7 +259,7 @@ function providerConfiguration(configuration: AIEnvironment) {
       provider,
       apiKey: configuration.OPENAI_API_KEY,
       baseURL: DEFAULT_OPENAI_BASE_URL,
-      model: SAKHYA_AI_CONTRACT.model,
+      model: ASITRA_AI_CONTRACT.model,
     };
   }
 

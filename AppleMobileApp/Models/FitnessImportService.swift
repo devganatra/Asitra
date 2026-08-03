@@ -117,7 +117,7 @@ enum FitnessImportError: LocalizedError {
         case .healthDataUnavailable:
             "Apple Health data is not available on this device."
         case .mobileDeviceRequired:
-            "Connect Apple Health from Sakhya on your iPhone or iPad."
+            "Connect Apple Health from Asitra on your iPhone or iPad."
         }
     }
 }

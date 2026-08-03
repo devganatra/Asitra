@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const title = "Sakhya — Your everyday system";
+const title = "Asitra — Your everyday assistant";
 const description =
   "Capture your day, organize commitments, follow personal progress, understand money, and protect your balance.";
 

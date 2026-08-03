@@ -27,4 +27,4 @@
 
 ## Known platform boundary
 
-The web application is fully usable without Apple Health, Calendar, Reminders, or Screen Time. Those capabilities remain native-only until a user-approved identity-linking flow connects the Apple account to the same Sakhya web account. Do not describe the stores as synchronized before that flow ships.
+The web application is fully usable without Apple Health, Calendar, Reminders, or Screen Time. Those capabilities remain native-only until a user-approved identity-linking flow connects the Apple account to the same Asitra web account. Do not describe the stores as synchronized before that flow ships.

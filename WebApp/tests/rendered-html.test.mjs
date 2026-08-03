@@ -65,7 +65,7 @@ test.after(() => {
   server?.kill("SIGTERM");
 });
 
-test("server-renders the Sakhya everyday app", async () => {
+test("server-renders the Asitra everyday app", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
@@ -77,7 +77,7 @@ test("server-renders the Sakhya everyday app", async () => {
   assert.match(response.headers.get("cache-control") ?? "", /no-store/);
 
   const html = await response.text();
-  assert.match(html, /<title>Sakhya — Your everyday system<\/title>/i);
+  assert.match(html, /<title>Asitra — Your everyday assistant<\/title>/i);
   assert.match(html, /Preparing your day/);
   assert.match(html, /Loading your private account workspace/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/i);
@@ -100,7 +100,7 @@ test("rejects unauthenticated assistant access", async () => {
       ...signedOutHeaders,
       "content-type": "application/json",
       origin,
-      "x-sakhya-request": "1",
+      "x-asitra-request": "1",
     },
     body: JSON.stringify({
       messages: [{ role: "user", text: "Tell me about today" }],
@@ -132,7 +132,7 @@ test("requires explicit consent before AI receives account context", async () =>
       "content-type": "application/json",
       origin,
       "oai-authenticated-user-email": "security-test@example.com",
-      "x-sakhya-request": "1",
+      "x-asitra-request": "1",
     },
     body: JSON.stringify({
       messages: [{ role: "user", text: "Tell me about today" }],
@@ -149,7 +149,7 @@ test("keeps the model service disabled when its server secret is absent", async 
       "content-type": "application/json",
       origin,
       "oai-authenticated-user-email": "security-test@example.com",
-      "x-sakhya-request": "1",
+      "x-asitra-request": "1",
     },
     body: JSON.stringify({
       messages: [{ role: "user", text: "Tell me about today" }],
@@ -177,17 +177,17 @@ test("keeps web and Apple assistant routes on the shared model service", async (
     readFile(new URL("../app/api/assistant/service.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/assistant/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/native/assistant/route.ts", import.meta.url), "utf8"),
-    readFile(new URL("../app/SakhyaWebApp.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/AsitraWebApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../../AppleMobileApp/Models/AssistantService.swift", import.meta.url), "utf8"),
-    readFile(new URL("../../AppleMobileApp/Models/SakhyaAIAccount.swift", import.meta.url), "utf8"),
+    readFile(new URL("../../AppleMobileApp/Models/AsitraAIAccount.swift", import.meta.url), "utf8"),
   ]);
 
-  assert.match(service, /model: SAKHYA_AI_CONTRACT\.model/);
-  assert.match(webRoute, /answerWithSakhyaAI/);
-  assert.match(nativeRoute, /answerWithSakhyaAI/);
+  assert.match(service, /model: ASITRA_AI_CONTRACT\.model/);
+  assert.match(webRoute, /answerWithAsitraAI/);
+  assert.match(nativeRoute, /answerWithAsitraAI/);
   assert.match(webClient, /fetch\("\/api\/assistant\/config"/);
   assert.match(appleAccount, /api\/assistant\/config/);
-  assert.match(appleClient, /SakhyaAssistantResponse/);
+  assert.match(appleClient, /AsitraAssistantResponse/);
   assert.doesNotMatch(`${appleClient}\n${appleAccount}`, /gpt-5\.6-/);
 });
 
@@ -196,12 +196,12 @@ test("uses one finance classifier and one entry point across web and Apple", asy
     readFile(new URL("../app/api/assistant/service.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/finance/classify/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/native/finance/classify/route.ts", import.meta.url), "utf8"),
-    readFile(new URL("../app/SakhyaWebApp.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/AsitraWebApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../../AppleMobileApp/Views/ExpensesView.swift", import.meta.url), "utf8"),
   ]);
-  assert.match(service, /classifyFinanceWithSakhyaAI/);
-  assert.match(webRoute, /classifyFinanceWithSakhyaAI/);
-  assert.match(nativeRoute, /classifyFinanceWithSakhyaAI/);
+  assert.match(service, /classifyFinanceWithAsitraAI/);
+  assert.match(webRoute, /classifyFinanceWithAsitraAI/);
+  assert.match(nativeRoute, /classifyFinanceWithAsitraAI/);
   assert.match(webClient, /Add money activity/);
   assert.match(appleClient, /Add money activity/);
   assert.doesNotMatch(webClient, />Add income</);
@@ -212,7 +212,7 @@ test("ships the secured product source without starter artifacts", async () => {
   const [css, page, client, layout, worker, packageJson, stateRoute] = await Promise.all([
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/SakhyaWebApp.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/AsitraWebApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../worker/index.ts", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
@@ -236,7 +236,7 @@ test("ships the secured product source without starter artifacts", async () => {
   assert.match(client, /This workspace belongs to you/);
   assert.match(client, /Show getting-started tour/);
   assert.match(client, /Account menu for/);
-  assert.match(client, /End this Sakhya session on this browser/);
+  assert.match(client, /End this Asitra session on this browser/);
   assert.match(client, /onboardingCompleted/);
   assert.match(stateRoute, /WHERE user_id = \?/);
   assert.match(client, /Today/);
@@ -249,12 +249,12 @@ test("ships the secured product source without starter artifacts", async () => {
   assert.match(client, /Balance sheet/);
   assert.match(client, /unallocated/);
   assert.match(client, /Import PDF/);
-  assert.match(client, /Tell Sakhya/);
+  assert.match(client, /Tell Asitra/);
   assert.match(client, /submitMoneyDraft/);
   assert.match(client, /commitStatementImport/);
   assert.match(client, /Balance/);
   assert.match(worker, /content-security-policy/);
-  assert.match(layout, /Sakhya — Your everyday system/);
+  assert.match(layout, /Asitra — Your everyday assistant/);
   assert.match(layout, /og\.png/);
   assert.match(css, /@media \(max-width:\s*720px\)/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);

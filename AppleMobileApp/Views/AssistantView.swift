@@ -5,7 +5,7 @@ struct AssistantChatView: View {
     @Environment(AppModel.self) private var model
     @Environment(SystemFeatureModel.self) private var systemFeature
     @Environment(\.dismiss) private var dismiss
-    @State private var assistant = SakhyaAssistant()
+    @State private var assistant = AsitraAssistant()
     @State private var question = ""
     @State private var voiceCapture = VoiceCaptureService()
     @FocusState private var inputFocused: Bool
@@ -58,7 +58,7 @@ struct AssistantChatView: View {
             .frame(width: 38, height: 38)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Sakhya")
+                Text("Asitra")
                     .font(.headline)
                 HStack(spacing: 5) {
                     Circle()
@@ -114,7 +114,7 @@ struct AssistantChatView: View {
                             terraConnection
                         }
                         Label(
-                            "Only grounded summaries needed for your question are sent to the shared Sakhya model.",
+                            "Only grounded summaries needed for your question are sent to the shared Asitra model.",
                             systemImage: "lock.shield"
                         )
                         .font(.caption)
@@ -143,7 +143,7 @@ struct AssistantChatView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Use the same AI everywhere")
                 .font(.subheadline.weight(.semibold))
-            Text("Connect with Apple to use \(assistant.account.modelLabel) on Mac, iPhone, iPad and web. Your OpenAI key stays on Sakhya’s server.")
+            Text("Connect with Apple to use \(assistant.account.modelLabel) on Mac, iPhone, iPad and web. Your OpenAI key stays on Asitra’s server.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             SignInWithAppleButton(.continue) { request in
@@ -155,7 +155,7 @@ struct AssistantChatView: View {
             .frame(height: 42)
             .disabled(assistant.account.isConnecting)
             if assistant.account.isConnecting {
-                ProgressView("Connecting Sakhya AI…")
+                ProgressView("Connecting Asitra AI…")
                     .controlSize(.small)
             }
             if let error = assistant.account.errorMessage {

@@ -10,7 +10,7 @@ struct SettingsView: View {
     @State private var importError: String?
     @State private var confirmation: DataConfirmation?
     @State private var dataMessage: String?
-    @State private var aiAccount = SakhyaAIAccount.shared
+    @State private var aiAccount = AsitraAIAccount.shared
 
     var body: some View {
         @Bindable var model = model
@@ -38,7 +38,7 @@ struct SettingsView: View {
                 if let lastSync = model.lastCloudSync {
                     LabeledContent("Last sync", value: lastSync.formatted(date: .abbreviated, time: .shortened))
                 }
-                Text("Sakhya stores one encrypted-in-transit snapshot in your private CloudKit database. Only devices signed into your iCloud account can access it.")
+                Text("Asitra stores one encrypted-in-transit snapshot in your private CloudKit database. Only devices signed into your iCloud account can access it.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -84,7 +84,7 @@ struct SettingsView: View {
                 LabeledContent("Apps & sensors", value: "Apple Health")
             }
 
-            Section("Sakhya AI") {
+            Section("Asitra AI") {
                 LabeledContent("Model", value: aiAccount.modelIdentifier ?? aiAccount.modelLabel)
                 LabeledContent("Status", value: aiAccount.isConnected ? "Connected" : "Offline insights")
 
@@ -104,20 +104,20 @@ struct SettingsView: View {
                 }
 
                 if aiAccount.isConnecting {
-                    ProgressView("Connecting Sakhya AI…")
+                    ProgressView("Connecting Asitra AI…")
                 }
                 if let error = aiAccount.errorMessage {
                     Text(error)
                         .font(.footnote)
                         .foregroundStyle(.red)
                 }
-                Text("The shared Sakhya model runs through the secure backend, so Mac, iPhone, iPad and web use the same model contract. Sakhya sends calculated metrics with their source, not your complete database. The session is stored in Keychain and can be removed here.")
+                Text("The shared Asitra model runs through the secure backend, so Mac, iPhone, iPad and web use the same model contract. Asitra sends calculated metrics with their source, not your complete database. The session is stored in Keychain and can be removed here.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
 
             Section("Apple Reminders") {
-                Toggle("Add Sakhya reminders to Apple Reminders", isOn: $model.appleRemindersEnabled)
+                Toggle("Add Asitra reminders to Apple Reminders", isOn: $model.appleRemindersEnabled)
 
                 HStack {
                     LabeledContent("Status", value: model.appleRemindersStatus)
@@ -134,7 +134,7 @@ struct SettingsView: View {
                         .foregroundStyle(.red)
                 }
 
-                Text("New reminder entries are created in your default Apple Reminders list with their due date and alert. Completing or deleting them in Sakhya updates the linked Apple reminder.")
+                Text("New reminder entries are created in your default Apple Reminders list with their due date and alert. Completing or deleting them in Asitra updates the linked Apple reminder.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -191,7 +191,7 @@ struct SettingsView: View {
                     Label("WHOOP", systemImage: "waveform.path.ecg")
                 }
 
-                Text("Sakhya imports workouts and sleep from Apple Health and preserves the app or device that recorded each item. Enable Health sharing in WHOOP or another fitness app, then sync here.")
+                Text("Asitra imports workouts and sleep from Apple Health and preserves the app or device that recorded each item. Enable Health sharing in WHOOP or another fitness app, then sync here.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
@@ -207,14 +207,14 @@ struct SettingsView: View {
             }
 
             Section {
-                Text("The app always keeps a local working copy. iCloud sync requires selecting your Apple Developer team and enabling the iCloud.com.devganatra.sakhya container in Xcode. Automatic app usage requires Apple approval for the Family Controls entitlement and a Device Activity report extension.")
+                Text("The app always keeps a local working copy. iCloud sync requires selecting your Apple Developer team and enabling Asitra’s configured CloudKit container in Xcode. Automatic app usage requires Apple approval for the Family Controls entitlement and a Device Activity report extension.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
 
             Section("About") {
                 LabeledContent("Platform", value: platformName)
-                LabeledContent("App", value: "Sakhya")
+                LabeledContent("App", value: "Asitra")
                 LabeledContent("Version", value: "0.1")
             }
         }
@@ -303,7 +303,7 @@ private enum DataConfirmation: String, Identifiable {
         switch self {
         case .removeSamples: "Remove sample data?"
         case .clearLocal: "Clear this device?"
-        case .deleteEverywhere: "Delete all Sakhya data?"
+        case .deleteEverywhere: "Delete all Asitra data?"
         }
     }
     var actionTitle: String {
@@ -317,7 +317,7 @@ private enum DataConfirmation: String, Identifiable {
         switch self {
         case .removeSamples: "Only entries created as sample data will be removed. Your entries will stay."
         case .clearLocal: "Entries and attachments on this device will be removed. Your iCloud copy will stay, and sync will be turned off."
-        case .deleteEverywhere: "This permanently removes the Sakhya snapshot from iCloud and all entries and attachments on this device. This cannot be undone."
+        case .deleteEverywhere: "This permanently removes the Asitra snapshot from iCloud and all entries and attachments on this device. This cannot be undone."
         }
     }
 }
@@ -343,7 +343,7 @@ private struct RecentlyDeletedView: View {
                         .padding(.vertical, 4)
                     }
                 } footer: {
-                    Text("Sakhya never empties this list automatically.")
+                    Text("Asitra never empties this list automatically.")
                 }
             }
         }

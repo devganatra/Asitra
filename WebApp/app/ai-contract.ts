@@ -1,4 +1,4 @@
-export type SakhyaAIContract = {
+export type AsitraAIContract = {
   version: number;
   profile: string;
   label: string;
@@ -6,7 +6,7 @@ export type SakhyaAIContract = {
   provider?: string;
 };
 
-export const SAKHYA_AI_CONTRACT: SakhyaAIContract = Object.freeze({
+export const ASITRA_AI_CONTRACT: AsitraAIContract = Object.freeze({
   version: 1,
   profile: "Everyday",
   label: "Terra",

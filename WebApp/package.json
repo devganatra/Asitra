@@ -1,8 +1,8 @@
 {
-  "name": "sakhya-web",
+  "name": "asitra-web",
   "version": "0.1.0",
   "private": true,
-  "description": "The responsive web companion for Sakhya.",
+  "description": "The responsive web companion for Asitra.",
   "engines": {
     "node": ">=22.13.0"
   },
