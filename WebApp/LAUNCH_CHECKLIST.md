@@ -10,6 +10,7 @@
 
 ## Hosting
 
+- The repository-root build delegates to `WebApp` and copies its verified vinext output to `dist` for Sites monorepo deployment.
 - Apply all D1 migrations before deploying application code.
 - Confirm the D1 database and private R2 bucket are bound.
 - Set `APPLE_SIGN_IN_AUDIENCE` to the production bundle identifier.
