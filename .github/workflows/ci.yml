@@ -12,11 +12,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  web:
+    name: Web contracts and integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: WebApp/package-lock.json
+      - name: Install web dependencies
+        run: npm --prefix WebApp ci
+      - name: Lint web app
+        run: npm --prefix WebApp run lint
+      - name: Test production web build and shared AI contract
+        run: npm --prefix WebApp test
+
   macos:
     name: macOS
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - name: Test shared Swift contracts
+        run: swift test --package-path Packages/SakhyaContracts
       - name: Build Sakhya for Mac
         run: >-
           xcodebuild

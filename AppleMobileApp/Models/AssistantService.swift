@@ -1,6 +1,7 @@
 import AuthenticationServices
 import Foundation
 import Observation
+import SakhyaContracts
 
 struct AssistantMessage: Identifiable, Hashable {
     enum Role: String, Hashable { case user, assistant }
@@ -23,8 +24,11 @@ final class SakhyaAssistant {
     private var didPrepare = false
     let account = SakhyaAIAccount.shared
 
-    var usesTerra: Bool { account.isConnected }
-    var serviceLabel: String { account.isConnected ? "Private · Terra" : "Private · Offline insights" }
+    var serviceLabel: String {
+        account.isConnected
+            ? "Private · \(account.modelProfile) · \(account.modelLabel)"
+            : "Private · Offline insights"
+    }
 
     func prepare(model: AppModel, finance: FinanceWorkspace) {
         guard !didPrepare else { return }
@@ -66,7 +70,7 @@ final class SakhyaAssistant {
             messages.append(
                 AssistantMessage(
                     role: .assistant,
-                    text: "Terra is connected. I’ll use the same Sakhya model as the web app while keeping calculations grounded in your saved data."
+                    text: "\(account.modelLabel) is connected. I’ll use the same Sakhya model as the web app while keeping calculations grounded in your saved data."
                 )
             )
         }
@@ -415,11 +419,13 @@ private enum AssistantEngine {
     ) async -> String {
         if let sessionToken {
             do {
-                return try await RemoteTerraAssistant.answer(
+                let response = try await RemoteSakhyaAssistant.answer(
                     conversation: conversation,
                     context: snapshot.remoteContext,
                     sessionToken: sessionToken
                 )
+                SakhyaAIAccount.shared.apply(response)
+                return response.answer
             } catch {
                 return fallbackAnswer(question: question, snapshot: snapshot)
                     + "\n\nTerra could not be reached, so this answer was calculated privately on this device."
@@ -502,7 +508,7 @@ private enum AssistantEngine {
 
 }
 
-private enum RemoteTerraAssistant {
+private enum RemoteSakhyaAssistant {
     private static let endpoint = URL(
         string: "https://sakhya-everyday.deepanddev.chatgpt.site/api/native/assistant"
     )!
@@ -511,7 +517,7 @@ private enum RemoteTerraAssistant {
         conversation: [AssistantMessage],
         context: RemoteAssistantContext,
         sessionToken: String
-    ) async throws -> String {
+    ) async throws -> SakhyaAssistantResponse {
         let body = RemoteAssistantRequest(
             messages: conversation.map {
                 RemoteAssistantMessage(
@@ -531,11 +537,11 @@ private enum RemoteTerraAssistant {
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
             throw RemoteAssistantError.invalidResponse
         }
-        let result = try JSONDecoder().decode(RemoteAssistantResponse.self, from: data)
+        let result = try JSONDecoder().decode(SakhyaAssistantResponse.self, from: data)
         guard !result.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw RemoteAssistantError.invalidResponse
         }
-        return result.answer
+        return result
     }
 }
 
@@ -547,10 +553,6 @@ private struct RemoteAssistantRequest: Encodable {
 private struct RemoteAssistantMessage: Encodable {
     let role: String
     let text: String
-}
-
-private struct RemoteAssistantResponse: Decodable {
-    let answer: String
 }
 
 private struct RemoteAssistantContext: Encodable {

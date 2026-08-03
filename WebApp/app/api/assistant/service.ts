@@ -1,8 +1,6 @@
 import { env } from "cloudflare:workers";
+import { SAKHYA_AI_CONTRACT } from "../../ai-contract";
 
-export const SAKHYA_MODEL_LABEL = "Terra";
-
-const DEFAULT_MODEL = "gpt-5.6-terra";
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com";
 const MAX_CONTEXT_CHARACTERS = 48_000;
 
@@ -61,6 +59,20 @@ export class AIConfigurationError extends Error {
 export function assertSakhyaAIConfigured(): { model: string; provider: string } {
   const configuration = providerConfiguration(env as unknown as AIEnvironment);
   return { model: configuration.model, provider: configuration.provider };
+}
+
+export function publicSakhyaAIContract() {
+  const configuration = env as unknown as AIEnvironment;
+  const provider = configuration.AI_PROVIDER?.trim().toLowerCase() || "openai";
+  if (provider === "openai-compatible" && configuration.CUSTOM_AI_MODEL?.trim()) {
+    return {
+      ...SAKHYA_AI_CONTRACT,
+      label: "Custom",
+      model: configuration.CUSTOM_AI_MODEL.trim(),
+      provider,
+    };
+  }
+  return { ...SAKHYA_AI_CONTRACT, provider: "openai" };
 }
 
 export async function answerWithSakhyaAI(input: {
@@ -158,7 +170,7 @@ function providerConfiguration(configuration: AIEnvironment) {
       provider,
       apiKey: configuration.OPENAI_API_KEY,
       baseURL: DEFAULT_OPENAI_BASE_URL,
-      model: DEFAULT_MODEL,
+      model: SAKHYA_AI_CONTRACT.model,
     };
   }
 

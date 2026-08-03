@@ -136,6 +136,37 @@ test("keeps the model service disabled when its server secret is absent", async 
   assert.equal((await response.json()).code, "AI_NOT_CONFIGURED");
 });
 
+test("publishes one safe AI contract for every client", async () => {
+  const response = await fetch(`${origin}/api/assistant/config`, { cache: "no-store" });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    version: 1,
+    profile: "Everyday",
+    label: "Terra",
+    model: "gpt-5.6-terra",
+    provider: "openai",
+  });
+});
+
+test("keeps web and Apple assistant routes on the shared model service", async () => {
+  const [service, webRoute, nativeRoute, webClient, appleClient, appleAccount] = await Promise.all([
+    readFile(new URL("../app/api/assistant/service.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/assistant/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/native/assistant/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/SakhyaWebApp.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../../AppleMobileApp/Models/AssistantService.swift", import.meta.url), "utf8"),
+    readFile(new URL("../../AppleMobileApp/Models/SakhyaAIAccount.swift", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(service, /model: SAKHYA_AI_CONTRACT\.model/);
+  assert.match(webRoute, /answerWithSakhyaAI/);
+  assert.match(nativeRoute, /answerWithSakhyaAI/);
+  assert.match(webClient, /fetch\("\/api\/assistant\/config"/);
+  assert.match(appleAccount, /api\/assistant\/config/);
+  assert.match(appleClient, /SakhyaAssistantResponse/);
+  assert.doesNotMatch(`${appleClient}\n${appleAccount}`, /gpt-5\.6-/);
+});
+
 test("ships the secured product source without starter artifacts", async () => {
   const [css, page, client, layout, worker, packageJson] = await Promise.all([
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
@@ -153,7 +184,7 @@ test("ships the secured product source without starter artifacts", async () => {
   assert.match(client, /event\.key === "Enter" && !event\.shiftKey/);
   assert.match(client, /aria-label="Send message"/);
   assert.match(client, /"Stop voice input" : "Start voice input"/);
-  assert.match(client, /Everyday · Terra/);
+  assert.match(client, /aiContract\.profile.*aiContract\.label/);
   assert.match(client, /\/api\/assistant/);
   assert.match(client, /exportData/);
   assert.match(client, /validatePersistedState/);

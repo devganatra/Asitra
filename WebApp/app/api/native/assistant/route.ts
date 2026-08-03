@@ -2,6 +2,7 @@ import { jsonResponse } from "../../security";
 import {
   AIConfigurationError,
   answerWithSakhyaAI,
+  publicSakhyaAIContract,
   type AssistantMessage,
   type GroundedMetric,
   type SakhyaAssistantContext,
@@ -39,11 +40,14 @@ export async function POST(request: Request) {
       messages,
       context,
     });
+    const contract = publicSakhyaAIContract();
     return jsonResponse({
       answer: result.answer,
       model: result.model,
       provider: result.provider,
-      profile: "Everyday",
+      label: contract.label,
+      profile: contract.profile,
+      contractVersion: contract.version,
     });
   } catch (error) {
     if (error instanceof AIConfigurationError) {

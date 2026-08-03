@@ -39,6 +39,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
+import { SAKHYA_AI_CONTRACT, type SakhyaAIContract } from "./ai-contract";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   extractPdfText,
@@ -352,6 +353,7 @@ export default function SakhyaWebApp() {
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [aiConsent, setAIConsent] = useState(false);
+  const [aiContract, setAIContract] = useState<SakhyaAIContract>(SAKHYA_AI_CONTRACT);
   const [sharingOpen, setSharingOpen] = useState(false);
   const [inviteCode, setInviteCode] = useState("");
   const [joinCode, setJoinCode] = useState("");
@@ -457,6 +459,14 @@ export default function SakhyaWebApp() {
     void loadState();
     // Loading is intentionally limited to the initial authenticated mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    void fetch("/api/assistant/config", { cache: "no-store" })
+      .then(async (response) => {
+        if (response.ok) setAIContract((await response.json()) as SakhyaAIContract);
+      })
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -1105,14 +1115,18 @@ export default function SakhyaWebApp() {
         answer?: string;
         code?: string;
         error?: string;
+        model?: string;
+        label?: string;
+        profile?: string;
+        contractVersion?: number;
       };
       if (!response.ok || !result.answer) {
         if (result.code === "AI_CONSENT_REQUIRED") {
-          setNotice("Choose ‘Allow AI analysis’ before sending private context to Terra.");
+          setNotice(`Choose ‘Allow AI analysis’ before sending private context to ${aiContract.label}.`);
         } else if (result.code === "AI_RATE_LIMIT") {
           setNotice("Your hourly AI limit is reached. Local insights remain available.");
         } else if (result.code === "AI_NOT_CONFIGURED") {
-          setNotice("Terra needs an OpenAI API key. Showing Sakhya’s local insight instead.");
+          setNotice(`${aiContract.label} needs an OpenAI API key. Showing Sakhya’s local insight instead.`);
         } else {
           setNotice(result.error ?? "Sakhya AI is temporarily unavailable.");
         }
@@ -1122,6 +1136,14 @@ export default function SakhyaWebApp() {
         ...current,
         { id: uid(), role: "assistant", text: result.answer! },
       ]);
+      if (result.model && result.label && result.profile && result.contractVersion) {
+        setAIContract({
+          model: result.model,
+          label: result.label,
+          profile: result.profile,
+          version: result.contractVersion,
+        });
+      }
       return;
     } catch {
       // The deterministic local answer keeps core insights available offline
@@ -1882,7 +1904,7 @@ export default function SakhyaWebApp() {
               <div className="assistant-header-actions">
                 <div className="model-picker" aria-label="AI model">
                   <span>Model</span>
-                  <strong>{aiConsent ? "Everyday · Terra" : "Local insights"}</strong>
+                  <strong>{aiConsent ? `${aiContract.profile} · ${aiContract.label}` : "Local insights"}</strong>
                 </div>
                 <button className="assistant-close" onClick={() => setAssistantOpen(false)} aria-label="Close assistant"><X size={19} /></button>
               </div>
@@ -1897,7 +1919,7 @@ export default function SakhyaWebApp() {
               {assistantThinking && (
                 <div className="message thinking">
                   <span><Sparkles size={15} /></span>
-                  <p><i /><i /><i /><small>Terra is thinking</small></p>
+                  <p><i /><i /><i /><small>{aiContract.label} is thinking</small></p>
                 </div>
               )}
               {messages.length === 1 && (
