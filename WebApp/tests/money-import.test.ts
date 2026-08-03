@@ -24,6 +24,21 @@ test("does not turn a money question into a new transaction", () => {
   assert.equal(isMoneyRecordCommand("I spent €24 on groceries"), true);
 });
 
+test("classifies balance snapshots separately from cash-flow transactions", () => {
+  const asset = parseMoneyInstruction("My savings account balance is €8,400", now);
+  assert.equal(asset?.kind, "asset");
+  assert.equal(asset?.balanceCategory, "cash");
+  assert.equal(asset?.amount, 8400);
+
+  const debt = parseMoneyInstruction("I owe €1,250 on my credit card", now);
+  assert.equal(debt?.kind, "liability");
+  assert.equal(debt?.balanceCategory, "creditCard");
+
+  const investment = parseMoneyInstruction("I invested €500 in an ETF today", now);
+  assert.equal(investment?.kind, "investment");
+  assert.equal(investment?.balanceCategory, undefined);
+});
+
 test("extracts debit and credit transactions from common statement text", () => {
   const parsed = parseStatementText(
     [

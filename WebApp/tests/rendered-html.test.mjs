@@ -5,7 +5,7 @@ import test from "node:test";
 
 const port = 31_000 + (process.pid % 1_000);
 const origin = `http://localhost:${port}`;
-const signedOutHeaders = { "oai-authenticated-user-email": "" };
+const signedOutHeaders = { "oai-authenticated-user-email": " " };
 let server;
 
 async function render() {
@@ -172,6 +172,23 @@ test("keeps web and Apple assistant routes on the shared model service", async (
   assert.match(appleAccount, /api\/assistant\/config/);
   assert.match(appleClient, /SakhyaAssistantResponse/);
   assert.doesNotMatch(`${appleClient}\n${appleAccount}`, /gpt-5\.6-/);
+});
+
+test("uses one finance classifier and one entry point across web and Apple", async () => {
+  const [service, webRoute, nativeRoute, webClient, appleClient] = await Promise.all([
+    readFile(new URL("../app/api/assistant/service.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/finance/classify/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/native/finance/classify/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/SakhyaWebApp.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../../AppleMobileApp/Views/ExpensesView.swift", import.meta.url), "utf8"),
+  ]);
+  assert.match(service, /classifyFinanceWithSakhyaAI/);
+  assert.match(webRoute, /classifyFinanceWithSakhyaAI/);
+  assert.match(nativeRoute, /classifyFinanceWithSakhyaAI/);
+  assert.match(webClient, /Add money activity/);
+  assert.match(appleClient, /Add money activity/);
+  assert.doesNotMatch(webClient, />Add income</);
+  assert.doesNotMatch(webClient, />Add investment</);
 });
 
 test("ships the secured product source without starter artifacts", async () => {

@@ -1,10 +1,11 @@
 import { env } from "cloudflare:workers";
 import { getChatGPTUser } from "../chatgpt-auth";
 
-export async function authenticatedUserKey(): Promise<string | null> {
-  const user = await getChatGPTUser();
-  if (!user) return null;
-  const normalized = user.email.trim().toLowerCase();
+export async function authenticatedUserKey(request?: Request): Promise<string | null> {
+  const directEmail = request?.headers.get("oai-authenticated-user-email")?.trim();
+  const user = directEmail ? null : request ? null : await getChatGPTUser();
+  const normalized = (directEmail ?? user?.email)?.trim().toLowerCase();
+  if (!normalized) return null;
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(normalized));
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }

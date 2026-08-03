@@ -25,7 +25,7 @@ export async function POST(request: Request) {
     return jsonResponse({ error: "Untrusted request." }, 403);
   }
 
-  const userId = await authenticatedUserKey();
+  const userId = await authenticatedUserKey(request);
   if (!userId) return jsonResponse({ error: "Authentication required." }, 401);
 
   const contentLength = Number(request.headers.get("content-length") ?? "0");

@@ -5,7 +5,7 @@ const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 export async function POST(request: Request) {
   if (!isTrustedMutation(request)) return jsonResponse({ error: "Untrusted request." }, 403);
-  const userId = await authenticatedUserKey();
+  const userId = await authenticatedUserKey(request);
   if (!userId) return jsonResponse({ error: "Authentication required." }, 401);
   const contentType = request.headers.get("content-type")?.split(";")[0].toLowerCase() ?? "";
   if (!ALLOWED_TYPES.has(contentType)) return jsonResponse({ error: "Unsupported image type." }, 415);

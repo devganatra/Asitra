@@ -47,6 +47,7 @@ import {
   isMoneyRecordCommand,
   parseMoneyInstruction,
   parseStatementText,
+  type ParsedMoneyInstruction,
 } from "./money-import";
 import { type EntryKind, parseCapture } from "./capture-parser";
 import { validatePersistedState } from "./state-schema";
@@ -105,10 +106,12 @@ type MoneyEntry = {
 };
 
 type MoneyDraft = {
-  kind: "expense" | MoneyEntry["kind"];
+  kind: "expense" | MoneyEntry["kind"] | "asset" | "liability";
   amount: string;
   date: string;
   note: string;
+  balanceCategory: BalanceSheetCategory;
+  existingBalanceID?: string;
 };
 
 type BalanceSheetCategory =
@@ -147,6 +150,7 @@ const EMPTY_MONEY_DRAFT: MoneyDraft = {
   amount: "",
   date: new Date().toISOString().slice(0, 10),
   note: "",
+  balanceCategory: "cash",
 };
 const currency = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
 const weekdayOnly = new Intl.DateTimeFormat("en", { weekday: "short" });
@@ -340,9 +344,11 @@ export default function SakhyaWebApp() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [assistantThinking, setAssistantThinking] = useState(false);
   const [moneyEntryOpen, setMoneyEntryOpen] = useState(false);
-  const [moneyEntryMode, setMoneyEntryMode] = useState<"type" | "pdf" | "sakhya">("type");
+  const [moneyEntryMode, setMoneyEntryMode] = useState<"type" | "pdf" | "sakhya">("sakhya");
   const [moneyDraft, setMoneyDraft] = useState<MoneyDraft>(EMPTY_MONEY_DRAFT);
   const [moneyInstruction, setMoneyInstruction] = useState("");
+  const [moneyReview, setMoneyReview] = useState<ParsedMoneyInstruction>();
+  const [moneyClassifying, setMoneyClassifying] = useState(false);
   const [importedTransactions, setImportedTransactions] = useState<ImportedMoneyTransaction[]>([]);
   const [importFileName, setImportFileName] = useState("");
   const [importReading, setImportReading] = useState(false);
@@ -894,16 +900,34 @@ export default function SakhyaWebApp() {
     setNotice(`${tracker.name} check-in added to the timeline.`);
   }
 
-  function openMoneyEntry(kind: MoneyDraft["kind"] = "expense", mode: typeof moneyEntryMode = "type") {
-    setMoneyDraft({ ...EMPTY_MONEY_DRAFT, kind, date: new Date().toISOString().slice(0, 10) });
+  function openMoneyEntry(kind: MoneyDraft["kind"] = "expense", mode: typeof moneyEntryMode = "sakhya") {
+    setMoneyDraft({ ...EMPTY_MONEY_DRAFT, kind, balanceCategory: kind === "liability" ? "creditCard" : "cash", date: new Date().toISOString().slice(0, 10) });
     setMoneyEntryMode(mode);
     setMoneyInstruction("");
+    setMoneyReview(undefined);
     setImportedTransactions([]);
     setImportFileName("");
     setMoneyEntryOpen(true);
   }
 
-  function storeMoneyRecord(kind: MoneyDraft["kind"], amount: number, date: string, note: string) {
+  function storeMoneyRecord(kind: MoneyDraft["kind"], amount: number, date: string, note: string, balanceCategory?: BalanceSheetCategory, existingBalanceID?: string) {
+    if (kind === "asset" || kind === "liability") {
+      const category = balanceCategory ?? (kind === "asset" ? "cash" : "otherLiability");
+      const next: BalanceSheetItem = {
+        id: existingBalanceID ?? uid(),
+        name: note || (kind === "asset" ? "Asset" : "Debt"),
+        balance: amount,
+        category,
+        updatedAt: date,
+      };
+      setState((current) => ({
+        ...current,
+        balanceSheetItems: existingBalanceID
+          ? current.balanceSheetItems.map((item) => item.id === existingBalanceID ? next : item)
+          : [...current.balanceSheetItems, next],
+      }));
+      return;
+    }
     setState((current) => ({
       ...current,
       entries:
@@ -940,21 +964,45 @@ export default function SakhyaWebApp() {
       setNotice("Choose a valid date.");
       return;
     }
-    storeMoneyRecord(moneyDraft.kind, amount, date.toISOString(), moneyDraft.note.trim());
+    storeMoneyRecord(moneyDraft.kind, amount, date.toISOString(), moneyDraft.note.trim(), moneyDraft.balanceCategory, moneyDraft.existingBalanceID);
     setMoneyEntryOpen(false);
     setNotice(`${moneyDraft.kind === "expense" ? "Expense" : "Money entry"} added for ${moneyDraft.date}.`);
   }
 
-  function submitMoneyInstruction(event: FormEvent) {
+  async function submitMoneyInstruction(event: FormEvent) {
     event.preventDefault();
-    const parsed = parseMoneyInstruction(moneyInstruction);
-    if (!parsed) {
-      setNotice("Include an amount and an action, for example “spent €24 on groceries yesterday”.");
+    const local = parseMoneyInstruction(moneyInstruction);
+    if (local) {
+      setMoneyReview(local);
       return;
     }
-    storeMoneyRecord(parsed.kind, parsed.amount, parsed.date, parsed.title);
+    if (!aiConsent) {
+      setNotice("That entry is ambiguous. Enable AI data sharing in Sakhya AI, or use the guided form.");
+      return;
+    }
+    setMoneyClassifying(true);
+    try {
+      const response = await fetch("/api/finance/classify", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json", "x-sakhya-request": "1" },
+        body: JSON.stringify({ text: moneyInstruction, consent: true, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
+      });
+      const body = await response.json() as { classification?: ParsedMoneyInstruction; error?: string };
+      if (!response.ok || !body.classification) throw new Error(body.error || "Sakhya could not classify that entry.");
+      setMoneyReview(body.classification);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Sakhya could not classify that entry.");
+    } finally {
+      setMoneyClassifying(false);
+    }
+  }
+
+  function confirmMoneyReview() {
+    if (!moneyReview) return;
+    storeMoneyRecord(moneyReview.kind, moneyReview.amount, moneyReview.date, moneyReview.title, moneyReview.balanceCategory);
     setMoneyEntryOpen(false);
-    setNotice(`Sakhya recorded ${currency.format(parsed.amount)} as ${parsed.kind}.`);
+    setNotice(`${currency.format(moneyReview.amount)} recorded once and reflected across your money views.`);
   }
 
   async function readStatementPdf(event: ChangeEvent<HTMLInputElement>) {
@@ -1033,38 +1081,18 @@ export default function SakhyaWebApp() {
   }
 
   function editBalanceSheetItem(existing?: BalanceSheetItem, asset = true) {
-    const name = window.prompt("Account, asset or debt name", existing?.name ?? "");
-    if (!name?.trim()) return;
-    const rawAmount = window.prompt("Current balance in EUR", existing ? String(existing.balance) : "");
-    const balance = Number(rawAmount?.replace(",", "."));
-    if (!Number.isFinite(balance) || balance < 0) return;
-
-    let category = existing?.category;
-    if (!category) {
-      const choices = asset
-        ? "cash, investments, property, otherAsset"
-        : "creditCard, loan, otherLiability";
-      const requested = window.prompt(`Type one of: ${choices}`, asset ? "cash" : "creditCard");
-      const allowed = asset
-        ? new Set<BalanceSheetCategory>(["cash", "investments", "property", "otherAsset"])
-        : new Set<BalanceSheetCategory>(["creditCard", "loan", "otherLiability"]);
-      if (!requested || !allowed.has(requested as BalanceSheetCategory)) return;
-      category = requested as BalanceSheetCategory;
-    }
-
-    const next: BalanceSheetItem = {
-      id: existing?.id ?? uid(),
-      name: name.trim(),
-      balance,
-      category,
-      updatedAt: new Date().toISOString(),
-    };
-    setState((current) => ({
-      ...current,
-      balanceSheetItems: existing
-        ? current.balanceSheetItems.map((item) => (item.id === existing.id ? next : item))
-        : [...current.balanceSheetItems, next],
-    }));
+    const kind: MoneyDraft["kind"] = existing ? (isAssetCategory(existing.category) ? "asset" : "liability") : (asset ? "asset" : "liability");
+    setMoneyDraft({
+      kind,
+      amount: existing ? String(existing.balance) : "",
+      date: new Date().toISOString().slice(0, 10),
+      note: existing?.name ?? "",
+      balanceCategory: existing?.category ?? (asset ? "cash" : "creditCard"),
+      existingBalanceID: existing?.id,
+    });
+    setMoneyEntryMode("type");
+    setMoneyReview(undefined);
+    setMoneyEntryOpen(true);
   }
 
   async function sendMessage(text = chatInput) {
@@ -1445,13 +1473,19 @@ export default function SakhyaWebApp() {
           <PageHeader
             eyebrow="Money, made understandable"
             title="Your money"
-            description="Understand your monthly movement, what you own and owe, and where every euro of surplus is going."
+            description="Add each money event once. Cash flow, monthly result and net worth are three views of the same financial life."
             action={
-              moneyView === "overview"
-                ? <div className="money-header-actions"><button className="secondary-button" onClick={() => openMoneyEntry("expense", "pdf")}><FileText size={17} /> Import PDF</button><button className="primary-button" onClick={() => openMoneyEntry("income")}><Plus size={17} /> Add income</button></div>
-                : <div className="money-header-actions"><button className="secondary-button" onClick={() => openMoneyEntry("expense", "pdf")}><FileText size={17} /> Import PDF</button><button className="primary-button" onClick={() => openMoneyEntry("expense")}><Plus size={17} /> Add expense</button></div>
+              <button className="primary-button" onClick={() => openMoneyEntry()}><Plus size={17} /> Add money activity</button>
             }
           />
+          <section className="money-capture-card">
+            <div className="money-capture-icon"><Sparkles size={20} /></div>
+            <button className="money-capture-main" onClick={() => openMoneyEntry()}>
+              <strong>Tell Sakhya what changed</strong>
+              <span>“Paid €32 for groceries” · “Salary €3,200” · “My savings account balance is €8,400”</span>
+            </button>
+            <button className="money-import-shortcut" onClick={() => openMoneyEntry("expense", "pdf")}><FileText size={16} /> Import PDF</button>
+          </section>
           <div className="segment-row money-segments">
             <button className={moneyView === "overview" ? "active" : ""} onClick={() => setMoneyView("overview")}>Money position</button>
             <button className={moneyView === "month" ? "active" : ""} onClick={() => setMoneyView("month")}>Spending & goals</button>
@@ -1481,10 +1515,6 @@ export default function SakhyaWebApp() {
                   <div className="statement-line"><span>Moved to investments</span><strong>−{currency.format(monthInvested)}</strong></div>
                   <div className="statement-line total"><span>Net cash movement</span><strong>{currency.format(netCashMovement)}</strong></div>
                   {monthSaved > 0 && <p className="statement-note">{currency.format(monthSaved)} earmarked for goals remains cash until it is transferred.</p>}
-                  <div className="statement-actions">
-                    <button onClick={() => openMoneyEntry("income")}>Add income</button>
-                    <button onClick={() => openMoneyEntry("investment")}>Add investment</button>
-                  </div>
                 </section>
 
                 <section className="panel statement-card">
@@ -1505,10 +1535,6 @@ export default function SakhyaWebApp() {
                         ? "Assign the remainder to saving or investing to reach zero."
                         : "This month used existing cash or debt."}
                   </p>
-                  <div className="statement-actions">
-                    <button onClick={() => openMoneyEntry("saving")}>Add saving</button>
-                    <button onClick={() => openMoneyEntry("investment")}>Add investment</button>
-                  </div>
                 </section>
 
                 <section className="panel statement-card balance-statement">
@@ -1534,10 +1560,6 @@ export default function SakhyaWebApp() {
                   ))}
                   {!liabilities.length && <p className="statement-note">No debts recorded.</p>}
                   <div className="statement-line total net-worth-line"><span>Net worth</span><strong>{currency.format(netWorth)}</strong></div>
-                  <div className="statement-actions">
-                    <button onClick={() => editBalanceSheetItem(undefined, true)}>Add asset</button>
-                    <button onClick={() => editBalanceSheetItem(undefined, false)}>Add debt</button>
-                  </div>
                 </section>
               </div>
               <div className="native-note wide">
@@ -2043,31 +2065,41 @@ export default function SakhyaWebApp() {
           <button className="modal-backdrop" onClick={() => setMoneyEntryOpen(false)} aria-label="Close money entry" />
           <section className="money-entry-modal">
             <div className="section-heading">
-              <div><span className="eyebrow">Money</span><h2>Add to this month</h2></div>
+              <div><span className="eyebrow">One money ledger</span><h2>Add money activity</h2></div>
               <button type="button" className="icon-button" onClick={() => setMoneyEntryOpen(false)} aria-label="Close"><X size={18} /></button>
             </div>
             <div className="money-entry-tabs" role="tablist" aria-label="Money entry method">
-              <button className={moneyEntryMode === "type" ? "active" : ""} onClick={() => setMoneyEntryMode("type")}>Type it</button>
-              <button className={moneyEntryMode === "pdf" ? "active" : ""} onClick={() => setMoneyEntryMode("pdf")}>Import PDF</button>
-              <button className={moneyEntryMode === "sakhya" ? "active" : ""} onClick={() => setMoneyEntryMode("sakhya")}>Tell Sakhya</button>
+              <button className={moneyEntryMode === "sakhya" ? "active" : ""} onClick={() => { setMoneyEntryMode("sakhya"); setMoneyReview(undefined); }}>Tell Sakhya</button>
+              <button className={moneyEntryMode === "type" ? "active" : ""} onClick={() => setMoneyEntryMode("type")}>Guided</button>
+              <button className={moneyEntryMode === "pdf" ? "active" : ""} onClick={() => setMoneyEntryMode("pdf")}>Statement</button>
             </div>
             {moneyEntryMode === "type" && (
               <form className="money-entry-form" onSubmit={submitMoneyDraft}>
-                <label>Entry type<select value={moneyDraft.kind} onChange={(event) => setMoneyDraft({ ...moneyDraft, kind: event.target.value as MoneyDraft["kind"] })}><option value="expense">Expense</option><option value="income">Income</option><option value="saving">Saving</option><option value="investment">Investment</option></select></label>
+                <label>What changed?<select value={moneyDraft.kind} onChange={(event) => { const kind = event.target.value as MoneyDraft["kind"]; setMoneyDraft({ ...moneyDraft, kind, balanceCategory: kind === "liability" ? "creditCard" : moneyDraft.balanceCategory }); }}><option value="expense">I spent money</option><option value="income">I received money</option><option value="saving">I set money aside</option><option value="investment">I invested money</option><option value="asset">An asset balance changed</option><option value="liability">A debt balance changed</option></select></label>
                 <div className="money-form-row">
                   <label>Amount (€)<input autoFocus inputMode="decimal" value={moneyDraft.amount} onChange={(event) => setMoneyDraft({ ...moneyDraft, amount: event.target.value })} placeholder="0.00" /></label>
                   <label>Date<input type="date" value={moneyDraft.date} onChange={(event) => setMoneyDraft({ ...moneyDraft, date: event.target.value })} /></label>
                 </div>
-                <label>{moneyDraft.kind === "income" ? "Source" : "What was it for?"}<input value={moneyDraft.note} onChange={(event) => setMoneyDraft({ ...moneyDraft, note: event.target.value })} placeholder={moneyDraft.kind === "income" ? "Salary, freelance…" : "Groceries, rent…"} /></label>
-                <button className="primary-button" disabled={!moneyDraft.amount.trim()}>Add entry</button>
+                {(moneyDraft.kind === "asset" || moneyDraft.kind === "liability") && <label>Balance type<select value={moneyDraft.balanceCategory} onChange={(event) => setMoneyDraft({ ...moneyDraft, balanceCategory: event.target.value as BalanceSheetCategory })}>{moneyDraft.kind === "asset" ? <><option value="cash">Cash &amp; bank</option><option value="investments">Investments</option><option value="property">Property &amp; valuables</option><option value="otherAsset">Other asset</option></> : <><option value="creditCard">Credit card</option><option value="loan">Loan</option><option value="otherLiability">Other debt</option></>}</select></label>}
+                <label>{moneyDraft.kind === "income" ? "Source" : moneyDraft.kind === "asset" || moneyDraft.kind === "liability" ? "Account or balance name" : "What was it for?"}<input value={moneyDraft.note} onChange={(event) => setMoneyDraft({ ...moneyDraft, note: event.target.value })} placeholder={moneyDraft.kind === "income" ? "Salary, freelance…" : moneyDraft.kind === "asset" ? "Main bank account…" : moneyDraft.kind === "liability" ? "Credit card…" : "Groceries, rent…"} /></label>
+                <button className="primary-button" disabled={!moneyDraft.amount.trim()}>{moneyDraft.existingBalanceID ? "Update once" : "Add once"}</button>
               </form>
             )}
             {moneyEntryMode === "sakhya" && (
               <form className="money-sakhya-form" onSubmit={submitMoneyInstruction}>
-                <div className="sakhya-entry-prompt"><Sparkles size={18} /><div><strong>Write it naturally</strong><span>I’ll understand the type, amount and date before adding it.</span></div></div>
-                <textarea autoFocus rows={4} value={moneyInstruction} onChange={(event) => setMoneyInstruction(event.target.value)} placeholder="Spent €24.50 on groceries yesterday" />
-                {parseMoneyInstruction(moneyInstruction) && <div className="money-parse-preview"><CheckCircle2 size={16} /><span>{currency.format(parseMoneyInstruction(moneyInstruction)!.amount)} · {parseMoneyInstruction(moneyInstruction)!.kind} · {new Date(parseMoneyInstruction(moneyInstruction)!.date).toLocaleDateString()}</span></div>}
-                <button className="primary-button" disabled={!parseMoneyInstruction(moneyInstruction)}>Let Sakhya add it</button>
+                {!moneyReview ? <>
+                  <div className="sakhya-entry-prompt"><Sparkles size={18} /><div><strong>Say it your way</strong><span>Finance rules classify clear entries locally. Terra helps only when the meaning is ambiguous.</span></div></div>
+                  <textarea autoFocus rows={4} value={moneyInstruction} onChange={(event) => setMoneyInstruction(event.target.value)} placeholder="Paid €24.50 for groceries yesterday, or my savings account balance is €8,400" />
+                  {parseMoneyInstruction(moneyInstruction) && <div className="money-parse-preview"><CheckCircle2 size={16} /><span>Ready to review · {currency.format(parseMoneyInstruction(moneyInstruction)!.amount)} · {parseMoneyInstruction(moneyInstruction)!.kind}</span></div>}
+                  <button className="primary-button" disabled={!moneyInstruction.trim() || moneyClassifying}>{moneyClassifying ? "Understanding…" : "Review entry"}</button>
+                </> : <div className="money-review-card">
+                  <span className="eyebrow">Check before saving</span>
+                  <div className="money-review-amount">{currency.format(moneyReview.amount)}</div>
+                  <div className="money-review-grid"><span>Type<strong>{moneyReview.kind}</strong></span><span>Date<strong>{new Date(moneyReview.date).toLocaleDateString()}</strong></span></div>
+                  <p>{moneyReview.title}</p>
+                  <small>This one record will feed every relevant money view. Sakhya never lets the model calculate your totals.</small>
+                  <div className="money-review-actions"><button type="button" className="secondary-button" onClick={() => setMoneyReview(undefined)}>Edit</button><button type="button" className="primary-button" onClick={confirmMoneyReview}>Confirm &amp; add once</button></div>
+                </div>}
               </form>
             )}
             {moneyEntryMode === "pdf" && (
