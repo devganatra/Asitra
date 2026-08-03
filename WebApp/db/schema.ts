@@ -37,3 +37,14 @@ export const nativeAIUsage = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.userId, table.windowStart] })],
 );
+
+export const requestUsage = sqliteTable(
+  "request_usage",
+  {
+    userId: text("user_id").notNull(),
+    scope: text("scope").notNull(),
+    windowStart: text("window_start").notNull(),
+    requestCount: integer("request_count").notNull().default(0),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.scope, table.windowStart] })],
+);

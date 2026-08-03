@@ -387,8 +387,16 @@ export default function SakhyaWebApp() {
   const [importFileName, setImportFileName] = useState("");
   const [importReading, setImportReading] = useState(false);
   const [notice, setNotice] = useState<string>();
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [policyOpen, setPolicyOpen] = useState(false);
+  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [aiConsent, setAIConsent] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const stateVersionRef = useRef(0);
+  const accountDeletedRef = useRef(false);
 
   async function loadState() {
     try {
@@ -416,7 +424,8 @@ export default function SakhyaWebApp() {
         return;
       }
       if (response.ok) {
-        const payload = (await response.json()) as { state: unknown };
+        const payload = (await response.json()) as { state: unknown; version: number };
+        stateVersionRef.current = payload.version;
         setState(validatePersistedState(payload.state) as PersistedState);
         setHydrated(true);
         return;
@@ -436,10 +445,18 @@ export default function SakhyaWebApp() {
       headers: {
         "content-type": "application/json",
         "x-sakhya-request": "1",
+        "if-match": String(stateVersionRef.current),
       },
       body: JSON.stringify(validated),
     });
-    if (!response.ok) throw new Error("Secure storage rejected the update.");
+    const result = (await response.json()) as { version?: number; code?: string; error?: string };
+    if (!response.ok) {
+      if (result.code === "STATE_CONFLICT") {
+        throw new Error("Your data changed on another device. Reload Sakhya before editing again.");
+      }
+      throw new Error(result.error ?? "Secure storage rejected the update.");
+    }
+    if (typeof result.version === "number") stateVersionRef.current = result.version;
   }
 
   async function migrateLegacyPhotos(legacy: PersistedState): Promise<PersistedState> {
@@ -462,7 +479,7 @@ export default function SakhyaWebApp() {
   }, []);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || accountDeletedRef.current) return;
     const timeout = window.setTimeout(() => {
       saveQueueRef.current = saveQueueRef.current
         .catch(() => undefined)
@@ -554,6 +571,20 @@ export default function SakhyaWebApp() {
       : weekWork > weekPersonal * 1.8
         ? "Your week is leaning toward work. Protect one personal block this evening."
         : "Your week has a healthy rhythm. Keep the next action small and clear.";
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const searchResults = normalizedSearch
+    ? [
+        ...state.entries
+          .filter((entry) => `${entry.title} ${entry.note ?? ""}`.toLowerCase().includes(normalizedSearch))
+          .slice(0, 12)
+          .map((entry) => ({ id: entry.id, label: entry.title, detail: `${kindMeta[entry.kind].label} · ${longDate.format(new Date(entry.timestamp))}`, section: "today" as Section, date: entry.timestamp })),
+        ...state.lists
+          .flatMap((list) => list.items.map((item) => ({ list, item })))
+          .filter(({ list, item }) => `${list.name} ${item.text}`.toLowerCase().includes(normalizedSearch))
+          .slice(0, 12)
+          .map(({ list, item }) => ({ id: item.id, label: item.text, detail: list.name, section: "lists" as Section, listId: list.id })),
+      ].slice(0, 16)
+    : [];
 
   if (!hydrated) {
     return (
@@ -1008,6 +1039,7 @@ export default function SakhyaWebApp() {
         },
         body: JSON.stringify({
           messages: conversation.map(({ role, text }) => ({ role, text })),
+          consent: aiConsent,
         }),
       });
       const result = (await response.json()) as {
@@ -1016,7 +1048,11 @@ export default function SakhyaWebApp() {
         error?: string;
       };
       if (!response.ok || !result.answer) {
-        if (result.code === "AI_NOT_CONFIGURED") {
+        if (result.code === "AI_CONSENT_REQUIRED") {
+          setNotice("Choose ‘Allow AI analysis’ before sending private context to Terra.");
+        } else if (result.code === "AI_RATE_LIMIT") {
+          setNotice("Your hourly AI limit is reached. Local insights remain available.");
+        } else if (result.code === "AI_NOT_CONFIGURED") {
           setNotice("Terra needs an OpenAI API key. Showing Sakhya’s local insight instead.");
         } else {
           setNotice(result.error ?? "Sakhya AI is temporarily unavailable.");
@@ -1088,6 +1124,50 @@ export default function SakhyaWebApp() {
       ),
     }));
     setEditingEntry(undefined);
+  }
+
+  function deleteEditedEntry() {
+    if (!editingEntry || !window.confirm(`Delete “${editingEntry.title}”? This cannot be undone.`)) return;
+    setState((current) => ({
+      ...current,
+      entries: current.entries.filter((entry) => entry.id !== editingEntry.id),
+    }));
+    setEditingEntry(undefined);
+    setNotice("Timeline entry deleted.");
+  }
+
+  function completeFocusBlock() {
+    setState((current) => ({
+      ...current,
+      entries: [
+        { id: uid(), title: "Completed a protected focus block", kind: "work", timestamp: new Date().toISOString(), minutes: 60 },
+        ...current.entries,
+      ],
+    }));
+    setSelectedDate(new Date());
+    setNotice("Focus block completed and recorded on your timeline.");
+  }
+
+  async function deleteAccount() {
+    if (deleteConfirmation !== "DELETE MY ACCOUNT") return;
+    const response = await fetch("/api/state", {
+      method: "DELETE",
+      credentials: "same-origin",
+      headers: {
+        "x-sakhya-request": "1",
+        "x-sakhya-confirm-delete": deleteConfirmation,
+      },
+    });
+    if (!response.ok) {
+      setNotice("Your account could not be deleted. No data was removed.");
+      return;
+    }
+    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+    accountDeletedRef.current = true;
+    setDeleteAccountOpen(false);
+    setState({ ...seedState, entries: [], lists: [], trackers: [], moneyEntries: [], balanceSheetItems: [] });
+    stateVersionRef.current = 0;
+    setNotice("Your Sakhya account data and uploaded photos were deleted.");
   }
 
   function exportData() {
@@ -1501,6 +1581,8 @@ export default function SakhyaWebApp() {
               <button className="settings-row" onClick={exportData}><Download size={18} /><span><strong>Export backup</strong><small>Download all entries, lists and plans</small></span><ArrowRight size={16} /></button>
               <label className="settings-row"><Upload size={18} /><span><strong>Import backup</strong><small>Restore a Sakhya JSON file</small></span><ArrowRight size={16} /><input type="file" accept=".json,application/json" onChange={importData} hidden /></label>
               <button className="settings-row" onClick={resetData}><RotateCcw size={18} /><span><strong>Restore sample workspace</strong><small>Requires confirmation</small></span><ArrowRight size={16} /></button>
+              <button className="settings-row" onClick={() => setPolicyOpen(true)}><ShieldCheck size={18} /><span><strong>Privacy and AI</strong><small>See how your journal, health and money data are used</small></span><ArrowRight size={16} /></button>
+              <button className="settings-row danger-row" onClick={() => setDeleteAccountOpen(true)}><X size={18} /><span><strong>Delete account data</strong><small>Permanently remove records and uploaded photos</small></span><ArrowRight size={16} /></button>
             </section>
             <section className="panel settings-page-card">
               <div className="section-heading">
@@ -1510,7 +1592,7 @@ export default function SakhyaWebApp() {
               <div className="capability-row"><span>Calendar and Reminders</span><strong>Native app</strong></div>
                   <div className="capability-row"><span>Health and wearables</span><strong>Native app</strong></div>
                   <div className="capability-row"><span>Screen Time</span><strong>Native app</strong></div>
-                  <div className="capability-row"><span>Sakhya AI</span><strong>Terra · All devices</strong></div>
+                  <div className="capability-row"><span>Sakhya AI</span><strong>{aiConsent ? "Terra allowed" : "Local only"}</strong></div>
                   <div className="capability-row"><span>Web account storage</span><strong>Connected</strong></div>
               <div className="native-note">
                 <ShieldCheck size={17} />
@@ -1599,7 +1681,7 @@ export default function SakhyaWebApp() {
             <div className="focus-action">
               <span className="focus-icon"><Target size={21} /></span>
               <div><strong>Protect one focus block</strong><small>60 min · High energy</small></div>
-              <button onClick={() => setNotice("Focus block completed and recorded.")}><Check size={17} /> Complete</button>
+              <button onClick={completeFocusBlock}><Check size={17} /> Complete</button>
             </div>
             <div className="next-actions">
               <div><span>13:00</span><strong>Move for 30 minutes</strong><Activity size={17} /></div>
@@ -1693,7 +1775,7 @@ export default function SakhyaWebApp() {
         <header className="topbar">
           <button className="menu-button" onClick={() => setMobileMenu(true)}><Menu size={21} /></button>
           <div className="mobile-brand"><span className="brand-mark small">S</span><strong>Sakhya</strong></div>
-          <button className="search-button"><Search size={17} /><span>Search your life</span><kbd>⌘ K</kbd></button>
+          <button className="search-button" onClick={() => setSearchOpen(true)}><Search size={17} /><span>Search your life</span><kbd>⌘ K</kbd></button>
           <button className="avatar">DG</button>
         </header>
         {mainContent}
@@ -1708,6 +1790,26 @@ export default function SakhyaWebApp() {
           <button onClick={() => setNotice(undefined)}><X size={15} /></button>
         </div>
       )}
+      {searchOpen && (
+        <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Search your life">
+          <button className="modal-backdrop" onClick={() => setSearchOpen(false)} aria-label="Close search" />
+          <section className="search-modal">
+            <div className="search-input-row"><Search size={19} /><input autoFocus value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search entries and lists…" /><button className="icon-button" onClick={() => setSearchOpen(false)} aria-label="Close"><X size={18} /></button></div>
+            <div className="search-results">
+              {!normalizedSearch && <p>Type a word, person, place or category.</p>}
+              {normalizedSearch && searchResults.length === 0 && <p>No matching records.</p>}
+              {searchResults.map((result) => (
+                <button key={`${result.section}-${result.id}`} onClick={() => {
+                  setSection(result.section);
+                  if ("date" in result && result.date) setSelectedDate(new Date(result.date));
+                  if ("listId" in result && result.listId) setSelectedListId(result.listId);
+                  setSearchOpen(false);
+                }}><span><strong>{result.label}</strong><small>{result.detail}</small></span><ArrowRight size={16} /></button>
+              ))}
+            </div>
+          </section>
+        </div>
+      )}
       {assistantOpen && (
         <div className="modal-layer assistant-layer" role="dialog" aria-modal="true" aria-label="Ask Sakhya">
           <button className="modal-backdrop" onClick={() => setAssistantOpen(false)} aria-label="Close assistant" />
@@ -1717,7 +1819,7 @@ export default function SakhyaWebApp() {
               <div className="assistant-header-actions">
                 <div className="model-picker" aria-label="AI model">
                   <span>Model</span>
-                  <strong>Everyday · Terra</strong>
+                  <strong>{aiConsent ? "Everyday · Terra" : "Local insights"}</strong>
                 </div>
                 <button className="assistant-close" onClick={() => setAssistantOpen(false)} aria-label="Close assistant"><X size={19} /></button>
               </div>
@@ -1748,7 +1850,11 @@ export default function SakhyaWebApp() {
                 </div>
               )}
             </div>
-            <div className="privacy-line"><Lock size={13} /> Your key stays on the server. AI requests are not stored by Sakhya.</div>
+            <label className="ai-consent-row">
+              <input type="checkbox" checked={aiConsent} onChange={(event) => setAIConsent(event.target.checked)} />
+              <span><strong>Allow AI analysis</strong><small>Send the question and relevant recent Sakhya records to OpenAI. Turn this off to use local insights only.</small></span>
+            </label>
+            <div className="privacy-line"><Lock size={13} /> Your key stays on the server. Requests use no-store processing and are limited to 20 per hour.</div>
             <form className="chat-composer" onSubmit={(event) => { event.preventDefault(); sendMessage(); }}>
               <textarea
                 value={chatInput}
@@ -1789,9 +1895,35 @@ export default function SakhyaWebApp() {
             <div className="section-heading"><div><span className="eyebrow">Timeline</span><h2>Edit entry</h2></div><button type="button" className="icon-button" onClick={() => setEditingEntry(undefined)}><X size={18} /></button></div>
             <label>What happened<input value={editingEntry.title} onChange={(event) => setEditingEntry({ ...editingEntry, title: event.target.value })} /></label>
             <label>Category<select value={editingEntry.kind} onChange={(event) => setEditingEntry({ ...editingEntry, kind: event.target.value as EntryKind })}>{Object.entries(kindMeta).map(([kind, meta]) => <option key={kind} value={kind}>{meta.label}</option>)}</select></label>
+            <label>Date and time<input type="datetime-local" value={new Date(new Date(editingEntry.timestamp).getTime() - new Date(editingEntry.timestamp).getTimezoneOffset() * 60_000).toISOString().slice(0, 16)} onChange={(event) => setEditingEntry({ ...editingEntry, timestamp: new Date(event.target.value).toISOString() })} /></label>
+            <label>Amount in EUR<input type="number" min="0" step="0.01" value={editingEntry.amount ?? ""} onChange={(event) => setEditingEntry({ ...editingEntry, amount: event.target.value ? Number(event.target.value) : undefined })} /></label>
+            <label>Duration in minutes<input type="number" min="0" step="1" value={editingEntry.minutes ?? ""} onChange={(event) => setEditingEntry({ ...editingEntry, minutes: event.target.value ? Number(event.target.value) : undefined })} /></label>
             <label>Note<textarea value={editingEntry.note ?? ""} onChange={(event) => setEditingEntry({ ...editingEntry, note: event.target.value })} rows={3} /></label>
-            <button className="primary-button" disabled={!editingEntry.title.trim()}>Save changes</button>
+            <div className="modal-actions"><button type="button" className="danger-button" onClick={deleteEditedEntry}>Delete</button><button className="primary-button" disabled={!editingEntry.title.trim()}>Save changes</button></div>
           </form>
+        </div>
+      )}
+      {policyOpen && (
+        <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Privacy and AI">
+          <button className="modal-backdrop" onClick={() => setPolicyOpen(false)} aria-label="Close privacy information" />
+          <section className="policy-modal">
+            <div className="section-heading"><div><span className="eyebrow">Your control</span><h2>Privacy and AI</h2></div><button className="icon-button" onClick={() => setPolicyOpen(false)} aria-label="Close"><X size={18} /></button></div>
+            <p>Your account records are stored privately for Sakhya’s timeline, lists, trackers and money views. Uploaded photos are private and require your signed-in account.</p>
+            <p>AI is optional. When enabled, Sakhya sends your question and a limited selection of relevant records from the last 90 days to OpenAI to answer it. Sakhya requests no-store processing and never puts the API key in your browser.</p>
+            <p>Health and financial information is shown for personal organization, not medical, tax, investment or accounting advice. You can export your data or permanently delete it at any time.</p>
+            <p><strong>Launch policy version:</strong> 3 August 2026. Contact: ganatra.dev@gmail.com</p>
+          </section>
+        </div>
+      )}
+      {deleteAccountOpen && (
+        <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Delete account data">
+          <button className="modal-backdrop" onClick={() => setDeleteAccountOpen(false)} aria-label="Cancel account deletion" />
+          <section className="edit-modal">
+            <div className="section-heading"><div><span className="eyebrow">Permanent action</span><h2>Delete account data</h2></div><button className="icon-button" onClick={() => setDeleteAccountOpen(false)} aria-label="Close"><X size={18} /></button></div>
+            <p>This removes your timeline, lists, trackers, financial records, sessions and uploaded photos. Export a backup first if needed.</p>
+            <label>Type DELETE MY ACCOUNT<input value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} /></label>
+            <button className="danger-button" disabled={deleteConfirmation !== "DELETE MY ACCOUNT"} onClick={() => void deleteAccount()}>Permanently delete my data</button>
+          </section>
         </div>
       )}
       {moneyEntryOpen && (

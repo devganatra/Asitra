@@ -1,5 +1,6 @@
 import {
   authenticatedUserKey,
+  consumeRateLimit,
   database,
   isTrustedMutation,
   jsonResponse,
@@ -16,6 +17,7 @@ import {
 const MAX_REQUEST_BYTES = 32_000;
 const MAX_MESSAGES = 12;
 const MAX_MESSAGE_LENGTH = 2_000;
+const HOURLY_AI_LIMIT = 20;
 
 export async function POST(request: Request) {
   if (!isTrustedMutation(request)) {
@@ -36,7 +38,10 @@ export async function POST(request: Request) {
     if (new TextEncoder().encode(bodyText).byteLength > MAX_REQUEST_BYTES) {
       return jsonResponse({ error: "Assistant request is too large." }, 413);
     }
-    const body = JSON.parse(bodyText) as { messages?: unknown };
+    const body = JSON.parse(bodyText) as { messages?: unknown; consent?: unknown };
+    if (body.consent !== true) {
+      return jsonResponse({ error: "AI data consent is required.", code: "AI_CONSENT_REQUIRED" }, 403);
+    }
     messages = validateMessages(body.messages);
   } catch {
     return jsonResponse({ error: "Invalid assistant request." }, 400);
@@ -49,6 +54,13 @@ export async function POST(request: Request) {
       return jsonResponse({ error: error.message, code: "AI_NOT_CONFIGURED" }, 503);
     }
     throw error;
+  }
+
+  if (!(await consumeRateLimit(userId, "web-ai", HOURLY_AI_LIMIT))) {
+    return jsonResponse(
+      { error: "Your hourly AI limit has been reached. Try again shortly.", code: "AI_RATE_LIMIT" },
+      429,
+    );
   }
 
   const row = await database()
