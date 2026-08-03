@@ -32,7 +32,9 @@ export default function LoginPage({ google, apple }: { google: boolean; apple: b
           {!apple && !google && <p className="login-notice">Public sign-in is being configured. Please try again shortly.</p>}
         </div>
         {error && <p className="login-error" role="alert">{error}</p>}
-        <p className="login-legal">By continuing, you agree to essential account storage and acknowledge the <a href="/privacy">Privacy Policy</a>. AI analysis remains opt-in.</p>
+        <p className="login-legal">
+          By continuing, you agree to essential account storage and acknowledge the <a href="/privacy">Privacy Policy</a> and <a href="/terms">Terms of Service</a>. AI analysis remains opt-in. <a href="/about">About Asitra</a>.
+        </p>
       </section>
     </main>
   );

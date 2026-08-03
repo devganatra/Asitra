@@ -135,13 +135,27 @@ test("shows independent public sign-in without exposing provider secrets", async
   assert.doesNotMatch(JSON.stringify(oauthBody), /integration-test-google-secret/);
 });
 
-test("publishes the privacy and data-control policy", async () => {
-  const response = await integrationFetch("/privacy");
-  assert.equal(response.status, 200);
-  const html = await response.text();
-  assert.match(html, /Your life data stays under your control/);
-  assert.match(html, /Cloudflare D1/);
-  assert.match(html, /withdraw AI consent/i);
+test("publishes public trust, privacy, and terms pages", async () => {
+  const [aboutResponse, privacyResponse, termsResponse] = await Promise.all([
+    integrationFetch("/about"),
+    integrationFetch("/privacy"),
+    integrationFetch("/terms"),
+  ]);
+  assert.equal(aboutResponse.status, 200);
+  assert.equal(privacyResponse.status, 200);
+  assert.equal(termsResponse.status, 200);
+  const [about, privacy, terms] = await Promise.all([
+    aboutResponse.text(),
+    privacyResponse.text(),
+    termsResponse.text(),
+  ]);
+  assert.match(about, /Your everyday assistant, built around your life/);
+  assert.match(about, /does not collect your provider password/i);
+  assert.match(privacy, /Your life data stays under your control/);
+  assert.match(privacy, /Cloudflare D1/);
+  assert.match(privacy, /withdraw AI consent/i);
+  assert.match(terms, /Clear terms for using Asitra/);
+  assert.match(terms, /not a medical provider, financial adviser/i);
 });
 
 test("isolates records and R2 attachments, exports data, creates recovery points, and deletes everything", async () => {
