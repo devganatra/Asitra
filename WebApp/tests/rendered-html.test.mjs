@@ -5,7 +5,7 @@ import test from "node:test";
 
 const port = 31_000 + (process.pid % 1_000);
 const origin = `http://localhost:${port}`;
-const signedOutHeaders = { "oai-authenticated-user-email": "" };
+const signedOutHeaders = { "oai-authenticated-user-email": " " };
 let server;
 
 async function render() {
