@@ -387,8 +387,21 @@ export default function SakhyaWebApp() {
   const [importFileName, setImportFileName] = useState("");
   const [importReading, setImportReading] = useState(false);
   const [notice, setNotice] = useState<string>();
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [policyOpen, setPolicyOpen] = useState(false);
+  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [aiConsent, setAIConsent] = useState(false);
+  const [sharingOpen, setSharingOpen] = useState(false);
+  const [inviteCode, setInviteCode] = useState("");
+  const [joinCode, setJoinCode] = useState("");
+  const [sharingOwner, setSharingOwner] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const stateVersionRef = useRef(0);
+  const accountDeletedRef = useRef(false);
+  const sharedListMetaRef = useRef<Record<string, { version: number; owner: boolean }>>({});
 
   async function loadState() {
     try {
@@ -412,12 +425,15 @@ export default function SakhyaWebApp() {
             setNotice("Your secure account copy is ready. The old browser copy was kept as requested.");
           }
         }
+        await loadSharedLists();
         setHydrated(true);
         return;
       }
       if (response.ok) {
-        const payload = (await response.json()) as { state: unknown };
+        const payload = (await response.json()) as { state: unknown; version: number };
+        stateVersionRef.current = payload.version;
         setState(validatePersistedState(payload.state) as PersistedState);
+        await loadSharedLists();
         setHydrated(true);
         return;
       }
@@ -428,6 +444,21 @@ export default function SakhyaWebApp() {
     }
   }
 
+  async function loadSharedLists() {
+    const response = await fetch("/api/shared-lists", { cache: "no-store", credentials: "same-origin" });
+    if (!response.ok) return;
+    const payload = (await response.json()) as { lists?: Array<{ list: LifeList; version: number; owner: boolean }> };
+    const shared = payload.lists ?? [];
+    sharedListMetaRef.current = Object.fromEntries(shared.map((item) => [item.list.id, { version: item.version, owner: item.owner }]));
+    setState((current) => ({
+      ...current,
+      lists: [
+        ...current.lists.filter((list) => !shared.some((item) => item.list.id === list.id)),
+        ...shared.map((item) => item.list),
+      ],
+    }));
+  }
+
   async function saveState(nextState: PersistedState) {
     const validated = validatePersistedState(nextState);
     const response = await fetch("/api/state", {
@@ -436,10 +467,18 @@ export default function SakhyaWebApp() {
       headers: {
         "content-type": "application/json",
         "x-sakhya-request": "1",
+        "if-match": String(stateVersionRef.current),
       },
       body: JSON.stringify(validated),
     });
-    if (!response.ok) throw new Error("Secure storage rejected the update.");
+    const result = (await response.json()) as { version?: number; code?: string; error?: string };
+    if (!response.ok) {
+      if (result.code === "STATE_CONFLICT") {
+        throw new Error("Your data changed on another device. Reload Sakhya before editing again.");
+      }
+      throw new Error(result.error ?? "Secure storage rejected the update.");
+    }
+    if (typeof result.version === "number") stateVersionRef.current = result.version;
   }
 
   async function migrateLegacyPhotos(legacy: PersistedState): Promise<PersistedState> {
@@ -462,7 +501,7 @@ export default function SakhyaWebApp() {
   }, []);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || accountDeletedRef.current) return;
     const timeout = window.setTimeout(() => {
       saveQueueRef.current = saveQueueRef.current
         .catch(() => undefined)
@@ -554,6 +593,20 @@ export default function SakhyaWebApp() {
       : weekWork > weekPersonal * 1.8
         ? "Your week is leaning toward work. Protect one personal block this evening."
         : "Your week has a healthy rhythm. Keep the next action small and clear.";
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const searchResults = normalizedSearch
+    ? [
+        ...state.entries
+          .filter((entry) => `${entry.title} ${entry.note ?? ""}`.toLowerCase().includes(normalizedSearch))
+          .slice(0, 12)
+          .map((entry) => ({ id: entry.id, label: entry.title, detail: `${kindMeta[entry.kind].label} · ${longDate.format(new Date(entry.timestamp))}`, section: "today" as Section, date: entry.timestamp })),
+        ...state.lists
+          .flatMap((list) => list.items.map((item) => ({ list, item })))
+          .filter(({ list, item }) => `${list.name} ${item.text}`.toLowerCase().includes(normalizedSearch))
+          .slice(0, 12)
+          .map(({ list, item }) => ({ id: item.id, label: item.text, detail: list.name, section: "lists" as Section, listId: list.id })),
+      ].slice(0, 16)
+    : [];
 
   if (!hydrated) {
     return (
@@ -677,19 +730,11 @@ export default function SakhyaWebApp() {
   }
 
   function toggleListItem(listId: string, itemId: string) {
-    setState((current) => ({
-      ...current,
-      lists: current.lists.map((list) =>
-        list.id === listId
-          ? {
-              ...list,
-              items: list.items.map((item) =>
-                item.id === itemId ? { ...item, done: !item.done } : item,
-              ),
-            }
-          : list,
-      ),
-    }));
+    const list = state.lists.find((candidate) => candidate.id === listId);
+    if (!list) return;
+    const updated = { ...list, items: list.items.map((item) => item.id === itemId ? { ...item, done: !item.done } : item) };
+    setState((current) => ({ ...current, lists: current.lists.map((item) => item.id === listId ? updated : item) }));
+    if (updated.shared) void updateSharedList(updated);
   }
 
   function addListItem(event: FormEvent) {
@@ -701,18 +746,9 @@ export default function SakhyaWebApp() {
       kind: "list",
       timestamp: new Date().toISOString(),
     };
-    setState((current) => ({
-      ...current,
-      entries: [entry, ...current.entries],
-      lists: current.lists.map((list) =>
-        list.id === selectedList.id
-          ? {
-              ...list,
-              items: [{ id: uid(), text: newListItem.trim(), done: false }, ...list.items],
-            }
-          : list,
-      ),
-    }));
+    const updated = { ...selectedList, items: [{ id: uid(), text: newListItem.trim(), done: false }, ...selectedList.items] };
+    setState((current) => ({ ...current, entries: [entry, ...current.entries], lists: current.lists.map((list) => list.id === selectedList.id ? updated : list) }));
+    if (updated.shared) void updateSharedList(updated);
     setNewListItem("");
   }
 
@@ -731,16 +767,91 @@ export default function SakhyaWebApp() {
     setSelectedListId(list.id);
   }
 
-  function toggleListSharing() {
+  async function toggleListSharing() {
     if (!selectedList) return;
+    const existingMeta = sharedListMetaRef.current[selectedList.id];
+    if (selectedList.shared && existingMeta && !existingMeta.owner) {
+      setInviteCode("MEMBER");
+      setSharingOwner(false);
+      setSharingOpen(true);
+      return;
+    }
+    const action = selectedList.shared ? "invite" : "share";
+    const response = await fetch("/api/shared-lists", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json", "x-sakhya-request": "1" },
+      body: JSON.stringify({ action, list: { ...selectedList, shared: true } }),
+    });
+    const result = (await response.json()) as { list?: LifeList; version?: number; owner?: boolean; inviteCode?: string; error?: string };
+    if (!response.ok || !result.list || typeof result.version !== "number") {
+      setNotice(result.error ?? "Sharing could not be enabled.");
+      return;
+    }
+    sharedListMetaRef.current[result.list.id] = { version: result.version, owner: Boolean(result.owner) };
+    setState((current) => ({ ...current, lists: current.lists.map((list) => list.id === result.list!.id ? result.list! : list) }));
+    setInviteCode(result.inviteCode ?? "");
+    setSharingOwner(Boolean(result.owner));
+    setSharingOpen(true);
+  }
+
+  async function updateSharedList(list: LifeList) {
+    const meta = sharedListMetaRef.current[list.id];
+    if (!meta) return;
+    const response = await fetch("/api/shared-lists", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json", "x-sakhya-request": "1" },
+      body: JSON.stringify({ action: "update", list, version: meta.version }),
+    });
+    const result = (await response.json()) as { list?: LifeList; version?: number; owner?: boolean; code?: string; error?: string };
+    if (!response.ok || !result.list || typeof result.version !== "number") {
+      setNotice(result.code === "LIST_CONFLICT" ? "This shared list changed elsewhere. Reload before editing it again." : result.error ?? "The shared list could not sync.");
+      return;
+    }
+    sharedListMetaRef.current[list.id] = { version: result.version, owner: Boolean(result.owner) };
+    setState((current) => ({ ...current, lists: current.lists.map((item) => item.id === list.id ? result.list! : item) }));
+  }
+
+  async function joinSharedList() {
+    const response = await fetch("/api/shared-lists", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json", "x-sakhya-request": "1" },
+      body: JSON.stringify({ action: "join", code: joinCode }),
+    });
+    const result = (await response.json()) as { list?: LifeList; version?: number; owner?: boolean; error?: string };
+    if (!response.ok || !result.list || typeof result.version !== "number") {
+      setNotice(result.error ?? "The invite could not be joined.");
+      return;
+    }
+    sharedListMetaRef.current[result.list.id] = { version: result.version, owner: Boolean(result.owner) };
+    setState((current) => ({ ...current, lists: [...current.lists.filter((list) => list.id !== result.list!.id), result.list!] }));
+    setSelectedListId(result.list.id);
+    setJoinCode("");
+    setSharingOpen(false);
+    setNotice(`Joined “${result.list.name}”.`);
+  }
+
+  async function stopSharing() {
+    if (!selectedList) return;
+    const owner = sharedListMetaRef.current[selectedList.id]?.owner;
+    if (!window.confirm(owner ? "Stop sharing this list? Other members will lose access." : "Leave this shared list?")) return;
+    const response = await fetch(`/api/shared-lists?id=${encodeURIComponent(selectedList.id)}`, {
+      method: "DELETE",
+      credentials: "same-origin",
+      headers: { "x-sakhya-request": "1" },
+    });
+    if (!response.ok) { setNotice("Sharing could not be stopped."); return; }
+    delete sharedListMetaRef.current[selectedList.id];
     setState((current) => ({
       ...current,
-      lists: current.lists.map((list) =>
-        list.id === selectedList.id
-          ? { ...list, shared: !list.shared, members: list.shared ? 1 : 2 }
-          : list,
-      ),
+      lists: owner
+        ? current.lists.map((list) => list.id === selectedList.id ? { ...list, shared: false, members: 1 } : list)
+        : current.lists.filter((list) => list.id !== selectedList.id),
     }));
+    setSharingOpen(false);
+    setNotice(owner ? "The list is private again." : "You left the shared list.");
   }
 
   function addTracker() {
@@ -1008,6 +1119,7 @@ export default function SakhyaWebApp() {
         },
         body: JSON.stringify({
           messages: conversation.map(({ role, text }) => ({ role, text })),
+          consent: aiConsent,
         }),
       });
       const result = (await response.json()) as {
@@ -1016,7 +1128,11 @@ export default function SakhyaWebApp() {
         error?: string;
       };
       if (!response.ok || !result.answer) {
-        if (result.code === "AI_NOT_CONFIGURED") {
+        if (result.code === "AI_CONSENT_REQUIRED") {
+          setNotice("Choose ‘Allow AI analysis’ before sending private context to Terra.");
+        } else if (result.code === "AI_RATE_LIMIT") {
+          setNotice("Your hourly AI limit is reached. Local insights remain available.");
+        } else if (result.code === "AI_NOT_CONFIGURED") {
           setNotice("Terra needs an OpenAI API key. Showing Sakhya’s local insight instead.");
         } else {
           setNotice(result.error ?? "Sakhya AI is temporarily unavailable.");
@@ -1090,6 +1206,50 @@ export default function SakhyaWebApp() {
     setEditingEntry(undefined);
   }
 
+  function deleteEditedEntry() {
+    if (!editingEntry || !window.confirm(`Delete “${editingEntry.title}”? This cannot be undone.`)) return;
+    setState((current) => ({
+      ...current,
+      entries: current.entries.filter((entry) => entry.id !== editingEntry.id),
+    }));
+    setEditingEntry(undefined);
+    setNotice("Timeline entry deleted.");
+  }
+
+  function completeFocusBlock() {
+    setState((current) => ({
+      ...current,
+      entries: [
+        { id: uid(), title: "Completed a protected focus block", kind: "work", timestamp: new Date().toISOString(), minutes: 60 },
+        ...current.entries,
+      ],
+    }));
+    setSelectedDate(new Date());
+    setNotice("Focus block completed and recorded on your timeline.");
+  }
+
+  async function deleteAccount() {
+    if (deleteConfirmation !== "DELETE MY ACCOUNT") return;
+    const response = await fetch("/api/state", {
+      method: "DELETE",
+      credentials: "same-origin",
+      headers: {
+        "x-sakhya-request": "1",
+        "x-sakhya-confirm-delete": deleteConfirmation,
+      },
+    });
+    if (!response.ok) {
+      setNotice("Your account could not be deleted. No data was removed.");
+      return;
+    }
+    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+    accountDeletedRef.current = true;
+    setDeleteAccountOpen(false);
+    setState({ ...seedState, entries: [], lists: [], trackers: [], moneyEntries: [], balanceSheetItems: [] });
+    stateVersionRef.current = 0;
+    setNotice("Your Sakhya account data and uploaded photos were deleted.");
+  }
+
   function exportData() {
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
     const href = URL.createObjectURL(blob);
@@ -1137,7 +1297,7 @@ export default function SakhyaWebApp() {
             eyebrow="Commitments"
             title="Lists"
             description="Everything you want to remember, privately or together."
-            action={<button className="primary-button" onClick={addNewList}><Plus size={17} /> New list</button>}
+            action={<div className="header-actions"><button className="secondary-button" onClick={() => { setInviteCode(""); setSharingOwner(false); setSharingOpen(true); }}><Users size={17} /> Join list</button><button className="primary-button" onClick={addNewList}><Plus size={17} /> New list</button></div>}
           />
           <div className="lists-layout">
             <div className="list-rail">
@@ -1166,7 +1326,7 @@ export default function SakhyaWebApp() {
                     <div className="eyebrow">{selectedList.shared ? "Shared list" : "Private list"}</div>
                     <h2>{selectedList.name}</h2>
                   </div>
-                  <button className="secondary-button" onClick={toggleListSharing}>
+                  <button className="secondary-button" onClick={() => void toggleListSharing()}>
                     {selectedList.shared ? <Users size={16} /> : <Lock size={16} />}
                     {selectedList.shared ? "Manage sharing" : "Share"}
                   </button>
@@ -1420,7 +1580,7 @@ export default function SakhyaWebApp() {
                 <section className="panel trip-panel">
                   <div className="trip-visual"><span>SEPT 12–15</span><strong>Lisbon</strong></div>
                   <div><span className="eyebrow">Trip plan</span><h2>€420 left</h2><p>€280 spent from €700</p></div>
-                  <button className="icon-button"><ArrowRight size={18} /></button>
+                  <button className="icon-button" onClick={() => setNotice("Trip budgets are visible here; editable trip planning is scheduled for the next beta.")} aria-label="Trip plan information"><ArrowRight size={18} /></button>
                 </section>
               </div>
             </>
@@ -1501,6 +1661,8 @@ export default function SakhyaWebApp() {
               <button className="settings-row" onClick={exportData}><Download size={18} /><span><strong>Export backup</strong><small>Download all entries, lists and plans</small></span><ArrowRight size={16} /></button>
               <label className="settings-row"><Upload size={18} /><span><strong>Import backup</strong><small>Restore a Sakhya JSON file</small></span><ArrowRight size={16} /><input type="file" accept=".json,application/json" onChange={importData} hidden /></label>
               <button className="settings-row" onClick={resetData}><RotateCcw size={18} /><span><strong>Restore sample workspace</strong><small>Requires confirmation</small></span><ArrowRight size={16} /></button>
+              <button className="settings-row" onClick={() => setPolicyOpen(true)}><ShieldCheck size={18} /><span><strong>Privacy and AI</strong><small>See how your journal, health and money data are used</small></span><ArrowRight size={16} /></button>
+              <button className="settings-row danger-row" onClick={() => setDeleteAccountOpen(true)}><X size={18} /><span><strong>Delete account data</strong><small>Permanently remove records and uploaded photos</small></span><ArrowRight size={16} /></button>
             </section>
             <section className="panel settings-page-card">
               <div className="section-heading">
@@ -1510,7 +1672,7 @@ export default function SakhyaWebApp() {
               <div className="capability-row"><span>Calendar and Reminders</span><strong>Native app</strong></div>
                   <div className="capability-row"><span>Health and wearables</span><strong>Native app</strong></div>
                   <div className="capability-row"><span>Screen Time</span><strong>Native app</strong></div>
-                  <div className="capability-row"><span>Sakhya AI</span><strong>Terra · All devices</strong></div>
+                  <div className="capability-row"><span>Sakhya AI</span><strong>{aiConsent ? "Terra allowed" : "Local only"}</strong></div>
                   <div className="capability-row"><span>Web account storage</span><strong>Connected</strong></div>
               <div className="native-note">
                 <ShieldCheck size={17} />
@@ -1599,7 +1761,7 @@ export default function SakhyaWebApp() {
             <div className="focus-action">
               <span className="focus-icon"><Target size={21} /></span>
               <div><strong>Protect one focus block</strong><small>60 min · High energy</small></div>
-              <button onClick={() => setNotice("Focus block completed and recorded.")}><Check size={17} /> Complete</button>
+              <button onClick={completeFocusBlock}><Check size={17} /> Complete</button>
             </div>
             <div className="next-actions">
               <div><span>13:00</span><strong>Move for 30 minutes</strong><Activity size={17} /></div>
@@ -1693,7 +1855,7 @@ export default function SakhyaWebApp() {
         <header className="topbar">
           <button className="menu-button" onClick={() => setMobileMenu(true)}><Menu size={21} /></button>
           <div className="mobile-brand"><span className="brand-mark small">S</span><strong>Sakhya</strong></div>
-          <button className="search-button"><Search size={17} /><span>Search your life</span><kbd>⌘ K</kbd></button>
+          <button className="search-button" onClick={() => setSearchOpen(true)}><Search size={17} /><span>Search your life</span><kbd>⌘ K</kbd></button>
           <button className="avatar">DG</button>
         </header>
         {mainContent}
@@ -1708,6 +1870,26 @@ export default function SakhyaWebApp() {
           <button onClick={() => setNotice(undefined)}><X size={15} /></button>
         </div>
       )}
+      {searchOpen && (
+        <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Search your life">
+          <button className="modal-backdrop" onClick={() => setSearchOpen(false)} aria-label="Close search" />
+          <section className="search-modal">
+            <div className="search-input-row"><Search size={19} /><input autoFocus value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search entries and lists…" /><button className="icon-button" onClick={() => setSearchOpen(false)} aria-label="Close"><X size={18} /></button></div>
+            <div className="search-results">
+              {!normalizedSearch && <p>Type a word, person, place or category.</p>}
+              {normalizedSearch && searchResults.length === 0 && <p>No matching records.</p>}
+              {searchResults.map((result) => (
+                <button key={`${result.section}-${result.id}`} onClick={() => {
+                  setSection(result.section);
+                  if ("date" in result && result.date) setSelectedDate(new Date(result.date));
+                  if ("listId" in result && result.listId) setSelectedListId(result.listId);
+                  setSearchOpen(false);
+                }}><span><strong>{result.label}</strong><small>{result.detail}</small></span><ArrowRight size={16} /></button>
+              ))}
+            </div>
+          </section>
+        </div>
+      )}
       {assistantOpen && (
         <div className="modal-layer assistant-layer" role="dialog" aria-modal="true" aria-label="Ask Sakhya">
           <button className="modal-backdrop" onClick={() => setAssistantOpen(false)} aria-label="Close assistant" />
@@ -1717,7 +1899,7 @@ export default function SakhyaWebApp() {
               <div className="assistant-header-actions">
                 <div className="model-picker" aria-label="AI model">
                   <span>Model</span>
-                  <strong>Everyday · Terra</strong>
+                  <strong>{aiConsent ? "Everyday · Terra" : "Local insights"}</strong>
                 </div>
                 <button className="assistant-close" onClick={() => setAssistantOpen(false)} aria-label="Close assistant"><X size={19} /></button>
               </div>
@@ -1748,7 +1930,11 @@ export default function SakhyaWebApp() {
                 </div>
               )}
             </div>
-            <div className="privacy-line"><Lock size={13} /> Your key stays on the server. AI requests are not stored by Sakhya.</div>
+            <label className="ai-consent-row">
+              <input type="checkbox" checked={aiConsent} onChange={(event) => setAIConsent(event.target.checked)} />
+              <span><strong>Allow AI analysis</strong><small>Send the question and relevant recent Sakhya records to OpenAI. Turn this off to use local insights only.</small></span>
+            </label>
+            <div className="privacy-line"><Lock size={13} /> Your key stays on the server. Requests use no-store processing and are limited to 20 per hour.</div>
             <form className="chat-composer" onSubmit={(event) => { event.preventDefault(); sendMessage(); }}>
               <textarea
                 value={chatInput}
@@ -1789,9 +1975,62 @@ export default function SakhyaWebApp() {
             <div className="section-heading"><div><span className="eyebrow">Timeline</span><h2>Edit entry</h2></div><button type="button" className="icon-button" onClick={() => setEditingEntry(undefined)}><X size={18} /></button></div>
             <label>What happened<input value={editingEntry.title} onChange={(event) => setEditingEntry({ ...editingEntry, title: event.target.value })} /></label>
             <label>Category<select value={editingEntry.kind} onChange={(event) => setEditingEntry({ ...editingEntry, kind: event.target.value as EntryKind })}>{Object.entries(kindMeta).map(([kind, meta]) => <option key={kind} value={kind}>{meta.label}</option>)}</select></label>
+            <label>Date and time<input type="datetime-local" value={new Date(new Date(editingEntry.timestamp).getTime() - new Date(editingEntry.timestamp).getTimezoneOffset() * 60_000).toISOString().slice(0, 16)} onChange={(event) => setEditingEntry({ ...editingEntry, timestamp: new Date(event.target.value).toISOString() })} /></label>
+            <label>Amount in EUR<input type="number" min="0" step="0.01" value={editingEntry.amount ?? ""} onChange={(event) => setEditingEntry({ ...editingEntry, amount: event.target.value ? Number(event.target.value) : undefined })} /></label>
+            <label>Duration in minutes<input type="number" min="0" step="1" value={editingEntry.minutes ?? ""} onChange={(event) => setEditingEntry({ ...editingEntry, minutes: event.target.value ? Number(event.target.value) : undefined })} /></label>
             <label>Note<textarea value={editingEntry.note ?? ""} onChange={(event) => setEditingEntry({ ...editingEntry, note: event.target.value })} rows={3} /></label>
-            <button className="primary-button" disabled={!editingEntry.title.trim()}>Save changes</button>
+            <div className="modal-actions"><button type="button" className="danger-button" onClick={deleteEditedEntry}>Delete</button><button className="primary-button" disabled={!editingEntry.title.trim()}>Save changes</button></div>
           </form>
+        </div>
+      )}
+      {policyOpen && (
+        <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Privacy and AI">
+          <button className="modal-backdrop" onClick={() => setPolicyOpen(false)} aria-label="Close privacy information" />
+          <section className="policy-modal">
+            <div className="section-heading"><div><span className="eyebrow">Your control</span><h2>Privacy and AI</h2></div><button className="icon-button" onClick={() => setPolicyOpen(false)} aria-label="Close"><X size={18} /></button></div>
+            <p>Your account records are stored privately for Sakhya’s timeline, lists, trackers and money views. Uploaded photos are private and require your signed-in account.</p>
+            <p>AI is optional. When enabled, Sakhya sends your question and a limited selection of relevant records from the last 90 days to OpenAI to answer it. Sakhya requests no-store processing and never puts the API key in your browser.</p>
+            <p>Health and financial information is shown for personal organization, not medical, tax, investment or accounting advice. You can export your data or permanently delete it at any time.</p>
+            <p><strong>Launch policy version:</strong> 3 August 2026. Contact: ganatra.dev@gmail.com</p>
+          </section>
+        </div>
+      )}
+      {deleteAccountOpen && (
+        <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Delete account data">
+          <button className="modal-backdrop" onClick={() => setDeleteAccountOpen(false)} aria-label="Cancel account deletion" />
+          <section className="edit-modal">
+            <div className="section-heading"><div><span className="eyebrow">Permanent action</span><h2>Delete account data</h2></div><button className="icon-button" onClick={() => setDeleteAccountOpen(false)} aria-label="Close"><X size={18} /></button></div>
+            <p>This removes your timeline, lists, trackers, financial records, sessions and uploaded photos. Export a backup first if needed.</p>
+            <label>Type DELETE MY ACCOUNT<input value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} /></label>
+            <button className="danger-button" disabled={deleteConfirmation !== "DELETE MY ACCOUNT"} onClick={() => void deleteAccount()}>Permanently delete my data</button>
+          </section>
+        </div>
+      )}
+      {sharingOpen && (
+        <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Shared list access">
+          <button className="modal-backdrop" onClick={() => setSharingOpen(false)} aria-label="Close sharing" />
+          <section className="edit-modal">
+            <div className="section-heading"><div><span className="eyebrow">Shared lists</span><h2>{inviteCode === "MEMBER" ? "Shared access" : inviteCode ? "Invite people" : "Join a list"}</h2></div><button className="icon-button" onClick={() => setSharingOpen(false)} aria-label="Close"><X size={18} /></button></div>
+            {inviteCode === "MEMBER" ? (
+              <>
+                <p>You can add and complete items on this shared list. Only its owner can create invitations or stop sharing it.</p>
+                <button className="danger-button" onClick={() => void stopSharing()}>Leave shared list</button>
+              </>
+            ) : inviteCode ? (
+              <>
+                <p>Send this one-time code to one person. It expires in seven days and disappears after it is used.</p>
+                <div className="invite-code">{inviteCode}</div>
+                <button className="secondary-button" onClick={() => void navigator.clipboard.writeText(inviteCode)}>Copy invite code</button>
+                {selectedList?.shared && sharingOwner && <button className="danger-button" onClick={() => void stopSharing()}>Stop sharing</button>}
+              </>
+            ) : (
+              <>
+                <p>Paste the private invite code sent by the list owner.</p>
+                <label>Invite code<input value={joinCode} onChange={(event) => setJoinCode(event.target.value.toUpperCase().replace(/[^A-Z2-9]/g, "").slice(0, 20))} /></label>
+                <button className="primary-button" disabled={joinCode.length !== 20} onClick={() => void joinSharedList()}>Join shared list</button>
+              </>
+            )}
+          </section>
         </div>
       )}
       {moneyEntryOpen && (

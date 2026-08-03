@@ -2766,3 +2766,103 @@ h3 {
     transition: none !important;
   }
 }
+
+.search-modal,
+.policy-modal {
+  position: relative;
+  z-index: 2;
+  width: min(620px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 48px));
+  overflow: auto;
+  margin: auto;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: var(--surface);
+  box-shadow: 0 24px 80px rgba(35, 40, 36, 0.22);
+}
+
+.search-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--canvas);
+}
+
+.search-input-row input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+}
+
+.search-results {
+  display: grid;
+  gap: 7px;
+  margin-top: 14px;
+}
+
+.search-results > p {
+  margin: 28px 10px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.search-results > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 14px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  text-align: left;
+}
+
+.search-results > button:hover { background: var(--canvas); }
+.search-results span { display: grid; gap: 3px; }
+.search-results small { color: var(--muted); }
+
+.ai-consent-row {
+  display: flex;
+  gap: 10px;
+  margin: 0 18px 8px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--canvas);
+}
+
+.ai-consent-row input { margin-top: 3px; accent-color: var(--sage); }
+.ai-consent-row span { display: grid; gap: 3px; }
+.ai-consent-row small { color: var(--muted); line-height: 1.35; }
+
+.policy-modal p { color: var(--muted); line-height: 1.65; }
+.modal-actions { display: flex; justify-content: space-between; gap: 12px; }
+.danger-button {
+  padding: 11px 16px;
+  border: 1px solid #c8786d;
+  border-radius: 12px;
+  background: #fff3f1;
+  color: #9d392f;
+  font-weight: 700;
+}
+.danger-button:disabled { opacity: 0.45; }
+.danger-row { color: #9d392f; }
+.header-actions { display: flex; align-items: center; gap: 9px; }
+.invite-code {
+  padding: 16px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 14px;
+  background: var(--canvas);
+  font: 700 18px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.12em;
+  text-align: center;
+  overflow-wrap: anywhere;
+}

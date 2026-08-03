@@ -3,7 +3,7 @@
 The responsive web companion for Sakhya. It follows the same everyday structure as the native Apple app:
 
 - **Today** — natural-language capture, voice dictation, photos, calendar strip, daily system, and editable timeline
-- **Lists** — private and shared-list flows with timeline-connected items
+- **Lists** — private lists and versioned shared lists with expiring one-time invite codes
 - **Track** — health, habits, learning/media, and mindset check-ins
 - **Money** — cash flow, personal surplus allocation, balance sheet/net worth, monthly spending, savings progress, trip planning, typed entry, natural Sakhya commands, and reviewed PDF statement import
 - **Balance** — work/personal context and cross-life signals
@@ -22,15 +22,15 @@ Open `http://localhost:3000`.
 
 ## Data and privacy
 
-The web app requires the platform-provided ChatGPT sign-in. Structured data is stored in D1 under a one-way hash of the signed-in email, and images are kept in a private R2 bucket with account ownership checks. Existing `localStorage` data is validated and copied to secure account storage; the old plaintext copy is removed only after the user confirms. Settings provides validated JSON export, import, and a confirmed sample-data reset.
+The web app currently requires the platform-provided ChatGPT sign-in. Structured data is stored in D1 under a one-way hash of the signed-in email, and images are kept in a private R2 bucket with account ownership checks. Existing `localStorage` data is validated and copied to secure account storage; the old plaintext copy is removed only after the user confirms. Settings provides validated JSON export/import, complete account deletion, and a confirmed sample-data reset.
 
-Every state mutation requires same-origin authentication and a custom request header. Backup and image imports enforce type, size, structure, and content-signature limits. Responses include a restrictive Content Security Policy, anti-framing, no-sniff, no-store, referrer, permissions, cross-origin, and HSTS protections.
+Every state mutation requires same-origin authentication and a custom request header. State and shared-list writes use optimistic versions to detect concurrent edits. Backup and image imports enforce type, size, structure, and content-signature limits. Responses include a restrictive Content Security Policy, anti-framing, no-sniff, no-store, referrer, permissions, cross-origin, and HSTS protections.
 
 Web data remains separate from Apple-only services. The signed native bridge currently carries only a bounded AI context; HealthKit, Screen Time, Apple Calendar, Apple Reminders, and CloudKit synchronization remain native-app integrations.
 
 ## Shared AI and grounded health context
 
-The web and Apple clients call the same server-side AI service. Sakhya calculates totals, durations, budget values, and balance scores before invoking the model. Those values are sent as `verifiedMetrics` with their source (for example, WHOOP via Apple Health), while recent timeline entries are supporting context. The model explains patterns but does not calculate authoritative health or financial values.
+The web and Apple clients call the same server-side AI service. Web users must explicitly enable AI analysis before any account context is sent. Requests are limited to 20 per hour on web and use OpenAI's no-store option. Sakhya calculates totals, durations, budget values, and balance scores before invoking the model. Those values are sent as `verifiedMetrics` with their source (for example, WHOOP via Apple Health), while recent timeline entries are supporting context. The model explains patterns but does not calculate authoritative health or financial values.
 
 The native apps authenticate to `/api/native/session` with Sign in with Apple. The server verifies Apple's signature and audience, issues a random 30-day session, stores only its SHA-256 hash, and rate-limits native AI requests. The OpenAI API key never ships in an app or browser.
 
@@ -54,5 +54,7 @@ Do not point the production service at localhost, a private IP, or an unauthenti
 ```bash
 npm test
 ```
+
+See [LAUNCH_CHECKLIST.md](./LAUNCH_CHECKLIST.md) before changing production access.
 
 The production build targets the Sites Cloudflare Worker runtime through vinext.

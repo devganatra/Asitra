@@ -82,10 +82,40 @@ test("rejects unauthenticated assistant access", async () => {
     },
     body: JSON.stringify({
       messages: [{ role: "user", text: "Tell me about today" }],
+      consent: true,
     }),
   });
   assert.equal(response.status, 401);
   assert.match(response.headers.get("cache-control") ?? "", /no-store/);
+});
+
+test("protects shared lists behind authentication and same-origin mutations", async () => {
+  const unauthenticated = await fetch(`${origin}/api/shared-lists`);
+  assert.equal(unauthenticated.status, 401);
+
+  const untrusted = await fetch(`${origin}/api/shared-lists`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "join", code: "AAAAAAAAAAAAAAAAAAAA" }),
+  });
+  assert.equal(untrusted.status, 403);
+});
+
+test("requires explicit consent before AI receives account context", async () => {
+  const response = await fetch(`${origin}/api/assistant`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      origin,
+      "oai-authenticated-user-email": "security-test@example.com",
+      "x-sakhya-request": "1",
+    },
+    body: JSON.stringify({
+      messages: [{ role: "user", text: "Tell me about today" }],
+    }),
+  });
+  assert.equal(response.status, 403);
+  assert.equal((await response.json()).code, "AI_CONSENT_REQUIRED");
 });
 
 test("keeps the model service disabled when its server secret is absent", async () => {
@@ -99,6 +129,7 @@ test("keeps the model service disabled when its server secret is absent", async 
     },
     body: JSON.stringify({
       messages: [{ role: "user", text: "Tell me about today" }],
+      consent: true,
     }),
   });
   assert.equal(response.status, 503);
