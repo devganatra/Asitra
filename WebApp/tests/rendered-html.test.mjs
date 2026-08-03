@@ -220,6 +220,7 @@ test("ships the secured product source without starter artifacts", async () => {
   ]);
 
   assert.match(page, /requireChatGPTUser/);
+  assert.match(page, /chatGPTSignOutPath/);
   assert.match(client, /\/api\/state/);
   assert.match(client, /toggleListening/);
   assert.match(client, /sendMessage/);
@@ -234,6 +235,8 @@ test("ships the secured product source without starter artifacts", async () => {
   assert.match(client, /Welcome/);
   assert.match(client, /This workspace belongs to you/);
   assert.match(client, /Show getting-started tour/);
+  assert.match(client, /Account menu for/);
+  assert.match(client, /End this Sakhya session on this browser/);
   assert.match(client, /onboardingCompleted/);
   assert.match(stateRoute, /WHERE user_id = \?/);
   assert.match(client, /Today/);

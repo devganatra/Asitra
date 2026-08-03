@@ -21,6 +21,7 @@ import {
   Home,
   ListChecks,
   Lock,
+  LogOut,
   Menu,
   Mic,
   Moon,
@@ -369,7 +370,7 @@ const onboardingSteps = [
   },
 ];
 
-export default function SakhyaWebApp({ userName }: { userName: string }) {
+export default function SakhyaWebApp({ userName, logoutPath }: { userName: string; logoutPath: string }) {
   const [section, setSection] = useState<Section>("today");
   const [state, setState] = useState<PersistedState>(emptyState);
   const [hydrated, setHydrated] = useState(false);
@@ -410,6 +411,7 @@ export default function SakhyaWebApp({ userName }: { userName: string }) {
   const [sharingOwner, setSharingOwner] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(0);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const stateVersionRef = useRef(0);
@@ -1756,6 +1758,7 @@ export default function SakhyaWebApp({ userName }: { userName: string }) {
               <button className="settings-row" onClick={resetData}><RotateCcw size={18} /><span><strong>Restore sample workspace</strong><small>Requires confirmation</small></span><ArrowRight size={16} /></button>
               <button className="settings-row" onClick={() => setPolicyOpen(true)}><ShieldCheck size={18} /><span><strong>Privacy and AI</strong><small>See how your journal, health and money data are used</small></span><ArrowRight size={16} /></button>
               <button className="settings-row" onClick={() => { setOnboardingStep(0); setOnboardingOpen(true); }}><Sparkles size={18} /><span><strong>Show getting-started tour</strong><small>See how capture, views and privacy work</small></span><ArrowRight size={16} /></button>
+              <a className="settings-row logout-row" href={logoutPath}><LogOut size={18} /><span><strong>Log out</strong><small>End this Sakhya session on this browser</small></span><ArrowRight size={16} /></a>
               <button className="settings-row danger-row" onClick={() => setDeleteAccountOpen(true)}><X size={18} /><span><strong>Delete account data</strong><small>Permanently remove records and uploaded photos</small></span><ArrowRight size={16} /></button>
             </section>
             <section className="panel settings-page-card">
@@ -1954,7 +1957,27 @@ export default function SakhyaWebApp({ userName }: { userName: string }) {
           <button className="menu-button" onClick={() => setMobileMenu(true)}><Menu size={21} /></button>
           <div className="mobile-brand"><span className="brand-mark small">S</span><strong>Sakhya</strong></div>
           <button className="search-button" onClick={() => setSearchOpen(true)}><Search size={17} /><span>Search your life</span><kbd>⌘ K</kbd></button>
-          <button className="avatar" aria-label={`Signed in as ${userName}`} title={userName}>{accountInitials}</button>
+          <div className="account-menu-wrap">
+            <button
+              className="avatar"
+              aria-label={`Account menu for ${userName}`}
+              aria-haspopup="menu"
+              aria-expanded={accountMenuOpen}
+              title={userName}
+              onClick={() => setAccountMenuOpen((open) => !open)}
+            >
+              {accountInitials}
+            </button>
+            {accountMenuOpen && (
+              <>
+                <button className="account-menu-backdrop" onClick={() => setAccountMenuOpen(false)} aria-label="Close account menu" />
+                <div className="account-menu" role="menu">
+                  <div><span>Signed in as</span><strong>{userName}</strong></div>
+                  <a href={logoutPath} role="menuitem"><LogOut size={16} /> Log out</a>
+                </div>
+              </>
+            )}
+          </div>
         </header>
         {mainContent}
       </main>
