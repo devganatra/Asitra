@@ -40,6 +40,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
+import { ASITRA_RELEASE_LABEL } from "./release";
 import { ASITRA_AI_CONTRACT, type AsitraAIContract } from "./ai-contract";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -2040,6 +2041,7 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
         </nav>
         <div className="sidebar-bottom">
           <div className="sync-state"><span /><div><strong>Saved securely</strong><small>Private to your account</small></div></div>
+          <span className="release-label sidebar-release">{ASITRA_RELEASE_LABEL}</span>
         </div>
       </aside>
       {mobileMenu && <button className="scrim" onClick={() => setMobileMenu(false)} aria-label="Close menu" />}

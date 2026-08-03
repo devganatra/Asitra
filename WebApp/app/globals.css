@@ -111,6 +111,17 @@ body {
 .login-legal a,
 .privacy-card a { color: var(--sage); }
 
+.release-label {
+  display: block;
+  margin: 16px 0 0;
+  color: #89928c;
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .privacy-shell { place-items: start center; }
 .privacy-card { width: min(800px, 100%); }
 .privacy-back { display: inline-block; margin-bottom: 34px; text-decoration: none; font-weight: 700; }
@@ -277,6 +288,11 @@ button {
   margin-top: 2px;
   color: #82978a;
   font-size: 10px;
+}
+
+.sidebar-release {
+  margin: 0 8px;
+  color: #82978a;
 }
 
 .mobile-close,

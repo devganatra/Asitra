@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { authClient } from "../auth/client";
+import { ASITRA_RELEASE_LABEL } from "../release";
 
 type Provider = "google" | "apple";
 
@@ -35,6 +36,7 @@ export default function LoginPage({ google, apple }: { google: boolean; apple: b
         <p className="login-legal">
           By continuing, you agree to essential account storage and acknowledge the <a href="/privacy">Privacy Policy</a> and <a href="/terms">Terms of Service</a>. AI analysis remains opt-in. <a href="/about">About Asitra</a>.
         </p>
+        <p className="release-label">{ASITRA_RELEASE_LABEL}</p>
       </section>
     </main>
   );
