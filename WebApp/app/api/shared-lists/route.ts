@@ -11,8 +11,8 @@ type SharedList = {
   items: Array<{ id: string; text: string; done: boolean; due?: string }>;
 };
 
-export async function GET() {
-  const userId = await authenticatedUserKey();
+export async function GET(request: Request) {
+  const userId = await authenticatedUserKey(request);
   if (!userId) return jsonResponse({ error: "Authentication required." }, 401);
   const result = await database()
     .prepare(
@@ -36,7 +36,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   if (!isTrustedMutation(request)) return jsonResponse({ error: "Untrusted request." }, 403);
-  const userId = await authenticatedUserKey();
+  const userId = await authenticatedUserKey(request);
   if (!userId) return jsonResponse({ error: "Authentication required." }, 401);
   const body = await readBody(request);
   if (!body) return jsonResponse({ error: "Invalid sharing request." }, 400);
@@ -107,7 +107,7 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   if (!isTrustedMutation(request)) return jsonResponse({ error: "Untrusted request." }, 403);
-  const userId = await authenticatedUserKey();
+  const userId = await authenticatedUserKey(request);
   if (!userId) return jsonResponse({ error: "Authentication required." }, 401);
   const listId = new URL(request.url).searchParams.get("id") ?? "";
   if (!/^[a-zA-Z0-9-]{1,128}$/.test(listId)) return jsonResponse({ error: "Invalid list." }, 400);

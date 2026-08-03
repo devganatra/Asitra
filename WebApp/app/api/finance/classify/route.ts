@@ -15,7 +15,7 @@ const MAX_TEXT_LENGTH = 1_000;
 
 export async function POST(request: Request) {
   if (!isTrustedMutation(request)) return jsonResponse({ error: "Untrusted request." }, 403);
-  const userId = await authenticatedUserKey();
+  const userId = await authenticatedUserKey(request);
   if (!userId) return jsonResponse({ error: "Authentication required." }, 401);
 
   let text: string;

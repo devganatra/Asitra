@@ -3,8 +3,8 @@ import { validatePersistedState } from "../../state-schema";
 
 const MAX_STATE_BYTES = 2_000_000;
 
-export async function GET() {
-  const userId = await authenticatedUserKey();
+export async function GET(request: Request) {
+  const userId = await authenticatedUserKey(request);
   if (!userId) return jsonResponse({ error: "Authentication required." }, 401);
 
   const row = await database()
@@ -22,7 +22,7 @@ export async function GET() {
 
 export async function PUT(request: Request) {
   if (!isTrustedMutation(request)) return jsonResponse({ error: "Untrusted request." }, 403);
-  const userId = await authenticatedUserKey();
+  const userId = await authenticatedUserKey(request);
   if (!userId) return jsonResponse({ error: "Authentication required." }, 401);
   const contentLength = Number(request.headers.get("content-length") ?? "0");
   if (contentLength > MAX_STATE_BYTES) return jsonResponse({ error: "State is too large." }, 413);
@@ -75,7 +75,7 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   if (!isTrustedMutation(request)) return jsonResponse({ error: "Untrusted request." }, 403);
-  const userId = await authenticatedUserKey();
+  const userId = await authenticatedUserKey(request);
   if (!userId) return jsonResponse({ error: "Authentication required." }, 401);
   if (request.headers.get("x-sakhya-confirm-delete") !== "DELETE MY ACCOUNT") {
     return jsonResponse({ error: "Account deletion confirmation is required." }, 400);

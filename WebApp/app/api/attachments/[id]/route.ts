@@ -1,10 +1,10 @@
 import { authenticatedUserKey, database, jsonResponse, uploads } from "../../security";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const userId = await authenticatedUserKey();
+  const userId = await authenticatedUserKey(request);
   if (!userId) return jsonResponse({ error: "Authentication required." }, 401);
   const { id } = await params;
   if (!/^[0-9a-f-]{36}$/i.test(id)) return jsonResponse({ error: "Not found." }, 404);
