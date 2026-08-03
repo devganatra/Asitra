@@ -1816,7 +1816,11 @@ export default function SakhyaWebApp() {
               <button
                 key={item.id}
                 className={section === item.id ? "active" : ""}
-                onClick={() => { setSection(item.id); setMobileMenu(false); }}
+                onClick={() => {
+                  setSection(item.id);
+                  if (item.id === "today") setSelectedDate(new Date());
+                  setMobileMenu(false);
+                }}
               >
                 <Icon size={19} />
                 <span>{item.label}</span>
