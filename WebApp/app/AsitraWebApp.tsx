@@ -558,8 +558,18 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
       window.location.assign(logoutPath);
       return;
     }
-    await fetch(logoutPath, { method: "POST", credentials: "same-origin" }).catch(() => undefined);
-    window.location.assign("/login");
+    const response = await fetch(logoutPath, {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    }).catch(() => null);
+    if (!response?.ok) {
+      setNotice("Log out could not be completed. Your session is still active.");
+      return;
+    }
+    window.location.replace("/login");
   }
 
   useEffect(() => {
@@ -1372,8 +1382,14 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
     stateVersionRef.current = 0;
     setNotice("Your Asitra account data, recovery copies and uploaded files were deleted.");
     if (logoutPath.startsWith("/api/auth/")) {
-      await fetch(logoutPath, { method: "POST", credentials: "same-origin" }).catch(() => undefined);
-      window.location.assign("/login");
+      await fetch(logoutPath, {
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      }).catch(() => undefined);
+      window.location.replace("/login");
     }
   }
 

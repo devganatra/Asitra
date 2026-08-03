@@ -19,7 +19,7 @@ final class AsitraAIAccount {
     private(set) var aiConsent = false
 
     private let sessionStore = SecureSessionStore()
-    private let serviceURL = URL(string: "https://sakhya-everyday.deepanddev.chatgpt.site")!
+    private let serviceURL = URL(string: "https://asitra.app")!
 
     private init() {
         isConnected = sessionStore.read()?.isValid == true
