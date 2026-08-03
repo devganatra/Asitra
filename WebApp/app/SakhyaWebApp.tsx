@@ -47,21 +47,10 @@ import {
   parseMoneyInstruction,
   parseStatementText,
 } from "./money-import";
+import { type EntryKind, parseCapture } from "./capture-parser";
 import { validatePersistedState } from "./state-schema";
 
 type Section = "today" | "lists" | "track" | "money" | "balance" | "settings";
-type EntryKind =
-  | "work"
-  | "expense"
-  | "movement"
-  | "food"
-  | "sleep"
-  | "mindset"
-  | "book"
-  | "movie"
-  | "list"
-  | "journal"
-  | "note";
 type TrackerFamily = "Health" | "Habits" | "Learning & Media" | "Mindset";
 
 type Entry = {
@@ -307,36 +296,6 @@ function balanceCategoryLabel(category: BalanceSheetCategory) {
   return labels[category];
 }
 
-function parseCapture(text: string): Omit<Entry, "id" | "timestamp"> {
-  const lower = text.toLowerCase();
-  const amountMatch = text.match(/(?:€|eur\s*)\s?(\d+(?:[.,]\d{1,2})?)|(\d+(?:[.,]\d{1,2})?)\s?(?:€|eur)/i);
-  const durationMatch = lower.match(/(\d+)\s*(?:h|hr|hrs|hour|hours)/);
-  const minuteMatch = lower.match(/(\d+)\s*(?:m|min|mins|minute|minutes)/);
-  const minutes = durationMatch
-    ? Number(durationMatch[1]) * 60 + (minuteMatch ? Number(minuteMatch[1]) : 0)
-    : minuteMatch
-      ? Number(minuteMatch[1])
-      : undefined;
-  let kind: EntryKind = "note";
-  if (amountMatch || /(spent|bought|paid|expense|cost)/.test(lower)) kind = "expense";
-  else if (/(walk|run|gym|workout|yoga|cycle|swim)/.test(lower)) kind = "movement";
-  else if (/(slept|sleep|nap)/.test(lower)) kind = "sleep";
-  else if (/(breakfast|lunch|dinner|ate|meal|food)/.test(lower)) kind = "food";
-  else if (/(read|book|novel)/.test(lower)) kind = "book";
-  else if (/(watch|movie|film|documentary|series)/.test(lower)) kind = "movie";
-  else if (/(feel|felt|mood|grateful|mindset)/.test(lower)) kind = "mindset";
-  else if (/(journal|reflect|reflection)/.test(lower)) kind = "journal";
-  else if (/(work|meeting|focus|client)/.test(lower)) kind = "work";
-  else if (/(buy|grocery|remind|todo|to-do)/.test(lower)) kind = "list";
-  const amountValue = amountMatch?.[1] ?? amountMatch?.[2];
-  return {
-    title: text.trim(),
-    kind,
-    minutes,
-    amount: amountValue ? Number(amountValue.replace(",", ".")) : undefined,
-  };
-}
-
 function trackerIcon(name: string) {
   if (name === "moon") return Moon;
   if (name === "book") return BookOpen;
@@ -576,7 +535,7 @@ export default function SakhyaWebApp() {
     .reduce((sum, entry) => sum + (entry.minutes ?? 0), 0);
   const weekPersonal = weekEntries
     .filter((entry) => ["movement", "mindset", "book", "movie", "journal"].includes(entry.kind))
-    .reduce((sum, entry) => sum + (entry.minutes ?? 30), 0);
+    .reduce((sum, entry) => sum + (entry.minutes ?? 0), 0);
   const openItems = state.lists.reduce(
     (sum, list) => sum + list.items.filter((item) => !item.done).length,
     0,
@@ -628,35 +587,55 @@ export default function SakhyaWebApp() {
     event?.preventDefault();
     if (!capture.trim()) return;
     const parsed = parseCapture(capture);
+    const { list: listIntent, ...entryData } = parsed;
     const entry: Entry = {
       id: uid(),
-      timestamp: new Date().toISOString(),
-      ...parsed,
+      ...entryData,
       photo: capturePhoto,
     };
-    setState((current) => {
-      const next = { ...current, entries: [entry, ...current.entries] };
-      if (parsed.kind === "list") {
-        const listIndex = next.lists.findIndex((list) => list.name === "Personal reminders");
-        if (listIndex >= 0) {
-          next.lists = next.lists.map((list, index) =>
-            index === listIndex
-              ? {
-                  ...list,
-                  items: [{ id: uid(), text: capture, done: false }, ...list.items],
-                }
-              : list,
-          );
+    const targetList = listIntent
+      ? state.lists.find((list) => {
+          const name = list.name.toLowerCase();
+          if (listIntent.target === "groceries") return /grocer|shopping/.test(name);
+          if (listIntent.target === "travel") return /travel|trip/.test(name);
+          return name === "personal reminders" || /reminder/.test(name);
+        })
+      : undefined;
+    const createdList: LifeList | undefined = listIntent && !targetList
+      ? {
+          id: uid(),
+          name: listIntent.target === "groceries" ? "Shopping" : listIntent.target === "travel" ? "Travel ideas" : "Personal reminders",
+          shared: false,
+          members: 1,
+          color: listIntent.target === "travel" ? "#7b83a6" : "#6f8f7b",
+          items: [],
         }
-      }
-      return next;
+      : undefined;
+    const destination = targetList ?? createdList;
+    const updatedDestination = destination && listIntent
+      ? {
+          ...destination,
+          items: [{ id: uid(), text: listIntent.text, done: false, due: listIntent.due }, ...destination.items],
+        }
+      : undefined;
+    setState((current) => {
+      if (!updatedDestination) return { ...current, entries: [entry, ...current.entries] };
+      const exists = current.lists.some((list) => list.id === updatedDestination.id);
+      return {
+        ...current,
+        entries: [entry, ...current.entries],
+        lists: exists
+          ? current.lists.map((list) => list.id === updatedDestination.id ? updatedDestination : list)
+          : [...current.lists, updatedDestination],
+      };
     });
+    if (updatedDestination?.shared) void updateSharedList(updatedDestination);
     setCapture("");
     setCapturePhoto(undefined);
-    setSelectedDate(new Date());
+    setSelectedDate(new Date(entry.timestamp));
     setNotice(
-      parsed.kind === "list"
-        ? "Added to your timeline and Personal reminders."
+      listIntent && updatedDestination
+        ? `Added to your timeline and ${updatedDestination.name}.`
         : `Added to your timeline as ${kindMeta[parsed.kind].label}.`,
     );
   }
@@ -1178,6 +1157,7 @@ export default function SakhyaWebApp() {
   }
 
   function openAssistant(initialQuestion?: string) {
+    setAssistantOpen(true);
     if (!messages.length) {
       setMessages([
         {
@@ -1191,7 +1171,6 @@ export default function SakhyaWebApp() {
       ]);
     }
     if (initialQuestion) setChatInput(initialQuestion);
-    setAssistantOpen(true);
   }
 
   function saveEditedEntry(event: FormEvent) {
@@ -1860,7 +1839,7 @@ export default function SakhyaWebApp() {
         </header>
         {mainContent}
       </main>
-      <button className="assistant-fab" onClick={() => openAssistant()}>
+      <button type="button" className="assistant-fab" aria-haspopup="dialog" aria-expanded={assistantOpen} onClick={() => openAssistant()}>
         <Sparkles size={18} /><span>Ask Sakhya</span>
       </button>
       {notice && (
