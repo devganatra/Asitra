@@ -2943,6 +2943,105 @@ h3 {
 .ai-consent-row small { color: var(--muted); line-height: 1.35; }
 
 .policy-modal p { color: var(--muted); line-height: 1.65; }
+.onboarding-layer {
+  padding: 24px;
+  background:
+    radial-gradient(circle at 50% 18%, rgba(111, 143, 123, 0.2), transparent 35%),
+    rgba(30, 35, 31, 0.62);
+  backdrop-filter: blur(12px);
+}
+
+.onboarding-card {
+  position: relative;
+  z-index: 2;
+  width: min(540px, 100%);
+  margin: auto;
+  padding: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 30px;
+  background: rgba(251, 250, 246, 0.97);
+  box-shadow: 0 32px 100px rgba(23, 29, 25, 0.32);
+}
+
+.onboarding-progress {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 7px;
+  margin-bottom: 38px;
+}
+
+.onboarding-progress span {
+  height: 4px;
+  border-radius: 20px;
+  background: #dfe4df;
+}
+
+.onboarding-progress span.active { background: var(--sage); }
+
+.onboarding-icon {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 22px;
+  border-radius: 19px;
+  color: white;
+  background: linear-gradient(145deg, var(--sage), #466957);
+  box-shadow: 0 12px 28px rgba(72, 104, 84, 0.25);
+}
+
+.onboarding-card h2 {
+  margin: 8px 0 4px;
+  font: 600 clamp(30px, 5vw, 43px)/1.08 Georgia, serif;
+  letter-spacing: -0.035em;
+}
+
+.onboarding-card h3 {
+  margin: 6px 0 0;
+  font-size: 17px;
+  font-weight: 750;
+}
+
+.onboarding-card > p {
+  max-width: 470px;
+  margin: 18px 0;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.onboarding-example {
+  padding: 14px 16px;
+  border: 1px solid #dfe6e0;
+  border-radius: 15px;
+  color: #53665a;
+  background: #edf2ed;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.onboarding-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 28px;
+}
+
+.onboarding-actions .primary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 560px) {
+  .onboarding-layer { padding: 12px; }
+  .onboarding-card { padding: 25px 21px 21px; border-radius: 24px; }
+  .onboarding-progress { margin-bottom: 28px; }
+  .onboarding-actions { align-items: stretch; flex-direction: column-reverse; }
+  .onboarding-actions button { justify-content: center; width: 100%; }
+}
+
 .modal-actions { display: flex; justify-content: space-between; gap: 12px; }
 .danger-button {
   padding: 11px 16px;

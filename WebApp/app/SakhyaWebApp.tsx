@@ -132,6 +132,7 @@ type BalanceSheetItem = {
 };
 
 type PersistedState = {
+  onboardingCompleted: boolean;
   entries: Entry[];
   lists: LifeList[];
   trackers: Tracker[];
@@ -152,6 +153,17 @@ const EMPTY_MONEY_DRAFT: MoneyDraft = {
   note: "",
   balanceCategory: "cash",
 };
+const emptyState: PersistedState = {
+  onboardingCompleted: false,
+  entries: [],
+  lists: [],
+  trackers: [],
+  monthlyBudget: 0,
+  savingsTarget: 0,
+  savingsCurrent: 0,
+  moneyEntries: [],
+  balanceSheetItems: [],
+};
 const currency = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
 const weekdayOnly = new Intl.DateTimeFormat("en", { weekday: "short" });
 const longDate = new Intl.DateTimeFormat("en", {
@@ -169,6 +181,7 @@ function atDayOffset(days: number, hour: number, minute = 0) {
 }
 
 const seedState: PersistedState = {
+  onboardingCompleted: true,
   entries: [
     { id: "e1", title: "Morning walk by the river", kind: "movement", timestamp: atDayOffset(0, 7, 35), minutes: 32, source: "WHOOP" },
     { id: "e2", title: "Deep work · product strategy", kind: "work", timestamp: atDayOffset(0, 9, 10), minutes: 95 },
@@ -325,9 +338,40 @@ interface SpeechRecognitionLike {
 
 type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 
-export default function SakhyaWebApp() {
+const onboardingSteps = [
+  {
+    icon: Sparkles,
+    eyebrow: "Your everyday system",
+    title: "Capture life in one place",
+    body: "Type or talk naturally from Today. Sakhya turns each moment into the right timeline entry, list item, tracker or money record.",
+    example: "Try: “Walked 30 minutes and spent €8 on lunch.”",
+  },
+  {
+    icon: ListChecks,
+    eyebrow: "Organized automatically",
+    title: "One entry, useful everywhere",
+    body: "Timeline remembers when it happened. Lists hold what is still open. Track shows progress. Money turns the same records into clear financial views.",
+    example: "You do not need to enter the same information twice.",
+  },
+  {
+    icon: Sparkles,
+    eyebrow: "Contextual intelligence",
+    title: "Ask Sakhya about your life",
+    body: "Use the floating Ask Sakhya button for summaries and patterns based only on the information relevant to your question.",
+    example: "AI analysis stays optional and asks for your permission.",
+  },
+  {
+    icon: ShieldCheck,
+    eyebrow: "Private by default",
+    title: "This workspace belongs to you",
+    body: "Your timeline, journal, trackers, money and private lists are stored separately for your signed-in account. Only a list you explicitly share can involve someone else.",
+    example: "Export or delete your account data anytime in Settings.",
+  },
+];
+
+export default function SakhyaWebApp({ userName }: { userName: string }) {
   const [section, setSection] = useState<Section>("today");
-  const [state, setState] = useState<PersistedState>(seedState);
+  const [state, setState] = useState<PersistedState>(emptyState);
   const [hydrated, setHydrated] = useState(false);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [capture, setCapture] = useState("");
@@ -364,6 +408,8 @@ export default function SakhyaWebApp() {
   const [inviteCode, setInviteCode] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const [sharingOwner, setSharingOwner] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState(0);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const stateVersionRef = useRef(0);
@@ -391,6 +437,9 @@ export default function SakhyaWebApp() {
           } else {
             setNotice("Your secure account copy is ready. The old browser copy was kept as requested.");
           }
+        } else {
+          setState(emptyState);
+          setOnboardingOpen(true);
         }
         await loadSharedLists();
         setHydrated(true);
@@ -399,7 +448,9 @@ export default function SakhyaWebApp() {
       if (response.ok) {
         const payload = (await response.json()) as { state: unknown; version: number };
         stateVersionRef.current = payload.version;
-        setState(validatePersistedState(payload.state) as PersistedState);
+        const savedState = validatePersistedState(payload.state) as PersistedState;
+        setState(savedState);
+        setOnboardingOpen(!savedState.onboardingCompleted);
         await loadSharedLists();
         setHydrated(true);
         return;
@@ -556,6 +607,13 @@ export default function SakhyaWebApp() {
     (sum, list) => sum + list.items.filter((item) => !item.done).length,
     0,
   );
+  const accountInitials = userName
+    .replace(/@.*$/, "")
+    .split(/[\s._-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("") || "S";
   const balanceScore = Math.max(
     32,
     Math.min(96, 70 + Math.round((weekPersonal - weekWork * 0.45) / 18)),
@@ -1274,7 +1332,7 @@ export default function SakhyaWebApp() {
     window.localStorage.removeItem(LEGACY_STORAGE_KEY);
     accountDeletedRef.current = true;
     setDeleteAccountOpen(false);
-    setState({ ...seedState, entries: [], lists: [], trackers: [], moneyEntries: [], balanceSheetItems: [] });
+    setState(emptyState);
     stateVersionRef.current = 0;
     setNotice("Your Sakhya account data and uploaded photos were deleted.");
   }
@@ -1316,6 +1374,12 @@ export default function SakhyaWebApp() {
     if (!window.confirm("Replace your account data with the sample workspace? Export first if you want a backup.")) return;
     setState(seedState);
     setNotice("Sample workspace restored for your account.");
+  }
+
+  function finishOnboarding() {
+    setState((current) => ({ ...current, onboardingCompleted: true }));
+    setOnboardingOpen(false);
+    setOnboardingStep(0);
   }
 
   const mainContent = (() => {
@@ -1459,6 +1523,12 @@ export default function SakhyaWebApp() {
 
     if (section === "money") {
       const remaining = Math.max(state.monthlyBudget - monthSpent, 0);
+      const budgetUsage = state.monthlyBudget > 0
+        ? Math.min((monthSpent / state.monthlyBudget) * 100, 100)
+        : 0;
+      const savingsProgress = state.savingsTarget > 0
+        ? Math.min((state.savingsCurrent / state.savingsTarget) * 100, 100)
+        : 0;
       const surplus = monthIncome - monthSpent;
       const unallocated = surplus - monthSaved - monthInvested;
       const netCashMovement = monthIncome - monthSpent - monthInvested;
@@ -1575,8 +1645,8 @@ export default function SakhyaWebApp() {
                   <strong>{currency.format(remaining)}</strong>
                   <p>{currency.format(monthSpent)} used from a {currency.format(state.monthlyBudget)} plan</p>
                 </div>
-                <div className="budget-ring" style={{ "--progress": `${Math.min((monthSpent / state.monthlyBudget) * 100, 100) * 3.6}deg` } as React.CSSProperties}>
-                  <span>{Math.round((monthSpent / state.monthlyBudget) * 100)}%</span>
+                <div className="budget-ring" style={{ "--progress": `${budgetUsage * 3.6}deg` } as React.CSSProperties}>
+                  <span>{Math.round(budgetUsage)}%</span>
                 </div>
               </div>
               <div className="money-grid">
@@ -1595,7 +1665,7 @@ export default function SakhyaWebApp() {
                   <div className="section-heading"><div><span className="eyebrow">Saving plan</span><h2>Future freedom</h2></div><Target size={19} /></div>
                   <strong>{currency.format(state.savingsCurrent)}</strong>
                   <p>of {currency.format(state.savingsTarget)}</p>
-                  <div className="progress-line large"><span style={{ width: `${(state.savingsCurrent / state.savingsTarget) * 100}%` }} /></div>
+                  <div className="progress-line large"><span style={{ width: `${savingsProgress}%` }} /></div>
                   <button className="secondary-button full" onClick={() => openMoneyEntry("saving")}>
                     <Plus size={16} /> Add contribution
                   </button>
@@ -1685,6 +1755,7 @@ export default function SakhyaWebApp() {
               <label className="settings-row"><Upload size={18} /><span><strong>Import backup</strong><small>Restore a Sakhya JSON file</small></span><ArrowRight size={16} /><input type="file" accept=".json,application/json" onChange={importData} hidden /></label>
               <button className="settings-row" onClick={resetData}><RotateCcw size={18} /><span><strong>Restore sample workspace</strong><small>Requires confirmation</small></span><ArrowRight size={16} /></button>
               <button className="settings-row" onClick={() => setPolicyOpen(true)}><ShieldCheck size={18} /><span><strong>Privacy and AI</strong><small>See how your journal, health and money data are used</small></span><ArrowRight size={16} /></button>
+              <button className="settings-row" onClick={() => { setOnboardingStep(0); setOnboardingOpen(true); }}><Sparkles size={18} /><span><strong>Show getting-started tour</strong><small>See how capture, views and privacy work</small></span><ArrowRight size={16} /></button>
               <button className="settings-row danger-row" onClick={() => setDeleteAccountOpen(true)}><X size={18} /><span><strong>Delete account data</strong><small>Permanently remove records and uploaded photos</small></span><ArrowRight size={16} /></button>
             </section>
             <section className="panel settings-page-card">
@@ -1883,13 +1954,43 @@ export default function SakhyaWebApp() {
           <button className="menu-button" onClick={() => setMobileMenu(true)}><Menu size={21} /></button>
           <div className="mobile-brand"><span className="brand-mark small">S</span><strong>Sakhya</strong></div>
           <button className="search-button" onClick={() => setSearchOpen(true)}><Search size={17} /><span>Search your life</span><kbd>⌘ K</kbd></button>
-          <button className="avatar">DG</button>
+          <button className="avatar" aria-label={`Signed in as ${userName}`} title={userName}>{accountInitials}</button>
         </header>
         {mainContent}
       </main>
       <button type="button" className="assistant-fab" aria-haspopup="dialog" aria-expanded={assistantOpen} onClick={() => openAssistant()}>
         <Sparkles size={18} /><span>Ask Sakhya</span>
       </button>
+      {onboardingOpen && (() => {
+        const step = onboardingSteps[onboardingStep];
+        const StepIcon = step.icon;
+        const isLastStep = onboardingStep === onboardingSteps.length - 1;
+        return (
+          <div className="modal-layer onboarding-layer" role="dialog" aria-modal="true" aria-label="Welcome to Sakhya">
+            <div className="onboarding-card">
+              <div className="onboarding-progress" aria-label={`Step ${onboardingStep + 1} of ${onboardingSteps.length}`}>
+                {onboardingSteps.map((item, index) => <span key={item.title} className={index <= onboardingStep ? "active" : ""} />)}
+              </div>
+              <div className="onboarding-icon"><StepIcon size={27} /></div>
+              <span className="eyebrow">{step.eyebrow}</span>
+              <h2>{onboardingStep === 0 ? `Welcome${userName ? `, ${userName.split(/[ @]/)[0]}` : ""}` : step.title}</h2>
+              {onboardingStep === 0 && <h3>{step.title}</h3>}
+              <p>{step.body}</p>
+              <div className="onboarding-example">{step.example}</div>
+              <div className="onboarding-actions">
+                {onboardingStep > 0 ? (
+                  <button className="text-button" onClick={() => setOnboardingStep((current) => current - 1)}>Back</button>
+                ) : (
+                  <button className="text-button" onClick={finishOnboarding}>Explore myself</button>
+                )}
+                <button className="primary-button" onClick={() => isLastStep ? finishOnboarding() : setOnboardingStep((current) => current + 1)}>
+                  {isLastStep ? "Start using Sakhya" : "Continue"} <ArrowRight size={16} />
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {notice && (
         <div className="toast">
           <CheckCircle2 size={18} />

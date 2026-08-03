@@ -192,13 +192,14 @@ test("uses one finance classifier and one entry point across web and Apple", asy
 });
 
 test("ships the secured product source without starter artifacts", async () => {
-  const [css, page, client, layout, worker, packageJson] = await Promise.all([
+  const [css, page, client, layout, worker, packageJson, stateRoute] = await Promise.all([
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/SakhyaWebApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../worker/index.ts", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/state/route.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(page, /requireChatGPTUser/);
@@ -213,6 +214,11 @@ test("ships the secured product source without starter artifacts", async () => {
   assert.match(client, /exportData/);
   assert.match(client, /validatePersistedState/);
   assert.match(client, /Remove the old plaintext browser copy/);
+  assert.match(client, /Welcome/);
+  assert.match(client, /This workspace belongs to you/);
+  assert.match(client, /Show getting-started tour/);
+  assert.match(client, /onboardingCompleted/);
+  assert.match(stateRoute, /WHERE user_id = \?/);
   assert.match(client, /Today/);
   assert.match(client, /item\.id === "today".*setSelectedDate\(new Date\(\)\)/s);
   assert.match(client, /Lists/);
