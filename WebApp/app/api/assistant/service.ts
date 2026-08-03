@@ -30,10 +30,21 @@ export type SakhyaAssistantContext = {
 
 type OpenAIResponse = {
   error?: { message?: string };
+  output_text?: string;
   output?: Array<{
     type?: string;
     content?: Array<{ type?: string; text?: string }>;
   }>;
+};
+
+export type FinanceClassification = {
+  kind: "expense" | "income" | "saving" | "investment" | "asset" | "liability";
+  title: string;
+  amount: number;
+  date: string;
+  balanceCategory: "cash" | "investments" | "property" | "otherAsset" | "creditCard" | "loan" | "otherLiability" | null;
+  confidence: "high" | "medium" | "low";
+  explanation: string;
 };
 
 type CompatibleChatResponse = {
@@ -156,6 +167,84 @@ export async function answerWithSakhyaAI(input: {
   const answer = result.choices?.[0]?.message?.content?.trim();
   if (!answer) throw new Error("The custom AI provider returned an empty answer.");
   return { answer, model: configuration.model, provider: configuration.provider };
+}
+
+export async function classifyFinanceWithSakhyaAI(input: {
+  userIdentifier: string;
+  text: string;
+  today: string;
+  timezone: string;
+}): Promise<{ classification: FinanceClassification; model: string; provider: string }> {
+  const configuration = providerConfiguration(env as unknown as AIEnvironment);
+  const instructions = [
+    "Classify one personal-finance statement into exactly one ledger event.",
+    "An expense consumes money; income adds money; saving earmarks surplus; investment moves cash into investments.",
+    "Asset and liability are current balance snapshots, not cash-flow transactions.",
+    "Use asset or liability only when the user states a current balance, value, debt, or amount owed.",
+    "Do not calculate financial totals or invent missing facts. Dates must be ISO 8601.",
+    "The amount must be positive. Explain the classification in one short plain-language sentence.",
+  ].join(" ");
+  const prompt = `Today is ${input.today} in ${input.timezone}. User statement: ${input.text}`;
+  if (configuration.provider !== "openai") {
+    throw new AIConfigurationError("Structured finance classification currently requires OpenAI Terra.");
+  }
+  const response = await fetch(`${configuration.baseURL}/v1/responses`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${configuration.apiKey}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model: configuration.model,
+      reasoning: { effort: "low" },
+      store: false,
+      max_output_tokens: 500,
+      safety_identifier: input.userIdentifier,
+      instructions,
+      input: prompt,
+      text: {
+        format: {
+          type: "json_schema",
+          name: "finance_classification",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: {
+              kind: { type: "string", enum: ["expense", "income", "saving", "investment", "asset", "liability"] },
+              title: { type: "string" },
+              amount: { type: "number" },
+              date: { type: "string" },
+              balanceCategory: { type: ["string", "null"], enum: ["cash", "investments", "property", "otherAsset", "creditCard", "loan", "otherLiability", null] },
+              confidence: { type: "string", enum: ["high", "medium", "low"] },
+              explanation: { type: "string" },
+            },
+            required: ["kind", "title", "amount", "date", "balanceCategory", "confidence", "explanation"],
+            additionalProperties: false,
+          },
+        },
+      },
+    }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const result = (await response.json()) as OpenAIResponse;
+  if (!response.ok) {
+    console.error("OpenAI finance classification error", response.status, result.error?.message);
+    throw new Error("The AI provider is temporarily unavailable.");
+  }
+  const raw = result.output_text?.trim() || extractOpenAIOutput(result);
+  const classification = validateFinanceClassification(JSON.parse(raw));
+  return { classification, model: configuration.model, provider: configuration.provider };
+}
+
+function validateFinanceClassification(value: unknown): FinanceClassification {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid finance classification.");
+  const item = value as Record<string, unknown>;
+  const kinds = new Set(["expense", "income", "saving", "investment", "asset", "liability"]);
+  const categories = new Set(["cash", "investments", "property", "otherAsset", "creditCard", "loan", "otherLiability"]);
+  if (!kinds.has(String(item.kind)) || typeof item.title !== "string" || !item.title.trim() || typeof item.amount !== "number" || !Number.isFinite(item.amount) || item.amount <= 0 || typeof item.date !== "string" || !Number.isFinite(Date.parse(item.date)) || (item.balanceCategory !== null && !categories.has(String(item.balanceCategory))) || !new Set(["high", "medium", "low"]).has(String(item.confidence)) || typeof item.explanation !== "string") {
+    throw new Error("Invalid finance classification.");
+  }
+  return item as FinanceClassification;
 }
 
 function providerConfiguration(configuration: AIEnvironment) {

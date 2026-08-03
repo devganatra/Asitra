@@ -1202,6 +1202,58 @@ h3 {
   margin-top: -8px;
 }
 
+.money-capture-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  margin: 2px 0 18px;
+  padding: 14px 16px;
+  border: 1px solid #cbd9cf;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #f8fbf7, #eef4ef);
+  box-shadow: 0 10px 30px rgba(37, 62, 49, 0.06);
+}
+
+.money-capture-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 13px;
+  color: white;
+  background: var(--sage);
+}
+
+.money-capture-main {
+  display: grid;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  color: var(--ink);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.money-capture-main strong { font-size: 13px; }
+.money-capture-main span { color: var(--muted); font-size: 10px; line-height: 1.45; }
+
+.money-import-shortcut {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  color: var(--sage);
+  background: rgba(255,255,255,.72);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 750;
+}
+
 .money-position-hero {
   min-height: 190px;
   display: flex;
@@ -2130,6 +2182,44 @@ h3 {
   display: block;
 }
 
+.money-review-card {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid #cbd9cf;
+  border-radius: 17px;
+  background: white;
+}
+
+.money-review-amount {
+  font-family: Georgia, serif;
+  font-size: 38px;
+  letter-spacing: -.035em;
+}
+
+.money-review-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.money-review-grid span {
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  border-radius: 10px;
+  color: var(--muted);
+  background: #f2f5f1;
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.money-review-grid strong { color: var(--ink); font-size: 12px; text-transform: capitalize; }
+.money-review-card p, .money-review-card small { margin: 0; color: var(--muted); line-height: 1.5; }
+.money-review-card small { font-size: 10px; }
+.money-review-actions { display: grid; grid-template-columns: 1fr 2fr; gap: 9px; }
+.money-review-actions button { justify-content: center; }
+
 .sakhya-entry-prompt span {
   margin-top: 3px;
   color: #617269;
@@ -2614,6 +2704,15 @@ h3 {
   .money-position-hero {
     min-height: 220px;
     padding: 25px 23px;
+  }
+
+  .money-capture-card {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .money-import-shortcut {
+    grid-column: 1 / -1;
+    justify-content: center;
   }
 
   .position-pulse {

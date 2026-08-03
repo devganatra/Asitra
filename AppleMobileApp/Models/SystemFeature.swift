@@ -199,11 +199,24 @@ struct TripBudgetPlan: Identifiable, Codable, Hashable {
 
 enum PersonalFinanceEntryKind: String, Codable, CaseIterable, Identifiable {
     case income
+    case saving
     case investment
 
     var id: Self { self }
-    var title: String { self == .income ? "Income" : "Investment" }
-    var systemImage: String { self == .income ? "arrow.down.circle.fill" : "chart.line.uptrend.xyaxis.circle.fill" }
+    var title: String {
+        switch self {
+        case .income: "Income"
+        case .saving: "Saving"
+        case .investment: "Investment"
+        }
+    }
+    var systemImage: String {
+        switch self {
+        case .income: "arrow.down.circle.fill"
+        case .saving: "banknote.fill"
+        case .investment: "chart.line.uptrend.xyaxis.circle.fill"
+        }
+    }
 }
 
 struct PersonalFinanceEntry: Identifiable, Codable, Hashable {

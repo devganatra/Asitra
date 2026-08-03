@@ -8,10 +8,12 @@ export type ImportedMoneyTransaction = {
 };
 
 export type ParsedMoneyInstruction = {
-  kind: "expense" | "income" | "saving" | "investment";
+  kind: "expense" | "income" | "saving" | "investment" | "asset" | "liability";
   title: string;
   amount: number;
   date: string;
+  balanceCategory?: "cash" | "investments" | "property" | "otherAsset" | "creditCard" | "loan" | "otherLiability";
+  confidence: "high" | "medium";
 };
 
 const DATE_PATTERN = /\b(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?\b/;
@@ -110,19 +112,35 @@ export function parseMoneyInstruction(
   now = new Date(),
 ): ParsedMoneyInstruction | undefined {
   const amountMatch = text.match(
-    /(?:€|eur\s*)\s?((?:\d{1,3}(?:[.\s]\d{3})*|\d+)(?:[.,]\d{1,2})?)|((?:\d{1,3}(?:[.\s]\d{3})*|\d+)(?:[.,]\d{1,2})?)\s?(?:€|eur)/i,
+    /(?:€|eur\s*)\s?((?:\d{1,3}(?:[.\s]\d{3})*|\d+)(?:[.,]\d{1,3})?)|((?:\d{1,3}(?:[.\s]\d{3})*|\d+)(?:[.,]\d{1,3})?)\s?(?:€|eur)/i,
   );
   const rawAmount = amountMatch?.[1] ?? amountMatch?.[2];
   if (!rawAmount) return undefined;
-  const amount =
-    /[.,]\d{1,2}$/.test(rawAmount) && /[.,].*[.,]/.test(rawAmount)
-      ? parseLocalizedAmount(rawAmount)
-      : Number(rawAmount.replace(/\s/g, "").replace(",", "."));
+  const compactAmount = rawAmount.replace(/\s/g, "");
+  const amount = /[.,]\d{3}$/.test(compactAmount) && !/[.,].*[.,]/.test(compactAmount)
+    ? Number(compactAmount.replace(/[.,]/g, ""))
+    : /[.,].*[.,]/.test(compactAmount)
+      ? parseLocalizedAmount(compactAmount)
+      : Number(compactAmount.replace(",", "."));
   if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000_000) return undefined;
 
   const lower = text.toLowerCase();
   let kind: ParsedMoneyInstruction["kind"];
-  if (/\b(invest|invested|investment)\b/.test(lower)) kind = "investment";
+  let balanceCategory: ParsedMoneyInstruction["balanceCategory"];
+  const isBalanceSnapshot = /\b(balance|worth|owe|owed|debt|loan|mortgage|credit card|bank account|account has|portfolio is|portfolio worth)\b/.test(lower);
+  if (isBalanceSnapshot && /\b(owe|owed|debt|loan|mortgage|credit card)\b/.test(lower)) {
+    kind = "liability";
+    balanceCategory = /credit card/.test(lower) ? "creditCard" : /\b(loan|mortgage)\b/.test(lower) ? "loan" : "otherLiability";
+  } else if (isBalanceSnapshot && /\b(property|house|home)\b/.test(lower)) {
+    kind = "asset";
+    balanceCategory = "property";
+  } else if (isBalanceSnapshot && /\b(portfolio|brokerage|investment account|shares|stocks|etf)\b/.test(lower)) {
+    kind = "asset";
+    balanceCategory = "investments";
+  } else if (isBalanceSnapshot) {
+    kind = "asset";
+    balanceCategory = /\b(bank|account|cash|wallet)\b/.test(lower) ? "cash" : "otherAsset";
+  } else if (/\b(invest|invested|investment)\b/.test(lower)) kind = "investment";
   else if (/\b(save|saved|saving)\b/.test(lower)) kind = "saving";
   else if (/\b(income|salary|earned|received|refund|paid me)\b/.test(lower)) kind = "income";
   else if (/\b(spent|bought|paid|expense|cost|purchase|add|record|log)\b/.test(lower)) {
@@ -142,6 +160,8 @@ export function parseMoneyInstruction(
     title: text.trim().slice(0, 500),
     amount,
     date: parsedDate ?? date.toISOString(),
+    balanceCategory,
+    confidence: "high",
   };
 }
 

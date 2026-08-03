@@ -15,8 +15,7 @@ struct ExpensesView: View {
     @State private var contributionPlan: SavingPlan?
     @State private var showingTrip = false
     @State private var showingWalletRequirements = false
-    @State private var moneyEntryKind: PersonalFinanceEntryKind?
-    @State private var balanceSheetDraft: BalanceSheetItem?
+    @State private var financeEntryDraft: UnifiedFinanceDraft?
     @State private var importingStatement = false
     @State private var statementImport: StatementImportDraft?
     @State private var statementImportError: String?
@@ -45,7 +44,10 @@ struct ExpensesView: View {
             .reduce(0) { $0 + $1.amount }
     }
     private var monthlySaved: Double {
-        finance.savingPlans
+        finance.moneyEntries
+            .filter { $0.kind == .saving && monthInterval.contains($0.date) }
+            .reduce(0) { $0 + $1.amount }
+        + finance.savingPlans
             .flatMap(\.contributions)
             .filter { monthInterval.contains($0.date) }
             .reduce(0) { $0 + $1.amount }
@@ -114,13 +116,10 @@ struct ExpensesView: View {
         .sheet(isPresented: $showingTrip) {
             NewTripSheet { systemFeature.addTrip($0) }
         }
-        .sheet(item: $moneyEntryKind) { kind in
-            AddMoneyEntrySheet(kind: kind) { amount, date, note in
-                systemFeature.addMoneyEntry(kind: kind, amount: amount, date: date, note: note)
+        .sheet(item: $financeEntryDraft) { draft in
+            UnifiedFinanceEntrySheet(draft: draft) { entry in
+                saveUnifiedFinanceEntry(entry)
             }
-        }
-        .sheet(item: $balanceSheetDraft) { draft in
-            BalanceSheetItemSheet(item: draft) { systemFeature.upsertBalanceSheetItem($0) }
         }
         .sheet(item: $statementImport) { draft in
             StatementImportReviewSheet(draft: draft) { transactions in
@@ -153,26 +152,39 @@ struct ExpensesView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Your money")
                     .font(.largeTitle.bold())
-                Text("See what you spent, save for something important, and plan trips without finance jargon.")
+                Text("Add each money event once. Every overview is calculated from the same financial life.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
             Spacer()
             Button {
-                importingStatement = true
+                financeEntryDraft = UnifiedFinanceDraft()
             } label: {
-                Label("Import PDF", systemImage: "doc.text")
-            }
-            .buttonStyle(.bordered)
-            Button {
-                expenseTripID = nil
-                showingExpense = true
-            } label: {
-                Label("Add expense", systemImage: "plus")
+                Label("Add money activity", systemImage: "plus")
             }
             .buttonStyle(.borderedProminent)
         }
         .padding()
+    }
+
+    private func saveUnifiedFinanceEntry(_ entry: UnifiedFinanceDraft) {
+        switch entry.kind {
+        case .expense:
+            model.add(
+                LogEntry(timestamp: entry.date, category: .expense, title: entry.note, amount: entry.amount, lifeArea: .personal, deviceSource: currentDeviceSource),
+                syncToCalendar: false
+            )
+        case .income:
+            systemFeature.addMoneyEntry(kind: .income, amount: entry.amount, date: entry.date, note: entry.note)
+        case .saving:
+            systemFeature.addMoneyEntry(kind: .saving, amount: entry.amount, date: entry.date, note: entry.note)
+        case .investment:
+            systemFeature.addMoneyEntry(kind: .investment, amount: entry.amount, date: entry.date, note: entry.note)
+        case .asset, .liability:
+            systemFeature.upsertBalanceSheetItem(
+                BalanceSheetItem(id: entry.balanceItemID ?? UUID(), name: entry.note, balance: entry.amount, category: entry.balanceCategory, updatedAt: entry.date)
+            )
+        }
     }
 
     private func readStatement(_ result: Result<URL, Error>) {
@@ -247,6 +259,7 @@ struct ExpensesView: View {
     private var positionOverview: some View {
         VStack(alignment: .leading, spacing: 18) {
             monthSelector
+            unifiedEntryCard
             netWorthHero
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 16)], spacing: 16) {
                 cashFlowCard
@@ -258,6 +271,33 @@ struct ExpensesView: View {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 4)
         }
+    }
+
+    private var unifiedEntryCard: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "sparkles")
+                .font(.headline)
+                .foregroundStyle(.white)
+                .frame(width: 42, height: 42)
+                .background(Color.green.gradient, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            Button {
+                financeEntryDraft = UnifiedFinanceDraft()
+            } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Tell Sakhya what changed").font(.headline)
+                    Text("“Paid €32 for groceries” · “Salary €3,200” · “Savings balance €8,400”")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            Button { importingStatement = true } label: { Label("Statement", systemImage: "doc.text") }
+                .buttonStyle(.bordered)
+        }
+        .padding(14)
+        .background(Color.green.opacity(0.07), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.green.opacity(0.16)))
     }
 
     private var netWorthHero: some View {
@@ -276,12 +316,6 @@ struct ExpensesView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button {
-                balanceSheetDraft = BalanceSheetItem(name: "", balance: 0, category: .cash)
-            } label: {
-                Label("Add balance", systemImage: "plus")
-            }
-            .buttonStyle(.borderedProminent)
         }
         .padding(22)
         .background(
@@ -302,9 +336,7 @@ struct ExpensesView: View {
                 title: "Cash flow",
                 subtitle: "What came in and what left your usable cash.",
                 icon: "arrow.left.arrow.right"
-            ) {
-                moneyEntryKind = .income
-            }
+            )
             statementRow("Income", amount: monthlyIncome, sign: .positive)
             statementRow("Everyday spending", amount: monthlySpent, sign: .negative)
             statementRow("Moved to investments", amount: monthlyInvested, sign: .negative)
@@ -318,12 +350,6 @@ struct ExpensesView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
-            HStack {
-                Button("Add income") { moneyEntryKind = .income }
-                Button("Add investment") { moneyEntryKind = .investment }
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
         }
         .statementCard()
     }
@@ -373,9 +399,7 @@ struct ExpensesView: View {
                 title: "Balance sheet",
                 subtitle: "What you own, what you owe, and the difference.",
                 icon: "scale.3d"
-            ) {
-                balanceSheetDraft = BalanceSheetItem(name: "", balance: 0, category: .cash)
-            }
+            )
             if finance.balanceSheetItems.isEmpty {
                 Text("Start with bank balances, investments, credit cards and loans. Update them whenever a statement changes.")
                     .font(.subheadline)
@@ -399,20 +423,13 @@ struct ExpensesView: View {
                 Divider()
                 statementRow("Net worth", amount: netWorth, emphasize: true)
             }
-            Button {
-                balanceSheetDraft = BalanceSheetItem(name: "", balance: 0, category: .cash)
-            } label: {
-                Label("Add asset or debt", systemImage: "plus")
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
         }
         .statementCard()
     }
 
     private func balanceItemRow(_ item: BalanceSheetItem) -> some View {
         Button {
-            balanceSheetDraft = item
+            financeEntryDraft = UnifiedFinanceDraft(item: item)
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: item.category.systemImage)
@@ -1279,72 +1296,236 @@ private struct NewTripSheet: View {
     }
 }
 
-private struct AddMoneyEntrySheet: View {
-    @Environment(\.dismiss) private var dismiss
-    let kind: PersonalFinanceEntryKind
-    let onSave: (Double, Date, String) -> Void
-    @State private var amount = ""
-    @State private var date = Date.now
-    @State private var note = ""
-
-    var body: some View {
-        MoneyFormShell(
-            title: kind == .income ? "Record income" : "Record investment",
-            explanation: kind == .income
-                ? "Income is money received this month, such as salary, freelance work or a refund."
-                : "Record money moved from cash into an investment. The investment balance itself belongs on the balance sheet."
-        ) {
-            TextField("Amount", text: $amount)
-            TextField(kind == .income ? "Source or note" : "Investment or note", text: $note)
-            DatePicker("When", selection: $date, displayedComponents: .date)
-        } save: {
-            guard let value = Double(amount.replacingOccurrences(of: ",", with: ".")), value > 0 else { return }
-            onSave(value, date, note.trimmingCharacters(in: .whitespacesAndNewlines))
-            dismiss()
+private enum UnifiedFinanceKind: String, CaseIterable, Identifiable {
+    case expense, income, saving, investment, asset, liability
+    var id: Self { self }
+    var title: String {
+        switch self {
+        case .expense: "I spent money"
+        case .income: "I received money"
+        case .saving: "I set money aside"
+        case .investment: "I invested money"
+        case .asset: "An asset balance changed"
+        case .liability: "A debt balance changed"
         }
     }
 }
 
-private struct BalanceSheetItemSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var item: BalanceSheetItem
-    @State private var amount: String
-    let onSave: (BalanceSheetItem) -> Void
+private struct UnifiedFinanceDraft: Identifiable {
+    var id = UUID()
+    var kind: UnifiedFinanceKind = .expense
+    var amount: Double = 0
+    var date = Date.now
+    var note = ""
+    var balanceCategory: BalanceSheetCategory = .cash
+    var balanceItemID: UUID?
 
-    init(item: BalanceSheetItem, onSave: @escaping (BalanceSheetItem) -> Void) {
-        _item = State(initialValue: item)
-        _amount = State(initialValue: item.balance > 0 ? String(format: "%.2f", item.balance) : "")
+    init() {}
+
+    init(item: BalanceSheetItem) {
+        kind = item.category.isAsset ? .asset : .liability
+        amount = item.balance
+        date = item.updatedAt
+        note = item.name
+        balanceCategory = item.category
+        balanceItemID = item.id
+    }
+}
+
+private enum FinanceInputInterpreter {
+    static func parse(_ text: String, now: Date = .now) -> UnifiedFinanceDraft? {
+        let normalized = text.lowercased()
+        let pattern = #"(?:€|eur\s*)\s?([0-9][0-9.,\s]*)|([0-9][0-9.,\s]*)\s?(?:€|eur)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              let amountRange = Range(match.range(at: match.range(at: 1).location != NSNotFound ? 1 : 2), in: text) else { return nil }
+        let raw = String(text[amountRange]).replacingOccurrences(of: " ", with: "")
+        let standardized: String
+        let separators = raw.filter { $0 == "," || $0 == "." }
+        let hasThousandsSuffix = raw.range(of: #"[.,]\d{3}$"#, options: .regularExpression) != nil && separators.count == 1
+        if hasThousandsSuffix {
+            standardized = raw.replacingOccurrences(of: ".", with: "").replacingOccurrences(of: ",", with: "")
+        } else if raw.contains(","), raw.contains(".") {
+            standardized = raw.replacingOccurrences(of: ".", with: "").replacingOccurrences(of: ",", with: ".")
+        } else {
+            standardized = raw.replacingOccurrences(of: ",", with: ".")
+        }
+        guard let amount = Double(standardized), amount > 0 else { return nil }
+
+        var result = UnifiedFinanceDraft()
+        result.amount = amount
+        result.note = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalized.contains("yesterday") { result.date = Calendar.current.date(byAdding: .day, value: -1, to: now) ?? now }
+
+        let snapshot = ["balance", "worth", "owe", "owed", "debt", "loan", "mortgage", "credit card", "bank account", "account has", "portfolio"].contains { normalized.contains($0) }
+        if snapshot && ["owe", "owed", "debt", "loan", "mortgage", "credit card"].contains(where: normalized.contains) {
+            result.kind = .liability
+            result.balanceCategory = normalized.contains("credit card") ? .creditCard : (normalized.contains("loan") || normalized.contains("mortgage") ? .loan : .otherLiability)
+        } else if snapshot {
+            result.kind = .asset
+            if ["portfolio", "brokerage", "shares", "stocks", "etf"].contains(where: normalized.contains) { result.balanceCategory = .investments }
+            else if ["property", "house", "home"].contains(where: normalized.contains) { result.balanceCategory = .property }
+            else { result.balanceCategory = .cash }
+        } else if ["invest", "invested", "investment"].contains(where: normalized.contains) { result.kind = .investment }
+        else if ["save", "saved", "saving"].contains(where: normalized.contains) { result.kind = .saving }
+        else if ["income", "salary", "earned", "received", "refund", "paid me"].contains(where: normalized.contains) { result.kind = .income }
+        else if ["spent", "bought", "paid", "expense", "cost", "purchase"].contains(where: normalized.contains) { result.kind = .expense }
+        else { return nil }
+        return result
+    }
+}
+
+private struct UnifiedFinanceEntrySheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let onSave: (UnifiedFinanceDraft) -> Void
+    @State private var draft: UnifiedFinanceDraft
+    @State private var mode = 0
+    @State private var naturalText = ""
+    @State private var amount = ""
+    @State private var reviewReady = false
+    @State private var error: String?
+    @State private var isClassifying = false
+
+    init(draft: UnifiedFinanceDraft, onSave: @escaping (UnifiedFinanceDraft) -> Void) {
+        _draft = State(initialValue: draft)
+        _amount = State(initialValue: draft.amount > 0 ? String(format: "%.2f", draft.amount) : "")
+        _mode = State(initialValue: draft.balanceItemID == nil ? 0 : 1)
         self.onSave = onSave
     }
 
     var body: some View {
-        MoneyFormShell(
-            title: item.name.isEmpty ? "Add asset or debt" : "Update \(item.name)",
-            explanation: "Enter the latest balance as a positive number. Assets add to net worth; debts reduce it."
-        ) {
-            TextField("Name, for example Main bank", text: $item.name)
-            Picker("Type", selection: $item.category) {
-                Section("What you own") {
-                    ForEach(BalanceSheetCategory.allCases.filter(\.isAsset)) { category in
-                        Label(category.title, systemImage: category.systemImage).tag(category)
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("Entry method", selection: $mode) {
+                        Text("Tell Sakhya").tag(0)
+                        Text("Guided").tag(1)
+                    }
+                    .pickerStyle(.segmented)
+                }
+                if mode == 0 {
+                    Section("What changed?") {
+                        TextEditor(text: $naturalText).frame(minHeight: 90)
+                        Text("Try: “Paid €32 for groceries” or “My savings account balance is €8,400”.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        if let error { Text(error).font(.caption).foregroundStyle(.orange) }
+                        Button(isClassifying ? "Understanding…" : "Review entry") {
+                            Task { await classifyNaturalText() }
+                        }
+                        .disabled(isClassifying || naturalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                } else {
+                    guidedFields
+                }
+                if reviewReady {
+                    Section("Check before saving") {
+                        LabeledContent("Amount", value: draft.amount.formatted(.currency(code: Locale.current.currency?.identifier ?? "EUR")))
+                        LabeledContent("Type", value: draft.kind.title)
+                        LabeledContent("Date", value: draft.date.formatted(date: .abbreviated, time: .omitted))
+                        Text(draft.note).font(.caption).foregroundStyle(.secondary)
+                        Text("This one record feeds every relevant money view. Totals are always calculated from saved records, never by AI.")
+                            .font(.caption2).foregroundStyle(.tertiary)
                     }
                 }
-                Section("What you owe") {
-                    ForEach(BalanceSheetCategory.allCases.filter { !$0.isAsset }) { category in
+            }
+            .formStyle(.grouped)
+            .navigationTitle(draft.balanceItemID == nil ? "Add money activity" : "Update balance")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Confirm & add once") {
+                        if mode == 1 { syncGuidedDraft() }
+                        guard draft.amount > 0, !draft.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+                        onSave(draft)
+                        dismiss()
+                    }
+                    .disabled(mode == 0 && !reviewReady)
+                }
+            }
+        }
+        .frame(minWidth: 430, minHeight: 490)
+    }
+
+    private var guidedFields: some View {
+        Section("One financial event") {
+            Picker("What changed?", selection: $draft.kind) {
+                ForEach(UnifiedFinanceKind.allCases) { kind in Text(kind.title).tag(kind) }
+            }
+            TextField("Amount", text: $amount)
+            DatePicker("When", selection: $draft.date, displayedComponents: .date)
+            if draft.kind == .asset || draft.kind == .liability {
+                Picker("Balance type", selection: $draft.balanceCategory) {
+                    ForEach(BalanceSheetCategory.allCases.filter { $0.isAsset == (draft.kind == .asset) }) { category in
                         Label(category.title, systemImage: category.systemImage).tag(category)
                     }
                 }
             }
-            TextField("Current balance", text: $amount)
-        } save: {
-            guard let value = Double(amount.replacingOccurrences(of: ",", with: ".")),
-                  value >= 0,
-                  !item.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-            item.name = item.name.trimmingCharacters(in: .whitespacesAndNewlines)
-            item.balance = value
-            onSave(item)
-            dismiss()
+            TextField(draft.kind == .asset || draft.kind == .liability ? "Account or balance name" : "What was it for?", text: $draft.note)
         }
+    }
+
+    private func syncGuidedDraft() {
+        draft.amount = Double(amount.replacingOccurrences(of: ",", with: ".")) ?? 0
+    }
+
+    @MainActor
+    private func classifyNaturalText() async {
+        if let parsed = FinanceInputInterpreter.parse(naturalText) {
+            applyReview(parsed)
+            return
+        }
+        guard let token = SakhyaAIAccount.shared.sessionToken else {
+            error = "That entry is ambiguous. Connect Terra in Sakhya AI, or use Guided."
+            return
+        }
+        isClassifying = true
+        defer { isClassifying = false }
+        do {
+            applyReview(try await RemoteFinanceClassifier.classify(naturalText, sessionToken: token))
+        } catch {
+            self.error = "Sakhya could not classify that safely. Use Guided instead."
+        }
+    }
+
+    private func applyReview(_ parsed: UnifiedFinanceDraft) {
+        draft = parsed
+        amount = String(format: "%.2f", parsed.amount)
+        reviewReady = true
+        error = nil
+    }
+}
+
+private enum RemoteFinanceClassifier {
+    private static let endpoint = URL(string: "https://sakhya-everyday.deepanddev.chatgpt.site/api/native/finance/classify")!
+
+    static func classify(_ text: String, sessionToken: String) async throws -> UnifiedFinanceDraft {
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(sessionToken)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONEncoder().encode(RequestBody(text: text, timezone: TimeZone.current.identifier))
+        request.timeoutInterval = 30
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else { throw URLError(.badServerResponse) }
+        let result = try JSONDecoder().decode(ResponseBody.self, from: data).classification
+        guard let kind = UnifiedFinanceKind(rawValue: result.kind), result.amount > 0 else { throw URLError(.cannotParseResponse) }
+        var draft = UnifiedFinanceDraft()
+        draft.kind = kind
+        draft.amount = result.amount
+        draft.note = result.title
+        draft.date = ISO8601DateFormatter().date(from: result.date) ?? .now
+        if let category = result.balanceCategory.flatMap(BalanceSheetCategory.init(rawValue:)) { draft.balanceCategory = category }
+        return draft
+    }
+
+    private struct RequestBody: Encodable { let text: String; let timezone: String }
+    private struct ResponseBody: Decodable { let classification: Classification }
+    private struct Classification: Decodable {
+        let kind: String
+        let title: String
+        let amount: Double
+        let date: String
+        let balanceCategory: String?
     }
 }
 
