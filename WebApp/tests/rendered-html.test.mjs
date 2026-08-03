@@ -5,6 +5,7 @@ import test from "node:test";
 
 const port = 31_000 + (process.pid % 1_000);
 const origin = `http://localhost:${port}`;
+const signedOutHeaders = { "oai-authenticated-user-email": "" };
 let server;
 
 async function render() {
@@ -66,7 +67,10 @@ test("server-renders the Sakhya everyday app", async () => {
 });
 
 test("rejects unauthenticated state access", async () => {
-  const response = await fetch(`${origin}/api/state`, { redirect: "manual" });
+  const response = await fetch(`${origin}/api/state`, {
+    redirect: "manual",
+    headers: signedOutHeaders,
+  });
   assert.equal(response.status, 401);
   assert.match(response.headers.get("cache-control") ?? "", /no-store/);
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
@@ -76,6 +80,7 @@ test("rejects unauthenticated assistant access", async () => {
   const response = await fetch(`${origin}/api/assistant`, {
     method: "POST",
     headers: {
+      ...signedOutHeaders,
       "content-type": "application/json",
       origin,
       "x-sakhya-request": "1",
@@ -90,12 +95,14 @@ test("rejects unauthenticated assistant access", async () => {
 });
 
 test("protects shared lists behind authentication and same-origin mutations", async () => {
-  const unauthenticated = await fetch(`${origin}/api/shared-lists`);
+  const unauthenticated = await fetch(`${origin}/api/shared-lists`, {
+    headers: signedOutHeaders,
+  });
   assert.equal(unauthenticated.status, 401);
 
   const untrusted = await fetch(`${origin}/api/shared-lists`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { ...signedOutHeaders, "content-type": "application/json" },
     body: JSON.stringify({ action: "join", code: "AAAAAAAAAAAAAAAAAAAA" }),
   });
   assert.equal(untrusted.status, 403);
