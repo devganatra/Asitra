@@ -1,4 +1,4 @@
-import { jsonResponse } from "../../../security";
+import { hasStoredConsent, jsonResponse } from "../../../security";
 import {
   AIConfigurationError,
   classifyFinanceWithAsitraAI,
@@ -9,6 +9,9 @@ import { authenticatedNativeUser, consumeNativeAIRateLimit } from "../../securit
 export async function POST(request: Request) {
   const userId = await authenticatedNativeUser(request);
   if (!userId) return jsonResponse({ error: "Asitra AI sign-in is required." }, 401);
+  if (!(await hasStoredConsent(userId, "ai_analysis"))) {
+    return jsonResponse({ error: "AI data consent is required.", code: "AI_CONSENT_REQUIRED" }, 403);
+  }
   if (!(await consumeNativeAIRateLimit(userId))) return jsonResponse({ error: "The hourly AI limit has been reached." }, 429);
   try {
     const body = (await request.json()) as Record<string, unknown>;

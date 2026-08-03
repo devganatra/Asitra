@@ -1,4 +1,4 @@
-import { authenticatedUserKey, database, isTrustedMutation, jsonResponse, uploads } from "../security";
+import { authenticatedUserKey, consumeRateLimit, database, isTrustedMutation, jsonResponse, uploads } from "../security";
 import { validatePersistedState } from "../../state-schema";
 
 const MAX_STATE_BYTES = 2_000_000;
@@ -6,6 +6,9 @@ const MAX_STATE_BYTES = 2_000_000;
 export async function GET(request: Request) {
   const userId = await authenticatedUserKey(request);
   if (!userId) return jsonResponse({ error: "Authentication required." }, 401);
+  if (!(await consumeRateLimit(userId, "state-write", 180))) {
+    return jsonResponse({ error: "Too many updates. Please wait before trying again." }, 429);
+  }
 
   const row = await database()
     .prepare("SELECT state_json AS stateJson, version, updated_at AS updatedAt FROM user_states WHERE user_id = ?")
@@ -44,6 +47,11 @@ export async function PUT(request: Request) {
 
   const updatedAt = new Date().toISOString();
   const db = database();
+  const previous = expectedVersion > 0
+    ? await db.prepare("SELECT state_json AS stateJson, version FROM user_states WHERE user_id = ? AND version = ?")
+        .bind(userId, expectedVersion)
+        .first<{ stateJson: string; version: number }>()
+    : null;
   let nextVersion: number;
   if (expectedVersion === 0) {
     const result = await db
@@ -69,6 +77,7 @@ export async function PUT(request: Request) {
     }
     nextVersion = expectedVersion + 1;
   }
+  if (previous) await saveRecoveryRevision(userId, previous.stateJson, previous.version, updatedAt);
   await cleanAbandonedUploads(userId, state);
   return jsonResponse({ ok: true, version: nextVersion, updatedAt });
 }
@@ -77,6 +86,9 @@ export async function DELETE(request: Request) {
   if (!isTrustedMutation(request)) return jsonResponse({ error: "Untrusted request." }, 403);
   const userId = await authenticatedUserKey(request);
   if (!userId) return jsonResponse({ error: "Authentication required." }, 401);
+  if (!(await consumeRateLimit(userId, "account-delete", 3, 24 * 60))) {
+    return jsonResponse({ error: "Too many deletion attempts. Try again tomorrow." }, 429);
+  }
   const confirmation =
     request.headers.get("x-asitra-confirm-delete") ??
     request.headers.get("x-sakhya-confirm-delete");
@@ -107,9 +119,27 @@ export async function DELETE(request: Request) {
     db.prepare("DELETE FROM native_ai_usage WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM native_sessions WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM shared_list_members WHERE user_id = ?").bind(userId),
+    db.prepare("DELETE FROM state_revisions WHERE user_id = ?").bind(userId),
+    db.prepare("DELETE FROM user_consents WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM user_states WHERE user_id = ?").bind(userId),
   ]);
+  // If this is an independent Google/Apple account, remove its provider links
+  // and sessions too. Legacy hosted identities do not have a matching row.
+  await db.prepare("DELETE FROM user WHERE id = ?").bind(userId).run();
   return jsonResponse({ ok: true });
+}
+
+async function saveRecoveryRevision(userId: string, stateJson: string, version: number, createdAt: string) {
+  const db = database();
+  await db.batch([
+    db.prepare("INSERT INTO state_revisions (id, user_id, state_json, version, created_at) VALUES (?, ?, ?, ?, ?)")
+      .bind(crypto.randomUUID(), userId, stateJson, version, createdAt),
+    db.prepare(
+      `DELETE FROM state_revisions WHERE user_id = ? AND id IN (
+         SELECT id FROM state_revisions WHERE user_id = ? ORDER BY created_at DESC LIMIT -1 OFFSET 20
+       )`,
+    ).bind(userId, userId),
+  ]);
 }
 
 async function cleanAbandonedUploads(

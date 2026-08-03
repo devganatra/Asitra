@@ -1,6 +1,7 @@
 import {
   authenticatedUserKey,
   consumeRateLimit,
+  hasStoredConsent,
   isTrustedMutation,
   jsonResponse,
 } from "../../security";
@@ -28,6 +29,10 @@ export async function POST(request: Request) {
     if (!text || text.length > MAX_TEXT_LENGTH) throw new Error("Invalid input.");
   } catch {
     return jsonResponse({ error: "Enter one short financial statement." }, 400);
+  }
+
+  if (!(await hasStoredConsent(userId, "ai_analysis"))) {
+    return jsonResponse({ error: "AI data consent is required.", code: "AI_CONSENT_REQUIRED" }, 403);
   }
 
   try {

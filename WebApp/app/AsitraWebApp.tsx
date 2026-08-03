@@ -401,6 +401,8 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [policyOpen, setPolicyOpen] = useState(false);
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const [recoveryPoints, setRecoveryPoints] = useState<Array<{ id: string; version: number; createdAt: string }>>([]);
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [aiConsent, setAIConsent] = useState(false);
@@ -526,7 +528,39 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
         if (response.ok) setAIContract((await response.json()) as AsitraAIContract);
       })
       .catch(() => undefined);
+    void fetch("/api/account/consent", { cache: "no-store", credentials: "same-origin" })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const payload = (await response.json()) as { consents?: Array<{ purpose: string; granted: boolean }> };
+        setAIConsent(payload.consents?.some((item) => item.purpose === "ai_analysis" && item.granted) ?? false);
+      })
+      .catch(() => undefined);
   }, []);
+
+  async function updateAIConsent(granted: boolean) {
+    const response = await fetch("/api/account/consent", {
+      method: "PUT",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json", "x-asitra-request": "1" },
+      body: JSON.stringify({ purpose: "ai_analysis", granted }),
+    });
+    if (!response.ok) {
+      setNotice("Your AI privacy choice could not be saved. It remains off.");
+      setAIConsent(false);
+      return;
+    }
+    setAIConsent(granted);
+    setNotice(granted ? "AI analysis is enabled for this account." : "AI analysis is off. Asitra will use local insights only.");
+  }
+
+  async function logOut() {
+    if (!logoutPath.startsWith("/api/auth/")) {
+      window.location.assign(logoutPath);
+      return;
+    }
+    await fetch(logoutPath, { method: "POST", credentials: "same-origin" }).catch(() => undefined);
+    window.location.assign("/login");
+  }
 
   useEffect(() => {
     if (!hydrated || accountDeletedRef.current) return;
@@ -1336,15 +1370,55 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
     setDeleteAccountOpen(false);
     setState(emptyState);
     stateVersionRef.current = 0;
-    setNotice("Your Asitra account data and uploaded photos were deleted.");
+    setNotice("Your Asitra account data, recovery copies and uploaded files were deleted.");
+    if (logoutPath.startsWith("/api/auth/")) {
+      await fetch(logoutPath, { method: "POST", credentials: "same-origin" }).catch(() => undefined);
+      window.location.assign("/login");
+    }
   }
 
-  function exportData() {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  async function openRecovery() {
+    const response = await fetch("/api/account/recovery", { cache: "no-store", credentials: "same-origin" });
+    if (!response.ok) {
+      setNotice("Recovery history could not be loaded.");
+      return;
+    }
+    const payload = (await response.json()) as { revisions?: Array<{ id: string; version: number; createdAt: string }> };
+    setRecoveryPoints(payload.revisions ?? []);
+    setRecoveryOpen(true);
+  }
+
+  async function restoreRecoveryPoint(revisionId: string) {
+    if (!window.confirm("Restore this recovery point? Asitra will first preserve your current workspace as another recovery point.")) return;
+    const response = await fetch("/api/account/recovery", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json", "x-asitra-request": "1" },
+      body: JSON.stringify({ revisionId, expectedVersion: stateVersionRef.current, confirmation: "RESTORE BACKUP" }),
+    });
+    const payload = (await response.json()) as { state?: unknown; version?: number; error?: string };
+    if (!response.ok || !payload.state || typeof payload.version !== "number") {
+      setNotice(payload.error ?? "That recovery point could not be restored.");
+      return;
+    }
+    const restored = validatePersistedState(payload.state) as PersistedState;
+    stateVersionRef.current = payload.version;
+    setState(restored);
+    setRecoveryOpen(false);
+    setNotice("Your workspace was restored. The previous version remains in recovery history.");
+  }
+
+  async function exportData() {
+    const response = await fetch("/api/account/export", { cache: "no-store", credentials: "same-origin" });
+    if (!response.ok) {
+      setNotice("Your account export could not be prepared. No data was changed.");
+      return;
+    }
+    const blob = await response.blob();
     const href = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = href;
-    anchor.download = `asitra-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.download = `asitra-data-${new Date().toISOString().slice(0, 10)}.json`;
     anchor.click();
     URL.revokeObjectURL(href);
   }
@@ -1753,12 +1827,13 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
                   <span>Your web data is isolated by account and protected by the private Asitra service.</span>
                 </div>
               </div>
-              <button className="settings-row" onClick={exportData}><Download size={18} /><span><strong>Export backup</strong><small>Download all entries, lists and plans</small></span><ArrowRight size={16} /></button>
+              <button className="settings-row" onClick={() => void exportData()}><Download size={18} /><span><strong>Download my data</strong><small>Export records, consent history and file manifest</small></span><ArrowRight size={16} /></button>
               <label className="settings-row"><Upload size={18} /><span><strong>Import backup</strong><small>Restore an Asitra JSON file</small></span><ArrowRight size={16} /><input type="file" accept=".json,application/json" onChange={importData} hidden /></label>
+              <button className="settings-row" onClick={() => void openRecovery()}><RotateCcw size={18} /><span><strong>Recovery history</strong><small>Restore one of the last 20 saved versions</small></span><ArrowRight size={16} /></button>
               <button className="settings-row" onClick={resetData}><RotateCcw size={18} /><span><strong>Restore sample workspace</strong><small>Requires confirmation</small></span><ArrowRight size={16} /></button>
               <button className="settings-row" onClick={() => setPolicyOpen(true)}><ShieldCheck size={18} /><span><strong>Privacy and AI</strong><small>See how your journal, health and money data are used</small></span><ArrowRight size={16} /></button>
               <button className="settings-row" onClick={() => { setOnboardingStep(0); setOnboardingOpen(true); }}><Sparkles size={18} /><span><strong>Show getting-started tour</strong><small>See how capture, views and privacy work</small></span><ArrowRight size={16} /></button>
-              <a className="settings-row logout-row" href={logoutPath}><LogOut size={18} /><span><strong>Log out</strong><small>End this Asitra session on this browser</small></span><ArrowRight size={16} /></a>
+              <button className="settings-row logout-row" onClick={() => void logOut()}><LogOut size={18} /><span><strong>Log out</strong><small>End this Asitra session on this browser</small></span><ArrowRight size={16} /></button>
               <button className="settings-row danger-row" onClick={() => setDeleteAccountOpen(true)}><X size={18} /><span><strong>Delete account data</strong><small>Permanently remove records and uploaded photos</small></span><ArrowRight size={16} /></button>
             </section>
             <section className="panel settings-page-card">
@@ -1973,7 +2048,7 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
                 <button className="account-menu-backdrop" onClick={() => setAccountMenuOpen(false)} aria-label="Close account menu" />
                 <div className="account-menu" role="menu">
                   <div><span>Signed in as</span><strong>{userName}</strong></div>
-                  <a href={logoutPath} role="menuitem"><LogOut size={16} /> Log out</a>
+                  <button type="button" onClick={() => void logOut()} role="menuitem"><LogOut size={16} /> Log out</button>
                 </div>
               </>
             )}
@@ -2082,7 +2157,7 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
               )}
             </div>
             <label className="ai-consent-row">
-              <input type="checkbox" checked={aiConsent} onChange={(event) => setAIConsent(event.target.checked)} />
+              <input type="checkbox" checked={aiConsent} onChange={(event) => void updateAIConsent(event.target.checked)} />
               <span><strong>Allow AI analysis</strong><small>Send the question and relevant recent Asitra records to OpenAI. Turn this off to use local insights only.</small></span>
             </label>
             <div className="privacy-line"><Lock size={13} /> Your key stays on the server. Requests use no-store processing and are limited to 20 per hour.</div>
@@ -2139,10 +2214,29 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
           <button className="modal-backdrop" onClick={() => setPolicyOpen(false)} aria-label="Close privacy information" />
           <section className="policy-modal">
             <div className="section-heading"><div><span className="eyebrow">Your control</span><h2>Privacy and AI</h2></div><button className="icon-button" onClick={() => setPolicyOpen(false)} aria-label="Close"><X size={18} /></button></div>
-            <p>Your account records are stored privately for Asitra’s timeline, lists, trackers and money views. Uploaded photos are private and require your signed-in account.</p>
+            <p>Your account records are stored privately for Asitra’s timeline, lists, trackers and money views. Pictures, PDFs and voice notes are private and require your signed-in account.</p>
             <p>AI is optional. When enabled, Asitra sends your question and a limited selection of relevant records from the last 90 days to OpenAI to answer it. Asitra requests no-store processing and never puts the API key in your browser.</p>
             <p>Health and financial information is shown for personal organization, not medical, tax, investment or accounting advice. You can export your data or permanently delete it at any time.</p>
             <p><strong>Launch policy version:</strong> 3 August 2026. Contact: ganatra.dev@gmail.com</p>
+            <p><a href="/privacy">Read the complete privacy policy</a></p>
+          </section>
+        </div>
+      )}
+      {recoveryOpen && (
+        <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Recovery history">
+          <button className="modal-backdrop" onClick={() => setRecoveryOpen(false)} aria-label="Close recovery history" />
+          <section className="edit-modal recovery-modal">
+            <div className="section-heading"><div><span className="eyebrow">Protected history</span><h2>Recovery points</h2></div><button className="icon-button" onClick={() => setRecoveryOpen(false)} aria-label="Close"><X size={18} /></button></div>
+            <p>Asitra keeps up to 20 recent versions. Restoring never removes your current version—it becomes a new recovery point first.</p>
+            <div className="recovery-list">
+              {recoveryPoints.length === 0 && <p>No earlier recovery points are available yet.</p>}
+              {recoveryPoints.map((point) => (
+                <button key={point.id} onClick={() => void restoreRecoveryPoint(point.id)}>
+                  <span><strong>{new Date(point.createdAt).toLocaleString()}</strong><small>Saved version {point.version}</small></span>
+                  <RotateCcw size={17} />
+                </button>
+              ))}
+            </div>
           </section>
         </div>
       )}

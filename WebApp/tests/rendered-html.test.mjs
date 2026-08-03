@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
@@ -35,6 +35,14 @@ async function render() {
 }
 
 test.before(async () => {
+  const migration = spawnSync(
+    process.execPath,
+    ["node_modules/wrangler/bin/wrangler.js", "d1", "migrations", "apply", "DB", "--local", "--config", "dist/server/wrangler.json"],
+    { cwd: new URL("..", import.meta.url), encoding: "utf8" },
+  );
+  if (migration.status !== 0) {
+    throw new Error(`Local D1 migrations failed:\n${migration.stdout}\n${migration.stderr}`);
+  }
   server = spawn(
     process.execPath,
     [
@@ -44,6 +52,14 @@ test.before(async () => {
       "dist/server/wrangler.json",
       "--port",
       String(port),
+      "--var",
+      "BETTER_AUTH_SECRET:integration-test-secret-at-least-32-bytes-long",
+      "--var",
+      `ASITRA_PUBLIC_URL:${origin}`,
+      "--var",
+      "GOOGLE_CLIENT_ID:integration-test.apps.googleusercontent.com",
+      "--var",
+      "GOOGLE_CLIENT_SECRET:integration-test-google-secret",
     ],
     { cwd: new URL("..", import.meta.url), stdio: "ignore" },
   );
@@ -91,6 +107,100 @@ test("rejects unauthenticated state access", async () => {
   assert.equal(response.status, 401);
   assert.match(response.headers.get("cache-control") ?? "", /no-store/);
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+});
+
+test("shows independent public sign-in without exposing provider secrets", async () => {
+  const signedOut = await integrationFetch("/", { redirect: "manual", headers: signedOutHeaders });
+  assert.equal(signedOut.status, 307);
+  assert.equal(new URL(signedOut.headers.get("location")).pathname, "/login");
+
+  const login = await integrationFetch("/login", { headers: signedOutHeaders });
+  assert.equal(login.status, 200);
+  assert.match(await login.text(), /Welcome to Asitra/);
+
+  const providers = await integrationFetch("/api/auth/providers");
+  assert.equal(providers.status, 200);
+  const body = await providers.json();
+  assert.deepEqual(body, { configured: true, google: true, apple: false });
+  assert.doesNotMatch(JSON.stringify(body), /secret|key/i);
+
+  const oauth = await integrationFetch("/api/auth/sign-in/social", {
+    method: "POST",
+    headers: { "content-type": "application/json", origin },
+    body: JSON.stringify({ provider: "google", callbackURL: "/" }),
+  });
+  assert.equal(oauth.status, 200);
+  const oauthBody = await oauth.json();
+  assert.match(oauthBody.url, /^https:\/\/accounts\.google\.com\//);
+  assert.doesNotMatch(JSON.stringify(oauthBody), /integration-test-google-secret/);
+});
+
+test("publishes the privacy and data-control policy", async () => {
+  const response = await integrationFetch("/privacy");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /Your life data stays under your control/);
+  assert.match(html, /Cloudflare D1/);
+  assert.match(html, /withdraw AI consent/i);
+});
+
+test("isolates records and R2 attachments, exports data, creates recovery points, and deletes everything", async () => {
+  const ownerEmail = `owner-${process.pid}@example.com`;
+  const otherEmail = `other-${process.pid}@example.com`;
+  const ownerHeaders = { "oai-authenticated-user-email": ownerEmail };
+  const state = {
+    onboardingCompleted: true,
+    entries: [], lists: [], trackers: [],
+    monthlyBudget: 900, savingsTarget: 2000, savingsCurrent: 300,
+    moneyEntries: [], balanceSheetItems: [],
+  };
+  const saved = await integrationFetch("/api/state", {
+    method: "PUT",
+    headers: { ...ownerHeaders, "content-type": "application/json", origin, "x-asitra-request": "1", "if-match": "0" },
+    body: JSON.stringify(state),
+  });
+  assert.equal(saved.status, 200);
+  assert.equal((await saved.json()).version, 1);
+
+  const otherState = await integrationFetch("/api/state", { headers: { "oai-authenticated-user-email": otherEmail } });
+  assert.equal(otherState.status, 204);
+
+  const secondSave = await integrationFetch("/api/state", {
+    method: "PUT",
+    headers: { ...ownerHeaders, "content-type": "application/json", origin, "x-asitra-request": "1", "if-match": "1" },
+    body: JSON.stringify({ ...state, monthlyBudget: 950 }),
+  });
+  assert.equal(secondSave.status, 200);
+  const recovery = await integrationFetch("/api/account/recovery", { headers: ownerHeaders });
+  assert.equal(recovery.status, 200);
+  assert.equal((await recovery.json()).revisions.length, 1);
+
+  const image = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const uploaded = await integrationFetch("/api/attachments", {
+    method: "POST",
+    headers: { ...ownerHeaders, "content-type": "image/png", origin, "x-asitra-request": "1", "x-asitra-filename": "private.png" },
+    body: image,
+  });
+  assert.equal(uploaded.status, 201);
+  const attachment = await uploaded.json();
+  assert.match(attachment.url, /^\/api\/attachments\/[0-9a-f-]{36}$/i);
+  assert.equal((await integrationFetch(attachment.url, { headers: ownerHeaders })).status, 200);
+  assert.equal((await integrationFetch(attachment.url, { headers: { "oai-authenticated-user-email": otherEmail } })).status, 404);
+
+  const exported = await integrationFetch("/api/account/export", { headers: ownerHeaders });
+  assert.equal(exported.status, 200);
+  assert.match(exported.headers.get("content-disposition") ?? "", /asitra-data-/);
+  const exportBody = await exported.json();
+  assert.equal(exportBody.state.monthlyBudget, 950);
+  assert.equal(exportBody.attachments.length, 1);
+
+  const deleted = await integrationFetch("/api/state", {
+    method: "DELETE",
+    headers: { ...ownerHeaders, origin, "x-asitra-request": "1", "x-asitra-confirm-delete": "DELETE MY ACCOUNT" },
+  });
+  assert.equal(deleted.status, 200);
+  assert.equal((await integrationFetch(attachment.url, { headers: ownerHeaders })).status, 404);
+  assert.equal((await integrationFetch("/api/state", { headers: ownerHeaders })).status, 204);
 });
 
 test("rejects unauthenticated assistant access", async () => {
@@ -143,6 +253,17 @@ test("requires explicit consent before AI receives account context", async () =>
 });
 
 test("keeps the model service disabled when its server secret is absent", async () => {
+  const consent = await integrationFetch("/api/account/consent", {
+    method: "PUT",
+    headers: {
+      "content-type": "application/json",
+      origin,
+      "oai-authenticated-user-email": "security-test@example.com",
+      "x-asitra-request": "1",
+    },
+    body: JSON.stringify({ purpose: "ai_analysis", granted: true }),
+  });
+  assert.equal(consent.status, 200);
   const response = await integrationFetch("/api/assistant", {
     method: "POST",
     headers: {
@@ -219,7 +340,8 @@ test("ships the secured product source without starter artifacts", async () => {
     readFile(new URL("../app/api/state/route.ts", import.meta.url), "utf8"),
   ]);
 
-  assert.match(page, /requireChatGPTUser/);
+  assert.match(page, /betterAuthSession/);
+  assert.match(page, /redirect\("\/login"\)/);
   assert.match(page, /chatGPTSignOutPath/);
   assert.match(client, /\/api\/state/);
   assert.match(client, /toggleListening/);

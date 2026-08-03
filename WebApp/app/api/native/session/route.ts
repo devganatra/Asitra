@@ -1,9 +1,12 @@
-import { jsonResponse } from "../../security";
+import { consumeAnonymousRateLimit, jsonResponse } from "../../security";
 import { createNativeSession, revokeNativeSession } from "../security";
 
 const MAX_REQUEST_BYTES = 12_000;
 
 export async function POST(request: Request) {
+  if (!(await consumeAnonymousRateLimit(request, "native-sign-in", 12, 15))) {
+    return jsonResponse({ error: "Too many sign-in attempts. Try again later." }, 429);
+  }
   if (request.headers.get("content-type")?.split(";")[0] !== "application/json") {
     return jsonResponse({ error: "JSON is required." }, 415);
   }

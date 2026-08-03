@@ -33,6 +33,92 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+.login-shell,
+.privacy-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(111, 143, 123, 0.22), transparent 34%),
+    radial-gradient(circle at 82% 88%, rgba(230, 149, 92, 0.12), transparent 31%),
+    var(--canvas);
+}
+
+.login-card,
+.privacy-card {
+  width: min(480px, 100%);
+  padding: clamp(28px, 5vw, 48px);
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  border-radius: 30px;
+  background: rgba(251, 252, 248, 0.94);
+  box-shadow: 0 28px 90px rgba(29, 45, 35, 0.13);
+  backdrop-filter: blur(18px);
+}
+
+.login-mark {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 28px;
+  border-radius: 17px;
+  color: white;
+  background: linear-gradient(145deg, #5d866c, #2f5641);
+  box-shadow: 0 13px 28px rgba(49, 87, 65, 0.24);
+  font: 500 27px/1 Georgia, serif;
+}
+
+.login-eyebrow {
+  margin: 0 0 9px;
+  color: var(--sage);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.login-card h1,
+.privacy-card h1 {
+  margin: 0;
+  font: 600 clamp(32px, 7vw, 46px)/1.05 Georgia, serif;
+  letter-spacing: -0.04em;
+}
+
+.login-copy,
+.privacy-lead {
+  margin: 18px 0 28px;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.login-actions { display: grid; gap: 10px; }
+.login-provider {
+  min-height: 50px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: white;
+  font-weight: 720;
+  cursor: pointer;
+}
+.login-provider:hover { border-color: var(--sage); box-shadow: 0 8px 22px rgba(35, 48, 40, 0.08); }
+.login-provider:disabled { opacity: 0.55; cursor: wait; }
+.login-provider-apple { border-color: #141a16; color: white; background: #141a16; }
+.login-notice,
+.login-error { padding: 12px; border-radius: 12px; background: #f1eee8; color: var(--muted); }
+.login-error { color: #97382f; background: #fff0ee; }
+.login-legal { margin: 22px 0 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+.login-legal a,
+.privacy-card a { color: var(--sage); }
+
+.privacy-shell { place-items: start center; }
+.privacy-card { width: min(800px, 100%); }
+.privacy-back { display: inline-block; margin-bottom: 34px; text-decoration: none; font-weight: 700; }
+.privacy-card h2 { margin: 32px 0 8px; font-size: 18px; }
+.privacy-card p,
+.privacy-card li { color: var(--muted); line-height: 1.72; }
+.privacy-card ul { padding-left: 22px; }
+
 button,
 input,
 textarea,
@@ -3108,6 +3194,21 @@ h3 {
 }
 .danger-button:disabled { opacity: 0.45; }
 .danger-row { color: #9d392f; }
+.recovery-modal > p { color: var(--muted); line-height: 1.55; }
+.recovery-list { display: grid; gap: 8px; max-height: min(50vh, 430px); overflow: auto; }
+.recovery-list > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--canvas);
+  text-align: left;
+}
+.recovery-list span { display: grid; gap: 3px; }
+.recovery-list small { color: var(--muted); }
 .header-actions { display: flex; align-items: center; gap: 9px; }
 .invite-code {
   padding: 16px;
