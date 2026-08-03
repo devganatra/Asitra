@@ -12,6 +12,7 @@ All notable changes to Sakhya are recorded here.
 - Captured list items route to reminders, groceries, or travel lists and preserve due labels.
 - Work-life totals now use recorded durations consistently.
 - The floating Sakhya assistant opens reliably and exposes its dialog state accessibly.
+- Returning to Today after viewing a future reminder now resets the calendar to the current day.
 
 ## 0.1.0 Beta 1 — 2026-07-14
 
