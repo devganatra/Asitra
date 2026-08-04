@@ -355,7 +355,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				"CODE_SIGN_STYLE[sdk=macosx*]" = Manual;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -395,7 +395,7 @@
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = AppleMobileApp/AppleMobileApp.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = AppleMobileApp/AppleMobileAppMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
