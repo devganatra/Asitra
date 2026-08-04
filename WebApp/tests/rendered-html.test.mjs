@@ -19,14 +19,62 @@ function captureServerOutput(chunk) {
 function stoppedServerError() {
   const diagnostic = serverOutput.trim();
   return new Error(
-    `Local security test server stopped unexpectedly.${diagnostic ? `\n${diagnostic}` : ""}`,
+    `Local security test server stopped unexpectedly (exit ${server?.exitCode ?? "unknown"}, signal ${server?.signalCode ?? "none"}).${diagnostic ? `\n${diagnostic}` : ""}`,
   );
+}
+
+function serverStopped() {
+  return !server || server.exitCode !== null || server.signalCode !== null;
+}
+
+async function startServer() {
+  if (!serverStopped()) return;
+
+  server = spawn(
+    process.execPath,
+    [
+      "node_modules/wrangler/bin/wrangler.js",
+      "dev",
+      "--config",
+      "dist/server/wrangler.json",
+      "--port",
+      String(port),
+      "--persist-to",
+      persistencePath,
+      "--log-level",
+      "debug",
+      "--var",
+      "BETTER_AUTH_SECRET:integration-test-secret-at-least-32-bytes-long",
+      "--var",
+      `ASITRA_PUBLIC_URL:${origin}`,
+      "--var",
+      "GOOGLE_CLIENT_ID:integration-test.apps.googleusercontent.com",
+      "--var",
+      "GOOGLE_CLIENT_SECRET:integration-test-google-secret",
+    ],
+    { cwd: new URL("..", import.meta.url), stdio: ["ignore", "pipe", "pipe"] },
+  );
+  server.stdout.on("data", captureServerOutput);
+  server.stderr.on("data", captureServerOutput);
+
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (serverStopped()) throw stoppedServerError();
+    try {
+      const response = await fetch(origin, { redirect: "manual" });
+      if (response.status > 0) return;
+    } catch {
+      // Wrangler is still starting.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error("Local security test server did not become ready.");
 }
 
 async function integrationFetch(path, init) {
   let response;
   let lastError;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await startServer();
     try {
       response = await fetch(`${origin}${path}`, init);
       if (response.status !== 500) return response;
@@ -34,9 +82,9 @@ async function integrationFetch(path, init) {
     } catch (error) {
       lastError = error;
     }
-    if (server?.exitCode !== null) throw stoppedServerError();
-    await new Promise((resolve) => setTimeout(resolve, 40));
+    await new Promise((resolve) => setTimeout(resolve, 80));
   }
+  if (serverStopped()) throw stoppedServerError();
   if (response) return response;
   throw lastError;
 }
@@ -70,44 +118,7 @@ test.before(async () => {
   if (migration.status !== 0) {
     throw new Error(`Local D1 migrations failed:\n${migration.stdout}\n${migration.stderr}`);
   }
-  server = spawn(
-    process.execPath,
-    [
-      "node_modules/wrangler/bin/wrangler.js",
-      "dev",
-      "--config",
-      "dist/server/wrangler.json",
-      "--port",
-      String(port),
-      "--persist-to",
-      persistencePath,
-      "--log-level",
-      "error",
-      "--var",
-      "BETTER_AUTH_SECRET:integration-test-secret-at-least-32-bytes-long",
-      "--var",
-      `ASITRA_PUBLIC_URL:${origin}`,
-      "--var",
-      "GOOGLE_CLIENT_ID:integration-test.apps.googleusercontent.com",
-      "--var",
-      "GOOGLE_CLIENT_SECRET:integration-test-google-secret",
-    ],
-    { cwd: new URL("..", import.meta.url), stdio: ["ignore", "pipe", "pipe"] },
-  );
-  server.stdout.on("data", captureServerOutput);
-  server.stderr.on("data", captureServerOutput);
-
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    if (server.exitCode !== null) throw stoppedServerError();
-    try {
-      const response = await fetch(origin, { redirect: "manual" });
-      if (response.status > 0) return;
-    } catch {
-      // Wrangler is still starting.
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error("Local security test server did not become ready.");
+  await startServer();
 });
 
 test.after(() => {
