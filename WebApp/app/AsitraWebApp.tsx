@@ -7,6 +7,7 @@ import {
   BookOpen,
   Brain,
   CalendarDays,
+  CalendarClock,
   Camera,
   Check,
   CheckCircle2,
@@ -26,6 +27,7 @@ import {
   Mic,
   Moon,
   MoreHorizontal,
+  Pencil,
   Plus,
   RotateCcw,
   Search,
@@ -34,6 +36,7 @@ import {
   ShieldCheck,
   Sparkles,
   Target,
+  Trash2,
   Upload,
   Users,
   WalletCards,
@@ -52,6 +55,7 @@ import {
   type ParsedMoneyInstruction,
 } from "./money-import";
 import { type EntryKind, parseCapture } from "./capture-parser";
+import { finitePriorityView, initialPriorityIds, personalFinancePerspectives, postponeDate, validateTaskPlan } from "./mindset-models";
 import { validatePersistedState } from "./state-schema";
 
 type Section = "today" | "lists" | "track" | "money" | "balance" | "settings";
@@ -74,6 +78,11 @@ type ListItem = {
   text: string;
   done: boolean;
   due?: string;
+  plannedDate?: string;
+  planMode?: "anytime" | "exact" | "window";
+  startTime?: string;
+  endTime?: string;
+  durationMinutes?: number;
 };
 
 type LifeList = {
@@ -116,6 +125,22 @@ type MoneyDraft = {
   existingBalanceID?: string;
 };
 
+type TaskEditorDraft = {
+  listId: string;
+  itemId: string;
+  text: string;
+  plannedDate: string;
+  planMode: "anytime" | "exact" | "window";
+  startTime: string;
+  endTime: string;
+  durationMinutes: string;
+};
+
+type EditingMoneyRecord =
+  | { source: "expense"; id: string }
+  | { source: "money"; id: string }
+  | { source: "balance"; id: string };
+
 type BalanceSheetCategory =
   | "cash"
   | "investments"
@@ -138,6 +163,8 @@ type PersistedState = {
   entries: Entry[];
   lists: LifeList[];
   trackers: Tracker[];
+  priorityDay: string;
+  todayPriorityIds: string[];
   monthlyBudget: number;
   savingsTarget: number;
   savingsCurrent: number;
@@ -155,11 +182,24 @@ const EMPTY_MONEY_DRAFT: MoneyDraft = {
   note: "",
   balanceCategory: "cash",
 };
+
+const EMPTY_TASK_DRAFT: TaskEditorDraft = {
+  listId: "",
+  itemId: "",
+  text: "",
+  plannedDate: localDateKey(),
+  planMode: "anytime",
+  startTime: "09:00",
+  endTime: "10:00",
+  durationMinutes: "60",
+};
 const emptyState: PersistedState = {
   onboardingCompleted: false,
   entries: [],
   lists: [],
   trackers: [],
+  priorityDay: "",
+  todayPriorityIds: [],
   monthlyBudget: 0,
   savingsTarget: 0,
   savingsCurrent: 0,
@@ -167,7 +207,6 @@ const emptyState: PersistedState = {
   balanceSheetItems: [],
 };
 const currency = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
-const weekdayOnly = new Intl.DateTimeFormat("en", { weekday: "short" });
 const longDate = new Intl.DateTimeFormat("en", {
   weekday: "long",
   day: "numeric",
@@ -180,6 +219,32 @@ function atDayOffset(days: number, hour: number, minute = 0) {
   date.setDate(date.getDate() + days);
   date.setHours(hour, minute, 0, 0);
   return date.toISOString();
+}
+
+function localDateKey(date = new Date()) {
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+}
+
+function dateKeyAtOffset(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return localDateKey(date);
+}
+
+function taskTimeLabel(item: ListItem) {
+  if (item.planMode === "exact" && item.startTime && item.endTime) return `${item.startTime}–${item.endTime}`;
+  if (item.planMode === "window" && item.startTime && item.endTime) {
+    return `${item.startTime}–${item.endTime}${item.durationMinutes ? ` · ${minutesLabel(item.durationMinutes)}` : ""}`;
+  }
+  return "Anytime";
+}
+
+function taskTimestamp(item: Pick<ListItem, "plannedDate" | "startTime">) {
+  const date = item.plannedDate || localDateKey();
+  const time = item.startTime || "12:00";
+  const value = new Date(`${date}T${time}:00`);
+  return Number.isFinite(value.getTime()) ? value.toISOString() : new Date().toISOString();
 }
 
 const seedState: PersistedState = {
@@ -205,7 +270,7 @@ const seedState: PersistedState = {
       color: "#e6955c",
       items: [
         { id: "li1", text: "Oat milk", done: false },
-        { id: "li2", text: "Tomatoes", done: false },
+        { id: "li2", text: "Tomatoes", done: false, plannedDate: dateKeyAtOffset(0), planMode: "window", startTime: "17:00", endTime: "19:00", durationMinutes: 20 },
         { id: "li3", text: "Coffee beans", done: true },
         { id: "li4", text: "Dishwasher tablets", done: false },
       ],
@@ -217,7 +282,7 @@ const seedState: PersistedState = {
       members: 1,
       color: "#6f8f7b",
       items: [
-        { id: "li5", text: "Book dentist appointment", done: false, due: "Tomorrow" },
+        { id: "li5", text: "Book dentist appointment", done: false, due: "Today", plannedDate: dateKeyAtOffset(0), planMode: "exact", startTime: "09:00", endTime: "09:30", durationMinutes: 30 },
         { id: "li6", text: "Return library book", done: false, due: "Friday" },
       ],
     },
@@ -229,7 +294,7 @@ const seedState: PersistedState = {
       color: "#7b83a6",
       items: [
         { id: "li7", text: "Choose hiking route", done: true },
-        { id: "li8", text: "Reserve dinner", done: false },
+        { id: "li8", text: "Reserve dinner", done: false, plannedDate: dateKeyAtOffset(0), planMode: "window", startTime: "12:00", endTime: "16:00", durationMinutes: 15 },
       ],
     },
   ],
@@ -240,6 +305,8 @@ const seedState: PersistedState = {
     { id: "t4", family: "Learning & Media", name: "Reading", icon: "book", target: 4 },
     { id: "t5", family: "Mindset", name: "Mood check-in", icon: "brain", target: 5 },
   ],
+  priorityDay: localDateKey(),
+  todayPriorityIds: ["li5", "li8", "li2"],
   monthlyBudget: 1200,
   savingsTarget: 3000,
   savingsCurrent: 1840,
@@ -254,6 +321,16 @@ const seedState: PersistedState = {
     { id: "b3", name: "Credit card", balance: 450, category: "creditCard", updatedAt: atDayOffset(0, 8) },
   ],
 };
+
+function prioritiesForToday(state: PersistedState): PersistedState {
+  const today = localDateKey();
+  if (state.priorityDay === today) return state;
+  return {
+    ...state,
+    priorityDay: today,
+    todayPriorityIds: initialPriorityIds(state.lists),
+  };
+}
 
 const navItems: { id: Section; label: string; icon: typeof Home }[] = [
   { id: "today", label: "Today", icon: Home },
@@ -385,11 +462,16 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
   const [selectedListId, setSelectedListId] = useState("l1");
   const [newListItem, setNewListItem] = useState("");
   const [trackerFamily, setTrackerFamily] = useState<TrackerFamily>("Health");
-  const [moneyView, setMoneyView] = useState<"overview" | "month">("overview");
+  const [moneyView, setMoneyView] = useState<"budget" | "cashflow" | "allocation" | "networth">("budget");
+  const [priorityChooserOpen, setPriorityChooserOpen] = useState(false);
+  const [taskEditor, setTaskEditor] = useState<TaskEditorDraft>();
+  const [dayClosed, setDayClosed] = useState(false);
+  const [reflection, setReflection] = useState("");
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [assistantThinking, setAssistantThinking] = useState(false);
   const [moneyEntryOpen, setMoneyEntryOpen] = useState(false);
+  const [editingMoneyRecord, setEditingMoneyRecord] = useState<EditingMoneyRecord>();
   const [moneyEntryMode, setMoneyEntryMode] = useState<"type" | "pdf" | "asitra">("asitra");
   const [moneyDraft, setMoneyDraft] = useState<MoneyDraft>(EMPTY_MONEY_DRAFT);
   const [moneyInstruction, setMoneyInstruction] = useState("");
@@ -432,7 +514,7 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
           }) as PersistedState;
           const migrated = await migrateLegacyPhotos(parsed);
           await saveState(migrated);
-          setState(migrated);
+          setState(prioritiesForToday(migrated));
           const removeLegacyCopy = window.confirm(
             "Your browser data is now saved securely to your account. Remove the old plaintext browser copy? Choose Cancel to keep it.",
           );
@@ -443,7 +525,7 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
             setNotice("Your secure account copy is ready. The old browser copy was kept as requested.");
           }
         } else {
-          setState(emptyState);
+          setState(prioritiesForToday(emptyState));
           setOnboardingOpen(true);
         }
         await loadSharedLists();
@@ -454,7 +536,7 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
         const payload = (await response.json()) as { state: unknown; version: number };
         stateVersionRef.current = payload.version;
         const savedState = validatePersistedState(payload.state) as PersistedState;
-        setState(savedState);
+        setState(prioritiesForToday(savedState));
         setOnboardingOpen(!savedState.onboardingCompleted);
         await loadSharedLists();
         setHydrated(true);
@@ -586,15 +668,6 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
     return () => window.clearTimeout(timeout);
   }, [hydrated, state]);
 
-  const days = useMemo(
-    () =>
-      Array.from({ length: 7 }, (_, index) => {
-        const date = new Date();
-        date.setDate(date.getDate() + index - 3);
-        return date;
-      }),
-    [],
-  );
   const dayEntries = useMemo(
     () =>
       state.entries
@@ -640,7 +713,23 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
   const liabilities = state.balanceSheetItems.filter((item) => !isAssetCategory(item.category));
   const totalAssets = assets.reduce((sum, item) => sum + item.balance, 0);
   const totalLiabilities = liabilities.reduce((sum, item) => sum + item.balance, 0);
-  const netWorth = totalAssets - totalLiabilities;
+  const financeViews = personalFinancePerspectives({
+    monthlyBudget: state.monthlyBudget,
+    income: monthIncome,
+    spent: monthSpent,
+    saved: monthSaved,
+    invested: monthInvested,
+    assets: totalAssets,
+    liabilities: totalLiabilities,
+  });
+  const netWorth = financeViews.netWorth;
+  const moneyActivities = [
+    ...state.entries
+      .filter((entry) => entry.kind === "expense" && typeof entry.amount === "number")
+      .map((entry) => ({ id: entry.id, title: entry.title, kind: "Expense", amount: entry.amount ?? 0, date: entry.timestamp, record: { source: "expense", id: entry.id } as EditingMoneyRecord })),
+    ...state.moneyEntries.map((entry) => ({ id: entry.id, title: entry.note || entry.kind, kind: entry.kind[0].toUpperCase() + entry.kind.slice(1), amount: entry.amount, date: entry.date, record: { source: "money", id: entry.id } as EditingMoneyRecord })),
+    ...state.balanceSheetItems.map((item) => ({ id: item.id, title: item.name, kind: balanceCategoryLabel(item.category), amount: item.balance, date: item.updatedAt, record: { source: "balance", id: item.id } as EditingMoneyRecord })),
+  ].sort((first, second) => second.date.localeCompare(first.date));
   const weekActivity = weekEntries
     .filter((entry) => entry.kind === "movement")
     .reduce((sum, entry) => sum + (entry.minutes ?? 0), 0);
@@ -654,6 +743,15 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
     (sum, list) => sum + list.items.filter((item) => !item.done).length,
     0,
   );
+  const { chosen: todayCommitments, later: laterCommitments } = finitePriorityView(
+    state.lists,
+    state.todayPriorityIds,
+  );
+  const userFirstName = userName
+    .replace(/@.*$/, "")
+    .split(/[\s._-]+/)
+    .filter(Boolean)[0]
+    ?.replace(/^./, (letter) => letter.toUpperCase()) || "there";
   const accountInitials = userName
     .replace(/@.*$/, "")
     .split(/[\s._-]+/)
@@ -736,7 +834,14 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
     const updatedDestination = destination && listIntent
       ? {
           ...destination,
-          items: [{ id: uid(), text: listIntent.text, done: false, due: listIntent.due }, ...destination.items],
+          items: [{
+            id: entry.id,
+            text: listIntent.text,
+            done: false,
+            due: listIntent.due,
+            plannedDate: listIntent.due ? localDateKey(new Date(entry.timestamp)) : undefined,
+            planMode: "anytime" as const,
+          }, ...destination.items],
         }
       : undefined;
     setState((current) => {
@@ -832,21 +937,162 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
   function toggleListItem(listId: string, itemId: string) {
     const list = state.lists.find((candidate) => candidate.id === listId);
     if (!list) return;
+    const willBeDone = !list.items.find((item) => item.id === itemId)?.done;
     const updated = { ...list, items: list.items.map((item) => item.id === itemId ? { ...item, done: !item.done } : item) };
-    setState((current) => ({ ...current, lists: current.lists.map((item) => item.id === listId ? updated : item) }));
+    setState((current) => ({
+      ...current,
+      lists: current.lists.map((item) => item.id === listId ? updated : item),
+      todayPriorityIds: willBeDone ? current.todayPriorityIds.filter((id) => id !== itemId) : current.todayPriorityIds,
+    }));
     if (updated.shared) void updateSharedList(updated);
+  }
+
+  function movePriorityToLater(itemId: string) {
+    setState((current) => ({
+      ...current,
+      todayPriorityIds: current.todayPriorityIds.filter((id) => id !== itemId),
+    }));
+  }
+
+  function bringPriorityIntoToday(itemId: string) {
+    if (state.todayPriorityIds.length >= 3) {
+      setNotice("Choose one thing to move to Later before bringing in something new.");
+      return;
+    }
+    setState((current) => ({
+      ...current,
+      todayPriorityIds: [...current.todayPriorityIds.filter((id) => id !== itemId), itemId].slice(0, 3),
+      lists: current.lists.map((list) => ({
+        ...list,
+        items: list.items.map((item) => item.id === itemId
+          ? { ...item, plannedDate: localDateKey(), due: "Today", planMode: item.planMode ?? "anytime" }
+          : item),
+      })),
+    }));
+  }
+
+  function openTaskEditor(listId: string, item: ListItem) {
+    setTaskEditor({
+      ...EMPTY_TASK_DRAFT,
+      listId,
+      itemId: item.id,
+      text: item.text,
+      plannedDate: item.plannedDate ?? localDateKey(),
+      planMode: item.planMode ?? "anytime",
+      startTime: item.startTime ?? "09:00",
+      endTime: item.endTime ?? "10:00",
+      durationMinutes: item.durationMinutes ? String(item.durationMinutes) : "60",
+    });
+  }
+
+  function saveTaskEditor(event: FormEvent) {
+    event.preventDefault();
+    if (!taskEditor?.text.trim()) return;
+    const duration = Number(taskEditor.durationMinutes);
+    const validation = validateTaskPlan({
+      mode: taskEditor.planMode,
+      startTime: taskEditor.startTime,
+      endTime: taskEditor.endTime,
+      durationMinutes: Number.isFinite(duration) ? duration : undefined,
+    });
+    if (!validation.valid) {
+      setNotice(validation.message);
+      return;
+    }
+    const nextItem: ListItem = {
+      id: taskEditor.itemId,
+      text: taskEditor.text.trim(),
+      done: false,
+      due: taskEditor.plannedDate === localDateKey() ? "Today" : taskEditor.plannedDate === dateKeyAtOffset(1) ? "Tomorrow" : taskEditor.plannedDate,
+      plannedDate: taskEditor.plannedDate,
+      planMode: taskEditor.planMode,
+      startTime: taskEditor.planMode === "anytime" ? undefined : taskEditor.startTime,
+      endTime: taskEditor.planMode === "anytime" ? undefined : taskEditor.endTime,
+      durationMinutes: taskEditor.planMode === "window" ? duration : taskEditor.planMode === "exact"
+        ? Math.max(1, Math.round((new Date(`2000-01-01T${taskEditor.endTime}:00`).getTime() - new Date(`2000-01-01T${taskEditor.startTime}:00`).getTime()) / 60_000))
+        : undefined,
+    };
+    const sourceList = state.lists.find((list) => list.id === taskEditor.listId);
+    const updatedSharedList = sourceList
+      ? { ...sourceList, items: sourceList.items.map((item) => item.id === nextItem.id ? { ...item, ...nextItem, done: item.done } : item) }
+      : undefined;
+    setState((current) => ({
+      ...current,
+      lists: current.lists.map((list) => list.id === taskEditor.listId && updatedSharedList ? updatedSharedList : list),
+      entries: current.entries.map((entry) => entry.id === nextItem.id
+        ? { ...entry, title: nextItem.text, timestamp: taskTimestamp(nextItem), minutes: nextItem.durationMinutes }
+        : entry),
+      todayPriorityIds: nextItem.plannedDate === localDateKey()
+        ? current.todayPriorityIds
+        : current.todayPriorityIds.filter((id) => id !== nextItem.id),
+    }));
+    if (updatedSharedList?.shared) void updateSharedList(updatedSharedList);
+    setTaskEditor(undefined);
+    setNotice("Task updated everywhere it appears.");
+  }
+
+  function deleteTask(listId: string, itemId: string) {
+    if (!window.confirm("Delete this task from Today, its list, and the timeline?")) return;
+    const list = state.lists.find((candidate) => candidate.id === listId);
+    const updated = list ? { ...list, items: list.items.filter((item) => item.id !== itemId) } : undefined;
+    setState((current) => ({
+      ...current,
+      lists: current.lists.map((candidate) => candidate.id === listId && updated ? updated : candidate),
+      entries: current.entries.filter((entry) => entry.id !== itemId),
+      todayPriorityIds: current.todayPriorityIds.filter((id) => id !== itemId),
+    }));
+    if (updated?.shared) void updateSharedList(updated);
+    setTaskEditor(undefined);
+    setNotice("Task deleted.");
+  }
+
+  function postponeTask(listId: string, item: ListItem, days = 1) {
+    const plannedDate = postponeDate(item.plannedDate ?? localDateKey(), days);
+    const nextItem = { ...item, plannedDate, due: days === 1 ? "Tomorrow" : plannedDate };
+    const list = state.lists.find((candidate) => candidate.id === listId);
+    const updated = list ? { ...list, items: list.items.map((candidate) => candidate.id === item.id ? nextItem : candidate) } : undefined;
+    setState((current) => ({
+      ...current,
+      lists: current.lists.map((candidate) => candidate.id === listId && updated ? updated : candidate),
+      entries: current.entries.map((entry) => entry.id === item.id ? { ...entry, timestamp: taskTimestamp(nextItem) } : entry),
+      todayPriorityIds: current.todayPriorityIds.filter((id) => id !== item.id),
+    }));
+    if (updated?.shared) void updateSharedList(updated);
+    setNotice(`Moved “${item.text}” to ${days === 1 ? "tomorrow" : plannedDate}.`);
+  }
+
+  function saveReflection(event: FormEvent) {
+    event.preventDefault();
+    const note = reflection.trim();
+    if (!note) return;
+    setState((current) => ({
+      ...current,
+      entries: [
+        {
+          id: uid(),
+          title: note,
+          kind: "journal",
+          timestamp: new Date().toISOString(),
+          source: "Daily reflection",
+        },
+        ...current.entries,
+      ],
+    }));
+    setReflection("");
+    setNotice("Reflection saved to your timeline and Notes.");
   }
 
   function addListItem(event: FormEvent) {
     event.preventDefault();
     if (!newListItem.trim() || !selectedList) return;
+    const itemId = uid();
     const entry: Entry = {
-      id: uid(),
+      id: itemId,
       title: newListItem.trim(),
       kind: "list",
       timestamp: new Date().toISOString(),
     };
-    const updated = { ...selectedList, items: [{ id: uid(), text: newListItem.trim(), done: false }, ...selectedList.items] };
+    const updated = { ...selectedList, items: [{ id: itemId, text: newListItem.trim(), done: false }, ...selectedList.items] };
     setState((current) => ({ ...current, entries: [entry, ...current.entries], lists: current.lists.map((list) => list.id === selectedList.id ? updated : list) }));
     if (updated.shared) void updateSharedList(updated);
     setNewListItem("");
@@ -1006,7 +1252,8 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
   }
 
   function openMoneyEntry(kind: MoneyDraft["kind"] = "expense", mode: typeof moneyEntryMode = "asitra") {
-    setMoneyDraft({ ...EMPTY_MONEY_DRAFT, kind, balanceCategory: kind === "liability" ? "creditCard" : "cash", date: new Date().toISOString().slice(0, 10) });
+    setEditingMoneyRecord(undefined);
+    setMoneyDraft({ ...EMPTY_MONEY_DRAFT, kind, balanceCategory: kind === "liability" ? "creditCard" : "cash", date: localDateKey() });
     setMoneyEntryMode(mode);
     setMoneyInstruction("");
     setMoneyReview(undefined);
@@ -1069,9 +1316,75 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
       setNotice("Choose a valid date.");
       return;
     }
-    storeMoneyRecord(moneyDraft.kind, amount, date.toISOString(), moneyDraft.note.trim(), moneyDraft.balanceCategory, moneyDraft.existingBalanceID);
+    if (!editingMoneyRecord) {
+      storeMoneyRecord(moneyDraft.kind, amount, date.toISOString(), moneyDraft.note.trim(), moneyDraft.balanceCategory, moneyDraft.existingBalanceID);
+    } else {
+      const record = editingMoneyRecord;
+      setState((current) => {
+        const previousMoney = record.source === "money" ? current.moneyEntries.find((item) => item.id === record.id) : undefined;
+        const previousSaving = previousMoney?.kind === "saving" ? previousMoney.amount : 0;
+        const nextSaving = moneyDraft.kind === "saving" ? amount : 0;
+        const entries = current.entries.filter((entry) => !(record.source === "expense" && entry.id === record.id));
+        const moneyEntries = current.moneyEntries.filter((entry) => !(record.source === "money" && entry.id === record.id));
+        const balanceSheetItems = current.balanceSheetItems.filter((item) => !(record.source === "balance" && item.id === record.id));
+        if (moneyDraft.kind === "expense") {
+          entries.unshift({ id: record.id, title: moneyDraft.note.trim() || "Expense", kind: "expense", amount, timestamp: date.toISOString(), source: "Money" });
+        } else if (moneyDraft.kind === "asset" || moneyDraft.kind === "liability") {
+          balanceSheetItems.push({ id: record.id, name: moneyDraft.note.trim() || (moneyDraft.kind === "asset" ? "Asset" : "Debt"), balance: amount, category: moneyDraft.balanceCategory, updatedAt: date.toISOString() });
+        } else {
+          moneyEntries.push({ id: record.id, kind: moneyDraft.kind, amount, date: date.toISOString(), note: moneyDraft.note.trim() || undefined });
+        }
+        return {
+          ...current,
+          entries,
+          moneyEntries,
+          balanceSheetItems,
+          savingsCurrent: Math.max(0, current.savingsCurrent - previousSaving + nextSaving),
+        };
+      });
+    }
     setMoneyEntryOpen(false);
-    setNotice(`${moneyDraft.kind === "expense" ? "Expense" : "Money entry"} added for ${moneyDraft.date}.`);
+    setEditingMoneyRecord(undefined);
+    setNotice(editingMoneyRecord ? "Money activity updated across every perspective." : `${moneyDraft.kind === "expense" ? "Expense" : "Money entry"} added for ${moneyDraft.date}.`);
+  }
+
+  function editMoneyActivity(record: EditingMoneyRecord) {
+    setEditingMoneyRecord(record);
+    if (record.source === "expense") {
+      const entry = state.entries.find((item) => item.id === record.id);
+      if (!entry) return;
+      setMoneyDraft({ kind: "expense", amount: String(entry.amount ?? ""), date: localDateKey(new Date(entry.timestamp)), note: entry.title, balanceCategory: "cash" });
+    } else if (record.source === "money") {
+      const entry = state.moneyEntries.find((item) => item.id === record.id);
+      if (!entry) return;
+      setMoneyDraft({ kind: entry.kind, amount: String(entry.amount), date: localDateKey(new Date(entry.date)), note: entry.note ?? "", balanceCategory: "cash" });
+    } else {
+      const item = state.balanceSheetItems.find((entry) => entry.id === record.id);
+      if (!item) return;
+      setMoneyDraft({ kind: isAssetCategory(item.category) ? "asset" : "liability", amount: String(item.balance), date: localDateKey(new Date(item.updatedAt)), note: item.name, balanceCategory: item.category, existingBalanceID: item.id });
+    }
+    setMoneyEntryMode("type");
+    setMoneyReview(undefined);
+    setMoneyEntryOpen(true);
+  }
+
+  function deleteMoneyActivity(record: EditingMoneyRecord) {
+    if (!window.confirm("Delete this money activity? Every money perspective will update immediately.")) return;
+    setState((current) => {
+      const saving = record.source === "money"
+        ? current.moneyEntries.find((item) => item.id === record.id && item.kind === "saving")?.amount ?? 0
+        : 0;
+      return {
+        ...current,
+        entries: record.source === "expense" ? current.entries.filter((entry) => entry.id !== record.id) : current.entries,
+        moneyEntries: record.source === "money" ? current.moneyEntries.filter((entry) => entry.id !== record.id) : current.moneyEntries,
+        balanceSheetItems: record.source === "balance" ? current.balanceSheetItems.filter((item) => item.id !== record.id) : current.balanceSheetItems,
+        savingsCurrent: Math.max(0, current.savingsCurrent - saving),
+      };
+    });
+    setMoneyEntryOpen(false);
+    setEditingMoneyRecord(undefined);
+    setNotice("Money activity deleted and all perspectives recalculated.");
   }
 
   async function submitMoneyInstruction(event: FormEvent) {
@@ -1186,6 +1499,11 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
   }
 
   function editBalanceSheetItem(existing?: BalanceSheetItem, asset = true) {
+    if (existing) {
+      editMoneyActivity({ source: "balance", id: existing.id });
+      return;
+    }
+    setEditingMoneyRecord(undefined);
     const kind: MoneyDraft["kind"] = existing ? (isAssetCategory(existing.category) ? "asset" : "liability") : (asset ? "asset" : "liability");
     setMoneyDraft({
       kind,
@@ -1348,18 +1666,6 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
     }));
     setEditingEntry(undefined);
     setNotice("Timeline entry deleted.");
-  }
-
-  function completeFocusBlock() {
-    setState((current) => ({
-      ...current,
-      entries: [
-        { id: uid(), title: "Completed a protected focus block", kind: "work", timestamp: new Date().toISOString(), minutes: 60 },
-        ...current.entries,
-      ],
-    }));
-    setSelectedDate(new Date());
-    setNotice("Focus block completed and recorded on your timeline.");
   }
 
   async function deleteAccount() {
@@ -1527,15 +1833,15 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
                 </form>
                 <div className="list-items">
                   {selectedList.items.map((item) => (
-                    <button
-                      className={`check-row ${item.done ? "done" : ""}`}
-                      key={item.id}
-                      onClick={() => toggleListItem(selectedList.id, item.id)}
-                    >
-                      <span className="check-box">{item.done && <Check size={14} />}</span>
-                      <span>{item.text}</span>
-                      {item.due && <small>{item.due}</small>}
-                    </button>
+                    <div className={`check-row task-list-row ${item.done ? "done" : ""}`} key={item.id}>
+                      <button className="check-box" onClick={() => toggleListItem(selectedList.id, item.id)} aria-label={`${item.done ? "Reopen" : "Complete"} ${item.text}`}>{item.done && <Check size={14} />}</button>
+                      <span><strong>{item.text}</strong><small>{item.plannedDate ? `${item.plannedDate} · ${taskTimeLabel(item)}` : item.due || "Not scheduled"}</small></span>
+                      <div className="task-row-actions">
+                        <button onClick={() => openTaskEditor(selectedList.id, item)} aria-label={`Edit ${item.text}`}><Pencil size={15} /></button>
+                        {!item.done && <button onClick={() => postponeTask(selectedList.id, item)} aria-label={`Move ${item.text} to tomorrow`}><CalendarClock size={15} /></button>}
+                        <button className="delete" onClick={() => deleteTask(selectedList.id, item.id)} aria-label={`Delete ${item.text}`}><Trash2 size={15} /></button>
+                      </div>
+                    </div>
                   ))}
                 </div>
                 <div className="native-note">
@@ -1615,17 +1921,17 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
     }
 
     if (section === "money") {
-      const remaining = Math.max(state.monthlyBudget - monthSpent, 0);
+      const remaining = Math.max(financeViews.budgetRemaining, 0);
       const budgetUsage = state.monthlyBudget > 0
         ? Math.min((monthSpent / state.monthlyBudget) * 100, 100)
         : 0;
       const savingsProgress = state.savingsTarget > 0
         ? Math.min((state.savingsCurrent / state.savingsTarget) * 100, 100)
         : 0;
-      const surplus = monthIncome - monthSpent;
-      const unallocated = surplus - monthSaved - monthInvested;
-      const netCashMovement = monthIncome - monthSpent - monthInvested;
-      const allocationBalanced = Math.abs(unallocated) < 0.01;
+      const surplus = financeViews.surplusAfterSpending;
+      const unallocated = financeViews.unassigned;
+      const netCashMovement = financeViews.netCashMovement;
+      const allocationBalanced = financeViews.isFullyAssigned;
       const categoryGroups = [
         { label: "Everyday", value: monthEntries.filter((e) => e.amount && e.amount < 40).reduce((s, e) => s + (e.amount ?? 0), 0), color: "#df9966" },
         { label: "Living", value: monthEntries.filter((e) => e.amount && e.amount >= 40).reduce((s, e) => s + (e.amount ?? 0), 0), color: "#7d8d79" },
@@ -1636,7 +1942,7 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
           <PageHeader
             eyebrow="Money, made understandable"
             title="Your money"
-            description="Add each money event once. Cash flow, monthly result and net worth are three views of the same financial life."
+            description="Add each money event once. Budget, cash flow, monthly allocation and net worth are four useful views of the same financial life."
             action={
               <button className="primary-button" onClick={() => openMoneyEntry()}><Plus size={17} /> Add money activity</button>
             }
@@ -1650,12 +1956,14 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
             <button className="money-import-shortcut" onClick={() => openMoneyEntry("expense", "pdf")}><FileText size={16} /> Import PDF</button>
           </section>
           <div className="segment-row money-segments">
-            <button className={moneyView === "overview" ? "active" : ""} onClick={() => setMoneyView("overview")}>Money position</button>
-            <button className={moneyView === "month" ? "active" : ""} onClick={() => setMoneyView("month")}>Spending & goals</button>
+            <button className={moneyView === "budget" ? "active" : ""} onClick={() => setMoneyView("budget")}>Budget</button>
+            <button className={moneyView === "cashflow" ? "active" : ""} onClick={() => setMoneyView("cashflow")}>Cash flow</button>
+            <button className={moneyView === "allocation" ? "active" : ""} onClick={() => setMoneyView("allocation")}>Monthly allocation</button>
+            <button className={moneyView === "networth" ? "active" : ""} onClick={() => setMoneyView("networth")}>Balance sheet</button>
           </div>
-          {moneyView === "overview" ? (
+          {moneyView !== "budget" ? (
             <>
-              <section className="money-position-hero">
+              {moneyView === "networth" && <section className="money-position-hero">
                 <div>
                   <span className="eyebrow">Your money position</span>
                   <strong>{currency.format(netWorth)}</strong>
@@ -1666,9 +1974,9 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
                   <strong>{netCashMovement >= 0 ? "+" : "−"}{currency.format(Math.abs(netCashMovement))}</strong>
                   <span>cash movement</span>
                 </div>
-              </section>
-              <div className="statement-grid">
-                <section className="panel statement-card">
+              </section>}
+              <div className="statement-grid focused-statement-grid">
+                {moneyView === "cashflow" && <section className="panel statement-card">
                   <div className="statement-title">
                     <div><span className="eyebrow">Movement</span><h2>Cash flow</h2><p>What came in and left usable cash.</p></div>
                     <WalletCards size={20} />
@@ -1678,11 +1986,11 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
                   <div className="statement-line"><span>Moved to investments</span><strong>−{currency.format(monthInvested)}</strong></div>
                   <div className="statement-line total"><span>Net cash movement</span><strong>{currency.format(netCashMovement)}</strong></div>
                   {monthSaved > 0 && <p className="statement-note">{currency.format(monthSaved)} earmarked for goals remains cash until it is transferred.</p>}
-                </section>
+                </section>}
 
-                <section className="panel statement-card">
+                {moneyView === "allocation" && <section className="panel statement-card">
                   <div className="statement-title">
-                    <div><span className="eyebrow">Zero-based allocation</span><h2>Personal P&amp;L</h2><p>Give every euro of surplus a purpose.</p></div>
+                    <div><span className="eyebrow">Personal P&amp;L</span><h2>Monthly allocation</h2><p>Give every euro of surplus a purpose.</p></div>
                     <CircleDollarSign size={20} />
                   </div>
                   <div className="statement-line"><span>Income</span><strong>{currency.format(monthIncome)}</strong></div>
@@ -1698,11 +2006,11 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
                         ? "Assign the remainder to saving or investing to reach zero."
                         : "This month used existing cash or debt."}
                   </p>
-                </section>
+                </section>}
 
-                <section className="panel statement-card balance-statement">
+                {moneyView === "networth" && <section className="panel statement-card balance-statement">
                   <div className="statement-title">
-                    <div><span className="eyebrow">Snapshot</span><h2>Balance sheet</h2><p>What you own minus what you owe.</p></div>
+                    <div><span className="eyebrow">Personal balance sheet</span><h2>Net worth</h2><p>What you own minus what you owe.</p></div>
                     <BarChart3 size={20} />
                   </div>
                   <span className="statement-group">Assets</span>
@@ -1723,7 +2031,7 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
                   ))}
                   {!liabilities.length && <p className="statement-note">No debts recorded.</p>}
                   <div className="statement-line total net-worth-line"><span>Net worth</span><strong>{currency.format(netWorth)}</strong></div>
-                </section>
+                </section>}
               </div>
               <div className="native-note wide">
                 <ShieldCheck size={17} />
@@ -1771,6 +2079,24 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
               </div>
             </>
           )}
+          <section className="panel money-activity-panel">
+            <div className="section-heading">
+              <div><span className="eyebrow">Single source of truth</span><h2>Money activity</h2></div>
+              <span className="entry-count">{moneyActivities.length} records</span>
+            </div>
+            <p className="money-activity-intro">Edit or delete a record here. Budget, cash flow, monthly allocation and net worth recalculate from the same activity.</p>
+            <div className="money-activity-list">
+              {moneyActivities.slice(0, 20).map((activity) => (
+                <article key={`${activity.record.source}-${activity.id}`}>
+                  <div><strong>{activity.title}</strong><span>{activity.kind} · {new Date(activity.date).toLocaleDateString()}</span></div>
+                  <b>{currency.format(activity.amount)}</b>
+                  <button onClick={() => editMoneyActivity(activity.record)} aria-label={`Edit ${activity.title}`}><Pencil size={15} /></button>
+                  <button className="delete" onClick={() => deleteMoneyActivity(activity.record)} aria-label={`Delete ${activity.title}`}><Trash2 size={15} /></button>
+                </article>
+              ))}
+              {!moneyActivities.length && <div className="finite-empty"><WalletCards size={23} /><strong>No money activity yet</strong><span>Add it once and every perspective will update.</span></div>}
+            </div>
+          </section>
         </div>
       );
     }
@@ -1875,104 +2201,160 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
 
     return (
       <div className="page-shell today-page">
-        <div className="greeting-row">
+        <header className="finite-day-header">
           <div>
-            <h1>Good {new Date().getHours() < 12 ? "morning" : new Date().getHours() < 18 ? "afternoon" : "evening"}</h1>
-            <p>Follow the system, capture the evidence, and improve one step at a time.</p>
+            <h1>Good {new Date().getHours() < 12 ? "morning" : new Date().getHours() < 18 ? "afternoon" : "evening"}, {userFirstName}.</h1>
+            <p>Choose a day you can actually live.</p>
           </div>
-        </div>
-        <div className="calendar-strip panel">
-          <button className="icon-button" onClick={() => changeDay(-1)} aria-label="Previous day"><ChevronLeft size={18} /></button>
-          <div className="date-days">
-            {days.map((date) => (
-              <button
-                key={date.toISOString()}
-                className={sameDay(date.toISOString(), selectedDate) ? "active" : ""}
-                onClick={() => setSelectedDate(date)}
-              >
-                <span>{weekdayOnly.format(date)}</span>
-                <strong>{date.getDate()}</strong>
-                {state.entries.some((entry) => sameDay(entry.timestamp, date)) && <i />}
+          <div className="finite-date-control">
+            <button className="icon-button" onClick={() => changeDay(-1)} aria-label="Previous day"><ChevronLeft size={18} /></button>
+            <span><CalendarDays size={16} /> {longDate.format(selectedDate)}</span>
+            <button className="icon-button" onClick={() => changeDay(1)} aria-label="Next day"><ChevronRight size={18} /></button>
+          </div>
+        </header>
+
+        <div className="finite-day-layout">
+          <section className="finite-commitments" aria-labelledby="today-commitments-title">
+            <div className="finite-section-heading">
+              <div>
+                <span className="eyebrow">A realistic day</span>
+                <h2 id="today-commitments-title">For today</h2>
+              </div>
+              <button className="later-count" onClick={() => setPriorityChooserOpen((open) => !open)}>
+                Later {laterCommitments.length}
               </button>
-            ))}
-          </div>
-          <button className="icon-button" onClick={() => changeDay(1)} aria-label="Next day"><ChevronRight size={18} /></button>
-          <button className="calendar-label"><CalendarDays size={17} /> {longDate.format(selectedDate)}</button>
-        </div>
-        <form className="capture-card" onSubmit={addCapture}>
-          <div className="capture-top">
-            <div className="capture-mark"><Sparkles size={19} /></div>
-            <div>
-              <strong>Capture evidence</strong>
-              <small>Type or talk naturally. Asitra organizes it before anything is saved.</small>
             </div>
+
+            <div className="commitment-list">
+              {todayCommitments.map((item, index) => {
+                const Icon = index === 0 ? Target : index === 1 ? HeartPulse : BookOpen;
+                return (
+                  <article className="commitment-row" key={item.id}>
+                    <span className="commitment-icon"><Icon size={21} /></span>
+                    <div>
+                      <strong>{item.text}</strong>
+                      <small><CalendarClock size={13} /> {item.plannedDate === localDateKey() ? "Today" : item.plannedDate || "Today"} · {taskTimeLabel(item)} · {item.listName}</small>
+                    </div>
+                    <div className="commitment-actions">
+                      <button onClick={() => openTaskEditor(item.listId, item)} aria-label={`Edit ${item.text}`} title="Edit"><Pencil size={15} /></button>
+                      <button onClick={() => postponeTask(item.listId, item)} aria-label={`Move ${item.text} to tomorrow`} title="Move to tomorrow"><CalendarClock size={15} /></button>
+                      <button onClick={() => movePriorityToLater(item.id)} aria-label={`Move ${item.text} to Later`} title="Keep for later">Later</button>
+                      <button className="delete" onClick={() => deleteTask(item.listId, item.id)} aria-label={`Delete ${item.text}`} title="Delete"><Trash2 size={15} /></button>
+                    </div>
+                    <button className="commitment-check" onClick={() => toggleListItem(item.listId, item.id)} aria-label={`Complete ${item.text}`}>
+                      <Check size={17} />
+                    </button>
+                  </article>
+                );
+              })}
+              {!todayCommitments.length && (
+                <div className="finite-empty">
+                  <CheckCircle2 size={24} />
+                  <strong>Nothing is demanding your attention.</strong>
+                  <span>Bring in only what genuinely matters today.</span>
+                </div>
+              )}
+              {todayCommitments.length > 0 && Array.from({ length: 3 - todayCommitments.length }, (_, index) => (
+                <button className="commitment-empty-slot" key={`priority-slot-${index}`} onClick={() => setPriorityChooserOpen(true)}>
+                  <Plus size={16} /> Choose something important
+                </button>
+              ))}
+            </div>
+
+            <div className="tradeoff-row">
+              <Sparkles size={18} />
+              <span>{todayCommitments.length >= 3 ? "Something new means something else waits." : `You have room for ${3 - todayCommitments.length} more.`}</span>
+              <button onClick={() => setPriorityChooserOpen((open) => !open)}>{priorityChooserOpen ? "Close" : "Choose"}</button>
+            </div>
+
+            {priorityChooserOpen && (
+              <div className="later-picker">
+                <div><strong>Later</strong><span>Move one out before bringing in a fourth.</span></div>
+                {laterCommitments.slice(0, 6).map((item) => (
+                  <button key={item.id} onClick={() => bringPriorityIntoToday(item.id)} disabled={todayCommitments.length >= 3}>
+                    <span>{item.text}</span><small>{item.listName}</small><Plus size={15} />
+                  </button>
+                ))}
+                {!laterCommitments.length && <small>Nothing is waiting.</small>}
+              </div>
+            )}
+
+            <button className={`enough-button ${dayClosed ? "done" : ""}`} onClick={() => setDayClosed((closed) => !closed)}>
+              <CheckCircle2 size={21} /> {dayClosed ? "Today is closed" : "This is enough for today"}
+            </button>
+
+            <form className="reflection-line" onSubmit={saveReflection}>
+              <Brain size={20} />
+              <label>
+                <span>What did today teach you?</span>
+                <input value={reflection} onChange={(event) => setReflection(event.target.value)} placeholder="A few honest words help tomorrow." />
+              </label>
+              <button disabled={!reflection.trim()} aria-label="Save reflection"><ArrowRight size={17} /></button>
+            </form>
+          </section>
+
+          <aside className="daily-context-rail">
+            <section className="context-section">
+              <div className="context-title"><div><CalendarDays size={18} /><span>Coming up</span></div><small>{longDate.format(selectedDate)}</small></div>
+              <div className="agenda-list">
+                {dayEntries.slice().sort((a, b) => a.timestamp.localeCompare(b.timestamp)).slice(0, 4).map((entry) => (
+                  <button key={entry.id} onClick={() => setEditingEntry(entry)}>
+                    <time>{timeOnly.format(new Date(entry.timestamp))}</time>
+                    <span style={{ background: kindMeta[entry.kind].color }} />
+                    <strong>{entry.title}</strong>
+                  </button>
+                ))}
+                {!dayEntries.length && <p>Nothing scheduled yet. Leave room on purpose.</p>}
+              </div>
+            </section>
+
+            <section className="context-section money-glance">
+              <div className="context-title"><div><WalletCards size={18} /><span>Money this month</span></div><button onClick={() => { setMoneyView("budget"); setSection("money"); }}>Open Money <ArrowRight size={14} /></button></div>
+              <div className="money-glance-budget"><span>Budget remaining</span><strong>{currency.format(Math.max(financeViews.budgetRemaining, 0))}</strong></div>
+              <div className="allocation-mini-grid">
+                {[
+                  ["Spend", monthSpent],
+                  ["Save", monthSaved],
+                  ["Invest", monthInvested],
+                  ["Unassigned", Math.max(financeViews.unassigned, 0)],
+                ].map(([label, value]) => (
+                  <div key={String(label)}><span>{label}</span><strong>{monthIncome > 0 ? Math.round((Number(value) / monthIncome) * 100) : 0}%</strong></div>
+                ))}
+              </div>
+              <div className="net-worth-line"><span>Net worth</span><strong>{currency.format(netWorth)}</strong></div>
+            </section>
+          </aside>
+        </div>
+
+        <form className="capture-card capture-dock" onSubmit={addCapture}>
+          {suggested && (
+            <div className="capture-review-strip">
+              <span>Review before saving</span>
+              <strong>{suggested.list ? `${suggested.list.target === "groceries" ? "Shopping" : suggested.list.target === "travel" ? "Travel ideas" : "Personal reminders"} list` : kindMeta[suggested.kind].label}</strong>
+              <small>{suggested.title}</small>
+              {suggested.amount ? <b>{currency.format(suggested.amount)}</b> : null}
+            </div>
+          )}
+          <div className="capture-input-row">
+            <div className="capture-tools">
+              <button type="button" className={`tool-button ${isListening ? "recording" : ""}`} onClick={() => toggleListening("capture")} aria-label="Voice note"><Mic size={18} /></button>
+              <label className="tool-button" aria-label="Add photo"><Camera size={18} /><input type="file" accept="image/jpeg,image/png,image/webp" onChange={attachPhoto} hidden /></label>
+            </div>
+            <textarea value={capture} onChange={(event) => setCapture(event.target.value)} placeholder="Tell Asitra what happened or what you need…" rows={1} />
+            <button className="add-button" disabled={!capture.trim()} aria-label="Review and add"><ArrowRight size={17} /></button>
           </div>
-          <textarea
-            value={capture}
-            onChange={(event) => setCapture(event.target.value)}
-            placeholder="“Walked 30 minutes”, “spent €18 on lunch”, or “remind me to call Mum”…"
-            rows={2}
-          />
           {capturePhoto && (
             <div className="photo-preview">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={capturePhoto} alt="Capture attachment preview" />
-              <span>Photo attached locally</span>
+              <span>Photo attached</span>
               <button type="button" onClick={() => setCapturePhoto(undefined)}><X size={15} /></button>
             </div>
           )}
-          <div className="capture-footer">
-            <div className="capture-tools">
-              <label className="tool-button">
-                <Camera size={17} /> <span>Photo</span>
-                <input type="file" accept="image/jpeg,image/png,image/webp" onChange={attachPhoto} hidden />
-              </label>
-              <button type="button" className={`tool-button ${isListening ? "recording" : ""}`} onClick={() => toggleListening("capture")}>
-                <Mic size={17} /> <span>{isListening ? "Listening…" : "Talk"}</span>
-              </button>
-            </div>
-            {suggested && (
-              <span className="suggestion-chip" style={{ "--chip": kindMeta[suggested.kind].color } as React.CSSProperties}>
-                {kindMeta[suggested.kind].label}
-                {suggested.amount ? ` · ${currency.format(suggested.amount)}` : ""}
-                {suggested.minutes ? ` · ${minutesLabel(suggested.minutes)}` : ""}
-              </span>
-            )}
-            <button className="add-button" disabled={!capture.trim()}>Add <ArrowRight size={16} /></button>
-          </div>
         </form>
-        <div className="today-grid">
-          <section className="panel now-card">
-            <div className="section-heading">
-              <div><span className="eyebrow">Now</span><h2>Your next useful step</h2></div>
-              <span className="time-pill">{timeOnly.format(new Date())}</span>
-            </div>
-            <div className="focus-action">
-              <span className="focus-icon"><Target size={21} /></span>
-              <div><strong>Protect one focus block</strong><small>60 min · High energy</small></div>
-              <button onClick={completeFocusBlock}><Check size={17} /> Complete</button>
-            </div>
-            <div className="next-actions">
-              <div><span>13:00</span><strong>Move for 30 minutes</strong><Activity size={17} /></div>
-              <div><span>20:30</span><strong>Reflect and prepare tomorrow</strong><Brain size={17} /></div>
-            </div>
-          </section>
-          <section className="panel overview-card">
-            <span className="eyebrow">Today at a glance</span>
-            <div className="overview-stats">
-              <div><strong>{dayEntries.length}</strong><span>Moments</span></div>
-              <div><strong>{currency.format(dayEntries.reduce((s, e) => s + (e.amount ?? 0), 0))}</strong><span>Spent</span></div>
-              <div><strong>{minutesLabel(dayEntries.filter((e) => e.kind === "movement").reduce((s, e) => s + (e.minutes ?? 0), 0)) || "—"}</strong><span>Movement</span></div>
-            </div>
-            <div className="daily-progress"><span style={{ width: `${Math.min((dayEntries.length / 7) * 100, 100)}%` }} /></div>
-            <small>Evidence builds the system—one honest entry at a time.</small>
-          </section>
-        </div>
-        <section className="timeline-section">
-          <div className="section-heading">
-            <div><span className="eyebrow">{sameDay(selectedDate.toISOString(), new Date()) ? "Today" : longDate.format(selectedDate)}</span><h2>Timeline</h2></div>
-            <span className="entry-count">{dayEntries.length} entries</span>
-          </div>
+
+        <details className="timeline-disclosure">
+          <summary><span>Your day so far</span><small>{dayEntries.length} {dayEntries.length === 1 ? "moment" : "moments"}</small></summary>
           <div className="timeline">
             {dayEntries.length ? dayEntries.map((entry) => {
               const meta = kindMeta[entry.kind];
@@ -1982,31 +2364,15 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
                   <time>{timeOnly.format(new Date(entry.timestamp))}</time>
                   <span className="timeline-node" style={{ color: meta.color }}><Icon size={17} /></span>
                   <div className="entry-card">
-                    <div>
-                      <span className="entry-kind" style={{ color: meta.color }}>{meta.label}</span>
-                      <strong>{entry.title}</strong>
-                          {(entry.minutes || entry.note || entry.source) && (
-                            <small>
-                              {[minutesLabel(entry.minutes), entry.note, entry.source ? `Source: ${entry.source}` : ""]
-                                .filter(Boolean)
-                                .join(" · ")}
-                            </small>
-                          )}
-                    </div>
-                    {entry.photo && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={entry.photo} alt="" />
-                    )}
+                    <div><span className="entry-kind" style={{ color: meta.color }}>{meta.label}</span><strong>{entry.title}</strong></div>
                     {entry.amount && <b>{currency.format(entry.amount)}</b>}
                     <button className="icon-button" onClick={() => setEditingEntry(entry)} aria-label={`Edit ${entry.title}`}><MoreHorizontal size={18} /></button>
                   </div>
                 </article>
               );
-            }) : (
-              <div className="empty-timeline"><Clock3 size={23} /><strong>No moments recorded yet</strong><span>Your next entry will appear here.</span></div>
-            )}
+            }) : <div className="empty-timeline"><Clock3 size={23} /><strong>No moments recorded yet</strong><span>Your next entry will appear here.</span></div>}
           </div>
-        </section>
+        </details>
       </div>
     );
   })();
@@ -2212,6 +2578,32 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
           </section>
         </div>
       )}
+      {taskEditor && (
+        <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Edit task">
+          <button className="modal-backdrop" onClick={() => setTaskEditor(undefined)} aria-label="Close task editor" />
+          <form className="edit-modal task-editor-modal" onSubmit={saveTaskEditor}>
+            <div className="section-heading"><div><span className="eyebrow">One task, updated everywhere</span><h2>Edit task</h2></div><button type="button" className="icon-button" onClick={() => setTaskEditor(undefined)} aria-label="Close"><X size={18} /></button></div>
+            <label>What matters?<input autoFocus value={taskEditor.text} onChange={(event) => setTaskEditor({ ...taskEditor, text: event.target.value })} /></label>
+            <label>Planned date<input type="date" value={taskEditor.plannedDate} onChange={(event) => setTaskEditor({ ...taskEditor, plannedDate: event.target.value })} /></label>
+            <label>Time planning<select value={taskEditor.planMode} onChange={(event) => setTaskEditor({ ...taskEditor, planMode: event.target.value as TaskEditorDraft["planMode"] })}><option value="anytime">Anytime that day</option><option value="exact">Exact time block</option><option value="window">Flexible time window</option></select></label>
+            {taskEditor.planMode !== "anytime" && (
+              <div className="money-form-row">
+                <label>{taskEditor.planMode === "exact" ? "Start" : "Window starts"}<input type="time" value={taskEditor.startTime} onChange={(event) => setTaskEditor({ ...taskEditor, startTime: event.target.value })} /></label>
+                <label>{taskEditor.planMode === "exact" ? "End" : "Window ends"}<input type="time" value={taskEditor.endTime} onChange={(event) => setTaskEditor({ ...taskEditor, endTime: event.target.value })} /></label>
+              </div>
+            )}
+            {taskEditor.planMode === "window" && <label>Estimated duration in minutes<input type="number" min="1" max="10080" step="5" value={taskEditor.durationMinutes} onChange={(event) => setTaskEditor({ ...taskEditor, durationMinutes: event.target.value })} /></label>}
+            <p className="editor-help">Exact blocks reserve the full start–end period. Flexible windows keep the task movable inside the window while preserving its estimated duration.</p>
+            <div className="task-editor-shortcuts">
+              <button type="button" onClick={() => setTaskEditor({ ...taskEditor, planMode: "window", startTime: "06:00", endTime: "12:00" })}>Morning</button>
+              <button type="button" onClick={() => setTaskEditor({ ...taskEditor, planMode: "window", startTime: "12:00", endTime: "17:00" })}>Afternoon</button>
+              <button type="button" onClick={() => setTaskEditor({ ...taskEditor, planMode: "window", startTime: "17:00", endTime: "22:00" })}>Evening</button>
+              <button type="button" onClick={() => setTaskEditor({ ...taskEditor, planMode: "anytime" })}>Anytime</button>
+            </div>
+            <div className="modal-actions"><button type="button" className="danger-button" onClick={() => deleteTask(taskEditor.listId, taskEditor.itemId)}>Delete</button><div><button type="button" className="secondary-button" onClick={() => { const list = state.lists.find((item) => item.id === taskEditor.listId); const item = list?.items.find((entry) => entry.id === taskEditor.itemId); if (item) postponeTask(taskEditor.listId, item); setTaskEditor(undefined); }}>Tomorrow</button><button className="primary-button" disabled={!taskEditor.text.trim()}>Save changes</button></div></div>
+          </form>
+        </div>
+      )}
       {editingEntry && (
         <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Edit timeline entry">
           <button className="modal-backdrop" onClick={() => setEditingEntry(undefined)} aria-label="Close editor" />
@@ -2298,17 +2690,17 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
       )}
       {moneyEntryOpen && (
         <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Add money">
-          <button className="modal-backdrop" onClick={() => setMoneyEntryOpen(false)} aria-label="Close money entry" />
+          <button className="modal-backdrop" onClick={() => { setMoneyEntryOpen(false); setEditingMoneyRecord(undefined); }} aria-label="Close money entry" />
           <section className="money-entry-modal">
             <div className="section-heading">
-              <div><span className="eyebrow">One money ledger</span><h2>Add money activity</h2></div>
-              <button type="button" className="icon-button" onClick={() => setMoneyEntryOpen(false)} aria-label="Close"><X size={18} /></button>
+              <div><span className="eyebrow">One money ledger</span><h2>{editingMoneyRecord ? "Edit money activity" : "Add money activity"}</h2></div>
+              <button type="button" className="icon-button" onClick={() => { setMoneyEntryOpen(false); setEditingMoneyRecord(undefined); }} aria-label="Close"><X size={18} /></button>
             </div>
-            <div className="money-entry-tabs" role="tablist" aria-label="Money entry method">
+            {!editingMoneyRecord && <div className="money-entry-tabs" role="tablist" aria-label="Money entry method">
               <button className={moneyEntryMode === "asitra" ? "active" : ""} onClick={() => { setMoneyEntryMode("asitra"); setMoneyReview(undefined); }}>Tell Asitra</button>
               <button className={moneyEntryMode === "type" ? "active" : ""} onClick={() => setMoneyEntryMode("type")}>Guided</button>
               <button className={moneyEntryMode === "pdf" ? "active" : ""} onClick={() => setMoneyEntryMode("pdf")}>Statement</button>
-            </div>
+            </div>}
             {moneyEntryMode === "type" && (
               <form className="money-entry-form" onSubmit={submitMoneyDraft}>
                 <label>What changed?<select value={moneyDraft.kind} onChange={(event) => { const kind = event.target.value as MoneyDraft["kind"]; setMoneyDraft({ ...moneyDraft, kind, balanceCategory: kind === "liability" ? "creditCard" : moneyDraft.balanceCategory }); }}><option value="expense">I spent money</option><option value="income">I received money</option><option value="saving">I set money aside</option><option value="investment">I invested money</option><option value="asset">An asset balance changed</option><option value="liability">A debt balance changed</option></select></label>
@@ -2318,7 +2710,10 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
                 </div>
                 {(moneyDraft.kind === "asset" || moneyDraft.kind === "liability") && <label>Balance type<select value={moneyDraft.balanceCategory} onChange={(event) => setMoneyDraft({ ...moneyDraft, balanceCategory: event.target.value as BalanceSheetCategory })}>{moneyDraft.kind === "asset" ? <><option value="cash">Cash &amp; bank</option><option value="investments">Investments</option><option value="property">Property &amp; valuables</option><option value="otherAsset">Other asset</option></> : <><option value="creditCard">Credit card</option><option value="loan">Loan</option><option value="otherLiability">Other debt</option></>}</select></label>}
                 <label>{moneyDraft.kind === "income" ? "Source" : moneyDraft.kind === "asset" || moneyDraft.kind === "liability" ? "Account or balance name" : "What was it for?"}<input value={moneyDraft.note} onChange={(event) => setMoneyDraft({ ...moneyDraft, note: event.target.value })} placeholder={moneyDraft.kind === "income" ? "Salary, freelance…" : moneyDraft.kind === "asset" ? "Main bank account…" : moneyDraft.kind === "liability" ? "Credit card…" : "Groceries, rent…"} /></label>
-                <button className="primary-button" disabled={!moneyDraft.amount.trim()}>{moneyDraft.existingBalanceID ? "Update once" : "Add once"}</button>
+                <div className="modal-actions">
+                  {editingMoneyRecord ? <button type="button" className="danger-button" onClick={() => deleteMoneyActivity(editingMoneyRecord)}>Delete</button> : <span />}
+                  <button className="primary-button" disabled={!moneyDraft.amount.trim()}>{editingMoneyRecord || moneyDraft.existingBalanceID ? "Save changes" : "Add once"}</button>
+                </div>
               </form>
             )}
             {moneyEntryMode === "asitra" && (

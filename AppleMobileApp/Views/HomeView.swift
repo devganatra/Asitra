@@ -109,7 +109,7 @@ struct HomeView: View {
 
     private var quickCapture: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("Capture evidence", systemImage: "sparkles")
+            Label("Add anything", systemImage: "sparkles")
                 .font(.headline)
 
             Text("Type or talk naturally. Asitra organizes it before anything is saved.")
@@ -364,7 +364,7 @@ struct HomeView: View {
             Text(greetingTitle)
                 .font(.largeTitle.bold())
             Text(Calendar.current.isDateInToday(selectedDate)
-                ? "Follow the system, capture the evidence, and improve one step at a time."
+                ? "Choose a day you can actually live."
                 : selectedDate.formatted(.dateTime.weekday(.wide).day().month(.wide).year()))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
