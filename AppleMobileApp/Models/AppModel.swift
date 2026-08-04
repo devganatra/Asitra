@@ -151,6 +151,9 @@ final class AppModel {
         if storedEntry.category == .list, storedEntry.listID == nil {
             storedEntry.listID = defaultList(for: storedEntry.listKind ?? .task)?.id
         }
+        if storedEntry.category == .list, storedEntry.taskColumnID == nil {
+            storedEntry.taskColumnID = TaskBoardColumn.toDoID
+        }
         if let photoData {
             storedEntry.attachmentFilename = saveAttachment(photoData, id: entry.id, extension: "image")
         }
@@ -401,6 +404,11 @@ final class AppModel {
     func toggleCompleted(_ entry: LogEntry) {
         guard let index = entries.firstIndex(where: { $0.id == entry.id }) else { return }
         entries[index].isCompleted.toggle()
+        if entries[index].category == .list {
+            entries[index].taskColumnID = entries[index].isCompleted
+                ? TaskBoardColumn.doneID
+                : TaskBoardColumn.toDoID
+        }
         if entries[index].isCompleted {
             UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [entry.id.uuidString])
         } else if entries[index].appleReminderIdentifier == nil, let dueDate = entries[index].dueDate {
@@ -946,6 +954,7 @@ final class AppModel {
 
 enum AppSection: String, CaseIterable, Identifiable {
     case today = "Today"
+    case tasks = "Tasks"
     case lists = "Lists"
     case collections = "Track"
     case money = "Money"
@@ -957,6 +966,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .today: "clock"
+        case .tasks: "rectangle.3.group"
         case .lists: "checklist"
         case .collections: "chart.line.uptrend.xyaxis"
         case .money: "wallet.bifold"
@@ -1186,6 +1196,9 @@ struct LogEntry: Identifiable, Codable, Hashable {
     var listID: UUID?
     var dueDate: Date?
     var completed: Bool?
+    var taskImportant: Bool?
+    var taskUrgent: Bool?
+    var taskColumnID: UUID?
     var fitnessSource: String?
     var externalIdentifier: String?
     var appleReminderIdentifier: String?

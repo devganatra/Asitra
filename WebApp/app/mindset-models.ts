@@ -88,6 +88,24 @@ export function postponeDate(dateKey: string, days = 1) {
   return `${year}-${month}-${day}`;
 }
 
+export type TaskPriorityQuadrant = "do" | "plan" | "simplify" | "later";
+
+export function taskPriorityQuadrant(task: { important?: boolean; urgent?: boolean }): TaskPriorityQuadrant {
+  if (task.important && task.urgent) return "do";
+  if (task.important) return "plan";
+  if (task.urgent) return "simplify";
+  return "later";
+}
+
+export function taskBoardColumn(
+  task: { done: boolean; boardColumnId?: string },
+  availableColumnIds: string[],
+) {
+  if (task.done && availableColumnIds.includes("done")) return "done";
+  if (task.boardColumnId && availableColumnIds.includes(task.boardColumnId)) return task.boardColumnId;
+  return availableColumnIds[0] ?? "todo";
+}
+
 export type MoneyCycleRange = {
   start: Date;
   end: Date;

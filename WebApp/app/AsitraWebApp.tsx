@@ -15,11 +15,15 @@ import {
   ChevronRight,
   CircleDollarSign,
   Clock3,
+  Columns3,
   Download,
   FileText,
   Film,
+  Flag,
+  Grid2X2,
   HeartPulse,
   Home,
+  Inbox,
   ListChecks,
   Lock,
   LogOut,
@@ -56,10 +60,10 @@ import {
   type ParsedMoneyInstruction,
 } from "./money-import";
 import { type EntryKind, parseCapture } from "./capture-parser";
-import { entryCapabilities, finitePriorityView, initialPriorityIds, isInsideMoneyCycle, moneyCycleRange, personalFinancePerspectives, postponeDate, tripBudgetSummary, validateTaskPlan } from "./mindset-models";
+import { entryCapabilities, finitePriorityView, initialPriorityIds, isInsideMoneyCycle, moneyCycleRange, personalFinancePerspectives, postponeDate, taskBoardColumn, taskPriorityQuadrant, tripBudgetSummary, validateTaskPlan } from "./mindset-models";
 import { validatePersistedState } from "./state-schema";
 
-type Section = "today" | "lists" | "track" | "money" | "balance" | "settings";
+type Section = "today" | "tasks" | "lists" | "track" | "money" | "balance" | "settings";
 type TrackerFamily = "Health" | "Habits" | "Learning & Media" | "Mindset";
 
 type Entry = {
@@ -89,6 +93,14 @@ type ListItem = {
   startTime?: string;
   endTime?: string;
   durationMinutes?: number;
+  important?: boolean;
+  urgent?: boolean;
+  boardColumnId?: string;
+};
+
+type TaskColumn = {
+  id: string;
+  name: string;
 };
 
 type LifeList = {
@@ -161,6 +173,9 @@ type TaskEditorDraft = {
   startTime: string;
   endTime: string;
   durationMinutes: string;
+  important: boolean;
+  urgent: boolean;
+  boardColumnId: string;
 };
 
 type EditingMoneyRecord =
@@ -190,6 +205,7 @@ type PersistedState = {
   entries: Entry[];
   lists: LifeList[];
   trackers: Tracker[];
+  taskColumns: TaskColumn[];
   priorityDay: string;
   todayPriorityIds: string[];
   monthlyBudget: number;
@@ -221,12 +237,21 @@ const EMPTY_TASK_DRAFT: TaskEditorDraft = {
   startTime: "09:00",
   endTime: "10:00",
   durationMinutes: "60",
+  important: false,
+  urgent: false,
+  boardColumnId: "todo",
 };
+const DEFAULT_TASK_COLUMNS: TaskColumn[] = [
+  { id: "todo", name: "To do" },
+  { id: "in-progress", name: "In progress" },
+  { id: "done", name: "Done" },
+];
 const emptyState: PersistedState = {
   onboardingCompleted: false,
   entries: [],
   lists: [],
   trackers: [],
+  taskColumns: DEFAULT_TASK_COLUMNS,
   priorityDay: "",
   todayPriorityIds: [],
   monthlyBudget: 0,
@@ -335,10 +360,10 @@ const seedState: PersistedState = {
       members: 2,
       color: "#e6955c",
       items: [
-        { id: "li1", text: "Oat milk", done: false },
-        { id: "li2", text: "Tomatoes", done: false, plannedDate: dateKeyAtOffset(0), planMode: "window", startTime: "17:00", endTime: "19:00", durationMinutes: 20 },
-        { id: "li3", text: "Coffee beans", done: true },
-        { id: "li4", text: "Dishwasher tablets", done: false },
+        { id: "li1", text: "Oat milk", done: false, urgent: true, boardColumnId: "todo" },
+        { id: "li2", text: "Tomatoes", done: false, important: true, urgent: true, boardColumnId: "in-progress", plannedDate: dateKeyAtOffset(0), planMode: "window", startTime: "17:00", endTime: "19:00", durationMinutes: 20 },
+        { id: "li3", text: "Coffee beans", done: true, boardColumnId: "done" },
+        { id: "li4", text: "Dishwasher tablets", done: false, boardColumnId: "todo" },
       ],
     },
     {
@@ -348,8 +373,8 @@ const seedState: PersistedState = {
       members: 1,
       color: "#6f8f7b",
       items: [
-        { id: "li5", text: "Book dentist appointment", done: false, due: "Today", plannedDate: dateKeyAtOffset(0), planMode: "exact", startTime: "09:00", endTime: "09:30", durationMinutes: 30 },
-        { id: "li6", text: "Return library book", done: false, due: "Friday" },
+        { id: "li5", text: "Book dentist appointment", done: false, important: true, urgent: true, boardColumnId: "todo", due: "Today", plannedDate: dateKeyAtOffset(0), planMode: "exact", startTime: "09:00", endTime: "09:30", durationMinutes: 30 },
+        { id: "li6", text: "Return library book", done: false, important: true, boardColumnId: "todo", due: "Friday" },
       ],
     },
     {
@@ -359,8 +384,8 @@ const seedState: PersistedState = {
       members: 3,
       color: "#7b83a6",
       items: [
-        { id: "li7", text: "Choose hiking route", done: true },
-        { id: "li8", text: "Reserve dinner", done: false, plannedDate: dateKeyAtOffset(0), planMode: "window", startTime: "12:00", endTime: "16:00", durationMinutes: 15 },
+        { id: "li7", text: "Choose hiking route", done: true, boardColumnId: "done" },
+        { id: "li8", text: "Reserve dinner", done: false, important: true, boardColumnId: "in-progress", plannedDate: dateKeyAtOffset(0), planMode: "window", startTime: "12:00", endTime: "16:00", durationMinutes: 15 },
       ],
     },
   ],
@@ -371,6 +396,7 @@ const seedState: PersistedState = {
     { id: "t4", family: "Learning & Media", name: "Reading", icon: "book", target: 4 },
     { id: "t5", family: "Mindset", name: "Mood check-in", icon: "brain", target: 5 },
   ],
+  taskColumns: DEFAULT_TASK_COLUMNS,
   priorityDay: localDateKey(),
   todayPriorityIds: ["li5", "li8", "li2"],
   monthlyBudget: 1200,
@@ -412,6 +438,7 @@ function prioritiesForToday(state: PersistedState): PersistedState {
 
 const navItems: { id: Section; label: string; icon: typeof Home }[] = [
   { id: "today", label: "Today", icon: Home },
+  { id: "tasks", label: "Tasks", icon: Columns3 },
   { id: "lists", label: "Lists", icon: ListChecks },
   { id: "track", label: "Track", icon: Activity },
   { id: "money", label: "Money", icon: WalletCards },
@@ -544,6 +571,12 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
   const [moneyCycleOffset, setMoneyCycleOffset] = useState(0);
   const [priorityChooserOpen, setPriorityChooserOpen] = useState(false);
   const [taskEditor, setTaskEditor] = useState<TaskEditorDraft>();
+  const [taskView, setTaskView] = useState<"matrix" | "board">("matrix");
+  const [taskDump, setTaskDump] = useState("");
+  const [taskDumpImportant, setTaskDumpImportant] = useState(false);
+  const [taskDumpUrgent, setTaskDumpUrgent] = useState(false);
+  const [columnEditor, setColumnEditor] = useState<TaskColumn>();
+  const [draggedTask, setDraggedTask] = useState<{ listId: string; itemId: string }>();
   const [dayClosed, setDayClosed] = useState(false);
   const [reflection, setReflection] = useState("");
   const [chatInput, setChatInput] = useState("");
@@ -843,6 +876,14 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
     Math.min(96, 70 + Math.round((weekPersonal - weekWork * 0.45) / 18)),
   );
   const selectedList = state.lists.find((list) => list.id === selectedListId) ?? state.lists[0];
+  const taskColumns = state.taskColumns.length ? state.taskColumns : DEFAULT_TASK_COLUMNS;
+  const allTasks = state.lists.flatMap((list) => list.items.map((item) => ({
+    item,
+    listId: list.id,
+    listName: list.name,
+    listColor: list.color,
+  })));
+  const openTasks = allTasks.filter(({ item }) => !item.done);
   const suggested = capture.trim() ? parseCapture(capture) : undefined;
   const editingCapabilities = editingEntry ? entryCapabilities(editingEntry.kind) : undefined;
   const todayInsight =
@@ -921,6 +962,9 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
             due: listIntent.due,
             plannedDate: listIntent.due ? localDateKey(new Date(entry.timestamp)) : undefined,
             planMode: "anytime" as const,
+            important: /\bimportant\b/i.test(capture) && !/\bnot important\b/i.test(capture),
+            urgent: /\burgent\b/i.test(capture) && !/\bnot urgent\b/i.test(capture),
+            boardColumnId: "todo",
           }, ...destination.items],
         }
       : undefined;
@@ -1021,7 +1065,12 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
     const list = state.lists.find((candidate) => candidate.id === listId);
     if (!list) return;
     const willBeDone = !list.items.find((item) => item.id === itemId)?.done;
-    const updated = { ...list, items: list.items.map((item) => item.id === itemId ? { ...item, done: !item.done } : item) };
+    const updated = {
+      ...list,
+      items: list.items.map((item) => item.id === itemId
+        ? { ...item, done: !item.done, boardColumnId: !item.done ? "done" : "todo" }
+        : item),
+    };
     setState((current) => ({
       ...current,
       lists: current.lists.map((item) => item.id === listId ? updated : item),
@@ -1069,6 +1118,9 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
       startTime: item.startTime ?? "09:00",
       endTime: item.endTime ?? "10:00",
       durationMinutes: item.durationMinutes ? String(item.durationMinutes) : "60",
+      important: Boolean(item.important),
+      urgent: Boolean(item.urgent),
+      boardColumnId: item.done ? "done" : item.boardColumnId ?? "todo",
     });
   }
 
@@ -1089,7 +1141,7 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
     const nextItem: ListItem = {
       id: taskEditor.itemId,
       text: taskEditor.text.trim(),
-      done: false,
+      done: taskEditor.boardColumnId === "done",
       due: taskEditor.plannedDate === localDateKey() ? "Today" : taskEditor.plannedDate === dateKeyAtOffset(1) ? "Tomorrow" : taskEditor.plannedDate,
       plannedDate: taskEditor.plannedDate,
       planMode: taskEditor.planMode,
@@ -1098,10 +1150,13 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
       durationMinutes: taskEditor.planMode === "window" ? duration : taskEditor.planMode === "exact"
         ? Math.max(1, Math.round((new Date(`2000-01-01T${taskEditor.endTime}:00`).getTime() - new Date(`2000-01-01T${taskEditor.startTime}:00`).getTime()) / 60_000))
         : undefined,
+      important: taskEditor.important,
+      urgent: taskEditor.urgent,
+      boardColumnId: taskEditor.boardColumnId,
     };
     const sourceList = state.lists.find((list) => list.id === taskEditor.listId);
     const updatedSharedList = sourceList
-      ? { ...sourceList, items: sourceList.items.map((item) => item.id === nextItem.id ? { ...item, ...nextItem, done: item.done } : item) }
+      ? { ...sourceList, items: sourceList.items.map((item) => item.id === nextItem.id ? { ...item, ...nextItem } : item) }
       : undefined;
     setState((current) => ({
       ...current,
@@ -1117,13 +1172,99 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
             listId: taskEditor.listId,
           }
         : entry),
-      todayPriorityIds: nextItem.plannedDate === localDateKey()
+      todayPriorityIds: nextItem.plannedDate === localDateKey() && !nextItem.done
         ? current.todayPriorityIds
         : current.todayPriorityIds.filter((id) => id !== nextItem.id),
     }));
     if (updatedSharedList?.shared) void updateSharedList(updatedSharedList);
     setTaskEditor(undefined);
     setNotice("Task updated everywhere it appears.");
+  }
+
+  function addTaskDump(event: FormEvent) {
+    event.preventDefault();
+    const text = taskDump.trim();
+    if (!text) return;
+    const itemId = uid();
+    const destination = state.lists.find((list) => /task|reminder/i.test(list.name)) ?? state.lists[0];
+    const createdList: LifeList | undefined = destination ? undefined : {
+      id: uid(),
+      name: "Tasks",
+      shared: false,
+      members: 1,
+      color: "#6f8f7b",
+      items: [],
+    };
+    const target = destination ?? createdList!;
+    const nextItem: ListItem = {
+      id: itemId,
+      text,
+      done: false,
+      important: taskDumpImportant,
+      urgent: taskDumpUrgent,
+      boardColumnId: "todo",
+      planMode: "anytime",
+    };
+    const updated = { ...target, items: [nextItem, ...target.items] };
+    setState((current) => ({
+      ...current,
+      entries: [{ id: itemId, title: text, kind: "list", timestamp: new Date().toISOString() }, ...current.entries],
+      lists: current.lists.some((list) => list.id === updated.id)
+        ? current.lists.map((list) => list.id === updated.id ? updated : list)
+        : [...current.lists, updated],
+    }));
+    if (updated.shared) void updateSharedList(updated);
+    setTaskDump("");
+    setTaskDumpImportant(false);
+    setTaskDumpUrgent(false);
+    setNotice("Task added to your inbox, matrix and board.");
+  }
+
+  function moveTaskToColumn(listId: string, itemId: string, boardColumnId: string) {
+    if (!taskColumns.some((column) => column.id === boardColumnId)) return;
+    const list = state.lists.find((candidate) => candidate.id === listId);
+    if (!list) return;
+    const done = boardColumnId === "done";
+    const updated = {
+      ...list,
+      items: list.items.map((item) => item.id === itemId ? { ...item, boardColumnId, done } : item),
+    };
+    setState((current) => ({
+      ...current,
+      lists: current.lists.map((candidate) => candidate.id === listId ? updated : candidate),
+      todayPriorityIds: done ? current.todayPriorityIds.filter((id) => id !== itemId) : current.todayPriorityIds,
+    }));
+    if (updated.shared) void updateSharedList(updated);
+  }
+
+  function setTaskPriority(listId: string, itemId: string, priority: "important" | "urgent") {
+    const list = state.lists.find((candidate) => candidate.id === listId);
+    if (!list) return;
+    const updated = {
+      ...list,
+      items: list.items.map((item) => item.id === itemId
+        ? { ...item, [priority]: !item[priority] }
+        : item),
+    };
+    setState((current) => ({
+      ...current,
+      lists: current.lists.map((candidate) => candidate.id === listId ? updated : candidate),
+    }));
+    if (updated.shared) void updateSharedList(updated);
+  }
+
+  function saveTaskColumn(event: FormEvent) {
+    event.preventDefault();
+    if (!columnEditor?.name.trim()) return;
+    const name = columnEditor.name.trim();
+    setState((current) => ({
+      ...current,
+      taskColumns: columnEditor.id
+        ? current.taskColumns.map((column) => column.id === columnEditor.id ? { ...column, name } : column)
+        : [...current.taskColumns, { id: uid(), name }],
+    }));
+    setColumnEditor(undefined);
+    setNotice(columnEditor.id ? "Column renamed." : "Column added to your task board.");
   }
 
   function deleteTask(listId: string, itemId: string) {
@@ -1191,7 +1332,10 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
       listId: selectedList.id,
       completed: false,
     };
-    const updated = { ...selectedList, items: [{ id: itemId, text: newListItem.trim(), done: false }, ...selectedList.items] };
+    const updated = {
+      ...selectedList,
+      items: [{ id: itemId, text: newListItem.trim(), done: false, important: false, urgent: false, boardColumnId: "todo" }, ...selectedList.items],
+    };
     setState((current) => ({ ...current, entries: [entry, ...current.entries], lists: current.lists.map((list) => list.id === selectedList.id ? updated : list) }));
     if (updated.shared) void updateSharedList(updated);
     setNewListItem("");
@@ -2014,6 +2158,115 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
   }
 
   const mainContent = (() => {
+    if (section === "tasks") {
+      const matrix = [
+        { id: "do", title: "Do now", note: "Important and urgent", tone: "sage", items: openTasks.filter(({ item }) => taskPriorityQuadrant(item) === "do") },
+        { id: "plan", title: "Plan", note: "Important, not urgent", tone: "blue", items: openTasks.filter(({ item }) => taskPriorityQuadrant(item) === "plan") },
+        { id: "simplify", title: "Simplify", note: "Urgent, not important", tone: "warm", items: openTasks.filter(({ item }) => taskPriorityQuadrant(item) === "simplify") },
+        { id: "later", title: "Later", note: "Not urgent or important", tone: "quiet", items: openTasks.filter(({ item }) => taskPriorityQuadrant(item) === "later") },
+      ];
+      const renderTaskCard = ({ item, listId, listName, listColor }: typeof allTasks[number], compact = false) => (
+        <article
+          className={`task-planning-card ${item.done ? "done" : ""} ${compact ? "compact" : ""}`}
+          key={`${listId}-${item.id}`}
+          draggable
+          onDragStart={() => setDraggedTask({ listId, itemId: item.id })}
+          onDragEnd={() => setDraggedTask(undefined)}
+        >
+          <div className="task-card-heading">
+            <button className="task-complete-button" onClick={() => toggleListItem(listId, item.id)} aria-label={`${item.done ? "Reopen" : "Complete"} ${item.text}`}>
+              {item.done && <Check size={13} />}
+            </button>
+            <button className="task-card-title" onClick={() => openTaskEditor(listId, item)}>
+              <strong>{item.text}</strong>
+              <small><i style={{ background: listColor }} /> {listName}</small>
+            </button>
+            <button className="task-card-edit" onClick={() => openTaskEditor(listId, item)} aria-label={`Edit ${item.text}`}><Pencil size={14} /></button>
+          </div>
+          <div className="task-card-controls">
+            <button className={item.important ? "active important" : ""} onClick={() => setTaskPriority(listId, item.id, "important")} aria-pressed={Boolean(item.important)}><Flag size={13} /> Important</button>
+            <button className={item.urgent ? "active urgent" : ""} onClick={() => setTaskPriority(listId, item.id, "urgent")} aria-pressed={Boolean(item.urgent)}><Zap size={13} /> Urgent</button>
+            {!compact && (
+              <select value={taskBoardColumn(item, taskColumns.map((column) => column.id))} onChange={(event) => moveTaskToColumn(listId, item.id, event.target.value)} aria-label={`Board column for ${item.text}`}>
+                {taskColumns.map((column) => <option key={column.id} value={column.id}>{column.name}</option>)}
+              </select>
+            )}
+          </div>
+        </article>
+      );
+      return (
+        <div className="page-shell task-planning-page">
+          <PageHeader
+            eyebrow="Clear the mind"
+            title="Tasks"
+            description="Put everything down first. Then decide what deserves attention and where it belongs."
+          />
+          <section className="task-dump-card">
+            <div className="task-dump-copy"><Inbox size={20} /><div><strong>Task inbox</strong><span>Capture it now. Organize it in a second.</span></div></div>
+            <form onSubmit={addTaskDump}>
+              <input value={taskDump} onChange={(event) => setTaskDump(event.target.value)} placeholder="What is on your mind?" aria-label="New task" />
+              <div className="task-dump-tags">
+                <button type="button" className={taskDumpImportant ? "active important" : ""} onClick={() => setTaskDumpImportant((value) => !value)} aria-pressed={taskDumpImportant}><Flag size={14} /> Important</button>
+                <button type="button" className={taskDumpUrgent ? "active urgent" : ""} onClick={() => setTaskDumpUrgent((value) => !value)} aria-pressed={taskDumpUrgent}><Zap size={14} /> Urgent</button>
+              </div>
+              <button className="primary-button" disabled={!taskDump.trim()}><Plus size={16} /> Add task</button>
+            </form>
+          </section>
+          <div className="task-view-toolbar">
+            <div className="segment-row task-view-segments" aria-label="Task view">
+              <button className={taskView === "matrix" ? "active" : ""} onClick={() => setTaskView("matrix")}><Grid2X2 size={15} /> Priority matrix</button>
+              <button className={taskView === "board" ? "active" : ""} onClick={() => setTaskView("board")}><Columns3 size={15} /> Board</button>
+            </div>
+            <span>{openTasks.length} open · {allTasks.length - openTasks.length} done</span>
+          </div>
+          {taskView === "matrix" ? (
+            <div className="priority-matrix" aria-label="Urgent and important task matrix">
+              <div className="matrix-axis matrix-axis-top"><strong>Urgent</strong><span>Not urgent</span></div>
+              <div className="matrix-axis matrix-axis-side"><span>Not important</span><strong>Important</strong></div>
+              {matrix.map((quadrant) => (
+                <section className={`matrix-quadrant ${quadrant.tone}`} key={quadrant.id}>
+                  <header><div><h2>{quadrant.title}</h2><p>{quadrant.note}</p></div><span>{quadrant.items.length}</span></header>
+                  <div className="matrix-task-list">
+                    {quadrant.items.map((task) => renderTaskCard(task, true))}
+                    {!quadrant.items.length && <div className="matrix-empty">Nothing here. That is useful information too.</div>}
+                  </div>
+                </section>
+              ))}
+            </div>
+          ) : (
+            <>
+              <div className="task-board-toolbar">
+                <p>Drag tasks between columns, or use the column menu on each card.</p>
+                <button className="secondary-button" onClick={() => setColumnEditor({ id: "", name: "" })}><Plus size={16} /> Add column</button>
+              </div>
+              <div className="task-board" aria-label="Task board">
+                {taskColumns.map((column) => {
+                  const columnTasks = allTasks.filter(({ item }) => taskBoardColumn(item, taskColumns.map((candidate) => candidate.id)) === column.id);
+                  return (
+                    <section
+                      className="task-board-column"
+                      key={column.id}
+                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={() => {
+                        if (draggedTask) moveTaskToColumn(draggedTask.listId, draggedTask.itemId, column.id);
+                        setDraggedTask(undefined);
+                      }}
+                    >
+                      <header><div><h2>{column.name}</h2><span>{columnTasks.length}</span></div><button onClick={() => setColumnEditor(column)} aria-label={`Rename ${column.name}`}><Pencil size={14} /></button></header>
+                      <div className="task-board-stack">
+                        {columnTasks.map((task) => renderTaskCard(task))}
+                        {!columnTasks.length && <div className="board-drop-zone">Drop tasks here</div>}
+                      </div>
+                    </section>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      );
+    }
+
     if (section === "lists") {
       return (
         <div className="page-shell">
@@ -2872,12 +3125,28 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
           </section>
         </div>
       )}
+      {columnEditor && (
+        <div className="modal-layer" role="dialog" aria-modal="true" aria-label={columnEditor.id ? "Rename task column" : "Add task column"}>
+          <button className="modal-backdrop" onClick={() => setColumnEditor(undefined)} aria-label="Close column editor" />
+          <form className="edit-modal column-editor-modal" onSubmit={saveTaskColumn}>
+            <div className="section-heading"><div><span className="eyebrow">Your workflow</span><h2>{columnEditor.id ? "Rename column" : "Add a column"}</h2></div><button type="button" className="icon-button" onClick={() => setColumnEditor(undefined)} aria-label="Close"><X size={18} /></button></div>
+            <label>Column name<input autoFocus value={columnEditor.name} onChange={(event) => setColumnEditor({ ...columnEditor, name: event.target.value })} placeholder="For example: Waiting" /></label>
+            <p className="editor-help">A new column becomes another stage between capturing a task and finishing it.</p>
+            <div className="modal-actions"><span /><button className="primary-button" disabled={!columnEditor.name.trim()}>{columnEditor.id ? "Save name" : "Add column"}</button></div>
+          </form>
+        </div>
+      )}
       {taskEditor && (
         <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Edit task">
           <button className="modal-backdrop" onClick={() => setTaskEditor(undefined)} aria-label="Close task editor" />
           <form className="edit-modal task-editor-modal" onSubmit={saveTaskEditor}>
             <div className="section-heading"><div><span className="eyebrow">One task, updated everywhere</span><h2>Edit task</h2></div><button type="button" className="icon-button" onClick={() => setTaskEditor(undefined)} aria-label="Close"><X size={18} /></button></div>
             <label>What matters?<input autoFocus value={taskEditor.text} onChange={(event) => setTaskEditor({ ...taskEditor, text: event.target.value })} /></label>
+            <div className="task-editor-priority">
+              <button type="button" className={taskEditor.important ? "active important" : ""} onClick={() => setTaskEditor({ ...taskEditor, important: !taskEditor.important })} aria-pressed={taskEditor.important}><Flag size={14} /> Important</button>
+              <button type="button" className={taskEditor.urgent ? "active urgent" : ""} onClick={() => setTaskEditor({ ...taskEditor, urgent: !taskEditor.urgent })} aria-pressed={taskEditor.urgent}><Zap size={14} /> Urgent</button>
+            </div>
+            <label>Board column<select value={taskEditor.boardColumnId} onChange={(event) => setTaskEditor({ ...taskEditor, boardColumnId: event.target.value })}>{taskColumns.map((column) => <option key={column.id} value={column.id}>{column.name}</option>)}</select></label>
             <label>Planned date<input type="date" value={taskEditor.plannedDate} onChange={(event) => setTaskEditor({ ...taskEditor, plannedDate: event.target.value })} /></label>
             <label>Time planning<select value={taskEditor.planMode} onChange={(event) => setTaskEditor({ ...taskEditor, planMode: event.target.value as TaskEditorDraft["planMode"] })}><option value="anytime">Anytime that day</option><option value="exact">Exact time block</option><option value="window">Flexible time window</option></select></label>
             {taskEditor.planMode !== "anytime" && (

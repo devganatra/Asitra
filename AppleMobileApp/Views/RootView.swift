@@ -50,6 +50,8 @@ struct RootView: View {
         switch section {
         case .today:
             HomeView()
+        case .tasks:
+            TasksView()
         case .lists:
             ListsView()
         case .money:
