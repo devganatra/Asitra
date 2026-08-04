@@ -5,7 +5,7 @@ This ledger is the source of truth for what changed, where it was developed, and
 ## 0.2.0-beta.6 — 2026-08-04
 
 - Branch: `codex/release-tracking`
-- Pull request: pending
+- Pull request: [#42](https://github.com/devganatra/Asitra/pull/42)
 - Platforms: Web, macOS, iOS, iPadOS
 - Changes:
   - Added one canonical release manifest shared by every platform.

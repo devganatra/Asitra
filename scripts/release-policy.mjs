@@ -86,18 +86,26 @@ if (baseSha) {
     path.startsWith("WebApp/public/")
   );
 
-  if (productChanged) {
+  const traceRequired = productChanged || changedFiles.includes("release.json");
+
+  if (traceRequired) {
     for (const required of ["release.json", "RELEASES.md"]) {
       if (!changedFiles.includes(required)) {
         fail(`feature changes require updating ${required}`);
       }
     }
 
-    const baseRelease = JSON.parse(execFileSync("git", ["show", `${baseSha}:release.json`], {
-      cwd: new URL(".", root),
-      encoding: "utf8",
-    }));
-    if (baseRelease.version === release.version) {
+    let baseRelease;
+    try {
+      baseRelease = JSON.parse(execFileSync("git", ["show", `${baseSha}:release.json`], {
+        cwd: new URL(".", root),
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      }));
+    } catch {
+      // The first governance PR introduces the canonical manifest.
+    }
+    if (baseRelease?.version === release.version) {
       fail(`feature changes must bump the release beyond ${baseRelease.version}`);
     }
 
