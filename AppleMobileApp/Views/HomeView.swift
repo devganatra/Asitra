@@ -70,10 +70,17 @@ struct HomeView: View {
             )
         }
         .sheet(item: $editingEntry) { entry in
-            EditTimelineEntryView(entry: entry) { updated in
-                model.update(updated)
-                editingEntry = nil
-            }
+            EditTimelineEntryView(
+                entry: entry,
+                onSave: { updated in
+                    model.update(updated)
+                    editingEntry = nil
+                },
+                onDelete: {
+                    model.delete(entry)
+                    editingEntry = nil
+                }
+            )
         }
         .onChange(of: voiceCapture.transcript) { _, transcript in
             guard voiceCapture.isRecording || voiceCapture.recordingURL != nil else { return }
@@ -1188,6 +1195,7 @@ private struct EditTimelineEntryView: View {
     @Environment(\.dismiss) private var dismiss
     let original: LogEntry
     let onSave: (LogEntry) -> Void
+    let onDelete: () -> Void
 
     @State private var title: String
     @State private var note: String
@@ -1201,12 +1209,15 @@ private struct EditTimelineEntryView: View {
     @State private var listKind: ListKind
     @State private var hasDueDate: Bool
     @State private var dueDate: Date
-    @State private var calendarStart: Date
     @State private var calendarEnd: Date
+    @State private var hasTimeBlock: Bool
+    @State private var completed: Bool
+    @State private var confirmingDelete = false
 
-    init(entry: LogEntry, onSave: @escaping (LogEntry) -> Void) {
+    init(entry: LogEntry, onSave: @escaping (LogEntry) -> Void, onDelete: @escaping () -> Void) {
         original = entry
         self.onSave = onSave
+        self.onDelete = onDelete
         _title = State(initialValue: entry.title)
         _note = State(initialValue: entry.note)
         _timestamp = State(initialValue: entry.timestamp)
@@ -1219,8 +1230,9 @@ private struct EditTimelineEntryView: View {
         _listKind = State(initialValue: entry.listKind ?? .task)
         _hasDueDate = State(initialValue: entry.dueDate != nil)
         _dueDate = State(initialValue: entry.dueDate ?? .now)
-        _calendarStart = State(initialValue: entry.calendarStartDate ?? entry.timestamp)
         _calendarEnd = State(initialValue: entry.calendarEndDate ?? entry.timestamp.addingTimeInterval(3600))
+        _hasTimeBlock = State(initialValue: entry.calendarStartDate != nil || entry.calendarEndDate != nil)
+        _completed = State(initialValue: entry.isCompleted)
     }
 
     var body: some View {
@@ -1228,7 +1240,6 @@ private struct EditTimelineEntryView: View {
             Form {
                 Section("Entry") {
                     TextField("Title", text: $title)
-                    DatePicker("Time", selection: $timestamp)
                     Picker("Category", selection: $category) {
                         ForEach(LogCategory.allCases) { Text($0.displayName).tag($0) }
                     }
@@ -1237,11 +1248,16 @@ private struct EditTimelineEntryView: View {
                 }
 
                 Section("Details") {
-                    if category == .expense || original.amount != nil {
+                    if category.capabilities.contains(.complete) {
+                        Toggle("Completed", isOn: $completed)
+                    }
+                    if category.capabilities.contains(.amount) {
                         TextField("Amount", text: $amount)
                     }
-                    TextField("Duration in minutes", text: $duration)
-                    if category == .book || category == .movie {
+                    if category.capabilities.contains(.duration) {
+                        TextField("Duration in minutes", text: $duration)
+                    }
+                    if category.capabilities.contains(.status) {
                         Picker("Status", selection: $status) {
                             ForEach(EntryStatus.allCases) { Text($0.rawValue).tag($0) }
                         }
@@ -1254,6 +1270,18 @@ private struct EditTimelineEntryView: View {
                     }
                 }
 
+                Section {
+                    DatePicker(hasTimeBlock ? "Starts" : "Happened at", selection: $timestamp)
+                    Toggle("Use a time block", isOn: $hasTimeBlock)
+                    if hasTimeBlock {
+                        DatePicker("Ends", selection: $calendarEnd, in: timestamp...)
+                    }
+                } header: {
+                    Text("Time")
+                } footer: {
+                    Text(hasTimeBlock ? "This reserves a start and end time. If Apple Calendar is connected, saving keeps the linked event synchronized." : "Every entry has a time. Add an end when it should occupy a block in your day.")
+                }
+
                 if category == .list {
                     Section("List or reminder") {
                         Picker("Type", selection: $listKind) {
@@ -1264,20 +1292,16 @@ private struct EditTimelineEntryView: View {
                     }
                 }
 
-                if original.calendarStartDate != nil {
-                    Section {
-                        DatePicker("Starts", selection: $calendarStart)
-                        DatePicker("Ends", selection: $calendarEnd, in: calendarStart...)
-                    } header: {
-                        Text("Calendar time")
-                    } footer: {
-                        if original.appleCalendarEventIdentifier != nil {
-                            Text("Saving also updates the linked Apple Calendar event.")
-                        }
-                    }
+                Section {
+                    Button("Delete entry", role: .destructive) { confirmingDelete = true }
                 }
             }
             .navigationTitle("Edit entry")
+            .onChange(of: timestamp) { _, newValue in
+                if calendarEnd <= newValue {
+                    calendarEnd = newValue.addingTimeInterval(3600)
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -1289,6 +1313,15 @@ private struct EditTimelineEntryView: View {
             }
         }
         .frame(minWidth: 400, minHeight: 560)
+        .alert("Delete this entry?", isPresented: $confirmingDelete) {
+            Button("Delete", role: .destructive) {
+                onDelete()
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("It will be removed from the timeline and every linked view.")
+        }
     }
 
     private func save() {
@@ -1299,15 +1332,16 @@ private struct EditTimelineEntryView: View {
         updated.category = category
         updated.amount = amount.isEmpty ? nil : Double(amount.replacingOccurrences(of: ",", with: "."))
         updated.durationMinutes = duration.isEmpty ? nil : Int(duration)
-        updated.status = category == .book || category == .movie ? status : nil
+        updated.status = category.capabilities.contains(.status) ? status : nil
+        updated.amount = category.capabilities.contains(.amount) ? updated.amount : nil
+        updated.durationMinutes = category.capabilities.contains(.duration) ? updated.durationMinutes : nil
+        updated.isCompleted = category.capabilities.contains(.complete) ? completed : false
         updated.lifeArea = lifeArea
         updated.deviceSource = deviceSource
         updated.listKind = category == .list ? listKind : nil
         updated.dueDate = category == .list && hasDueDate ? dueDate : nil
-        if original.calendarStartDate != nil {
-            updated.calendarStartDate = calendarStart
-            updated.calendarEndDate = calendarEnd
-        }
+        updated.calendarStartDate = hasTimeBlock ? timestamp : nil
+        updated.calendarEndDate = hasTimeBlock ? calendarEnd : nil
         onSave(updated)
         dismiss()
     }

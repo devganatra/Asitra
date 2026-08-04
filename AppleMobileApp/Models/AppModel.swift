@@ -257,44 +257,76 @@ final class AppModel {
 
     func update(_ entry: LogEntry) {
         guard let index = entries.firstIndex(where: { $0.id == entry.id }) else { return }
-        entries[index] = entry
+        let previous = entries[index]
+        var storedEntry = entry
+        if storedEntry.calendarStartDate == nil {
+            storedEntry.calendarEndDate = nil
+        }
+        entries[index] = storedEntry
         entries.sort { $0.timestamp > $1.timestamp }
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [entry.id.uuidString])
-        if entry.category == .list, entry.appleReminderIdentifier == nil, let dueDate = entry.dueDate {
-            scheduleNotification(for: entry, at: dueDate)
+        if storedEntry.category == .list, storedEntry.appleReminderIdentifier == nil, let dueDate = storedEntry.dueDate {
+            scheduleNotification(for: storedEntry, at: dueDate)
         }
         save()
 
-        if let identifier = entry.appleCalendarEventIdentifier {
+        if let identifier = previous.appleCalendarEventIdentifier, storedEntry.calendarStartDate == nil {
             Task {
                 do {
-                    let start = entry.calendarStartDate ?? entry.timestamp
-                    let end = entry.calendarEndDate
-                        ?? start.addingTimeInterval(TimeInterval(max(entry.durationMinutes ?? 15, 1) * 60))
+                    try AppleReminderService.shared.deleteCalendarEvent(identifier: identifier)
+                    guard let updatedIndex = entries.firstIndex(where: { $0.id == storedEntry.id }) else { return }
+                    entries[updatedIndex].appleCalendarEventIdentifier = nil
+                    save()
+                    calendarFeature.update(calendarStatus: "Connected")
+                } catch {
+                    calendarFeature.setError(error.localizedDescription)
+                }
+            }
+        } else if let identifier = storedEntry.appleCalendarEventIdentifier {
+            Task {
+                do {
+                    let start = storedEntry.calendarStartDate ?? storedEntry.timestamp
+                    let end = storedEntry.calendarEndDate
+                        ?? start.addingTimeInterval(TimeInterval(max(storedEntry.durationMinutes ?? 15, 1) * 60))
                     try AppleReminderService.shared.updateCalendarEvent(
                         identifier: identifier,
-                        title: entry.calendarTitle ?? calendarTitle(from: entry.title),
-                        location: entry.calendarLocation,
-                        notes: entry.note.isEmpty ? "Updated from Asitra" : "Updated from Asitra\n\n\(entry.note)",
+                        title: storedEntry.calendarTitle ?? calendarTitle(from: storedEntry.title),
+                        location: storedEntry.calendarLocation,
+                        notes: storedEntry.note.isEmpty ? "Updated from Asitra" : "Updated from Asitra\n\n\(storedEntry.note)",
                         startDate: start,
                         endDate: end,
-                        reminderLeadMinutes: entry.reminderLeadMinutes
+                        reminderLeadMinutes: storedEntry.reminderLeadMinutes
                     )
                     calendarFeature.update(calendarStatus: "Connected")
                 } catch {
                     calendarFeature.setError(error.localizedDescription)
                 }
             }
+        } else if storedEntry.calendarStartDate != nil, appleCalendarEnabled {
+            Task { await syncToAppleCalendar(storedEntry) }
         }
 
-        if entry.category == .list, let identifier = entry.appleReminderIdentifier {
+        if previous.category == .list, storedEntry.category != .list,
+           let identifier = previous.appleReminderIdentifier {
+            Task {
+                do {
+                    try AppleReminderService.shared.deleteReminder(identifier: identifier)
+                    guard let updatedIndex = entries.firstIndex(where: { $0.id == storedEntry.id }) else { return }
+                    entries[updatedIndex].appleReminderIdentifier = nil
+                    save()
+                    calendarFeature.update(remindersStatus: "Connected")
+                } catch {
+                    calendarFeature.setError(error.localizedDescription)
+                }
+            }
+        } else if storedEntry.category == .list, let identifier = storedEntry.appleReminderIdentifier {
             Task {
                 do {
                     try AppleReminderService.shared.updateReminder(
                         identifier: identifier,
-                        title: entry.title,
-                        notes: entry.note,
-                        dueDate: entry.dueDate
+                        title: storedEntry.title,
+                        notes: storedEntry.note,
+                        dueDate: storedEntry.dueDate
                     )
                     calendarFeature.update(remindersStatus: "Connected")
                 } catch {
@@ -1034,6 +1066,36 @@ enum EntryStatus: String, CaseIterable, Codable, Identifiable {
     var id: Self { self }
 }
 
+enum EntryCapability: String, Hashable {
+    case edit
+    case delete
+    case schedule
+    case complete
+    case amount
+    case duration
+    case status
+    case tripLink
+}
+
+extension LogCategory {
+    var capabilities: Set<EntryCapability> {
+        var result: Set<EntryCapability> = [.edit, .delete, .schedule]
+        switch self {
+        case .list, .routine:
+            result.insert(.complete)
+        case .expense:
+            result.formUnion([.amount, .tripLink])
+        case .work, .fitness, .sleep, .screenTime:
+            result.insert(.duration)
+        case .book, .movie:
+            result.formUnion([.duration, .status])
+        case .food, .mood, .journal, .idea, .note:
+            break
+        }
+        return result
+    }
+}
+
 enum ListKind: String, CaseIterable, Codable, Identifiable {
     case grocery = "Grocery"
     case shopping = "Shopping"
@@ -1141,6 +1203,8 @@ struct LogEntry: Identifiable, Codable, Hashable {
     var financialCurrencyCode: String?
     var merchantCategoryCode: Int?
     var financialTransactionStatus: String?
+
+    var capabilities: Set<EntryCapability> { category.capabilities }
 
     var isCompleted: Bool {
         get { completed ?? false }

@@ -56,7 +56,7 @@ import {
   type ParsedMoneyInstruction,
 } from "./money-import";
 import { type EntryKind, parseCapture } from "./capture-parser";
-import { finitePriorityView, initialPriorityIds, isInsideMoneyCycle, moneyCycleRange, personalFinancePerspectives, postponeDate, tripBudgetSummary, validateTaskPlan } from "./mindset-models";
+import { entryCapabilities, finitePriorityView, initialPriorityIds, isInsideMoneyCycle, moneyCycleRange, personalFinancePerspectives, postponeDate, tripBudgetSummary, validateTaskPlan } from "./mindset-models";
 import { validatePersistedState } from "./state-schema";
 
 type Section = "today" | "lists" | "track" | "money" | "balance" | "settings";
@@ -73,6 +73,10 @@ type Entry = {
   source?: string;
   photo?: string;
   tripId?: string;
+  listId?: string;
+  endTimestamp?: string;
+  completed?: boolean;
+  status?: "planned" | "inProgress" | "completed";
 };
 
 type ListItem = {
@@ -253,10 +257,25 @@ function localDateKey(date = new Date()) {
   return new Date(date.getTime() - offset).toISOString().slice(0, 10);
 }
 
+function localTimeKey(date: Date) {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function datetimeLocalValue(value: string) {
+  const date = new Date(value);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
+
 function dateKeyAtOffset(days: number) {
   const date = new Date();
   date.setDate(date.getDate() + days);
   return localDateKey(date);
+}
+
+function shiftTimestamp(value: string, days: number) {
+  const date = new Date(value);
+  date.setDate(date.getDate() + days);
+  return date.toISOString();
 }
 
 function ordinalDay(day: number) {
@@ -825,6 +844,7 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
   );
   const selectedList = state.lists.find((list) => list.id === selectedListId) ?? state.lists[0];
   const suggested = capture.trim() ? parseCapture(capture) : undefined;
+  const editingCapabilities = editingEntry ? entryCapabilities(editingEntry.kind) : undefined;
   const todayInsight =
     dayEntries.length === 0
       ? "Start with one honest entry. The rest of your day will organize itself."
@@ -904,12 +924,15 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
           }, ...destination.items],
         }
       : undefined;
+    const canonicalEntry: Entry = updatedDestination
+      ? { ...entry, listId: updatedDestination.id, completed: false }
+      : entry;
     setState((current) => {
-      if (!updatedDestination) return { ...current, entries: [entry, ...current.entries] };
+      if (!updatedDestination) return { ...current, entries: [canonicalEntry, ...current.entries] };
       const exists = current.lists.some((list) => list.id === updatedDestination.id);
       return {
         ...current,
-        entries: [entry, ...current.entries],
+        entries: [canonicalEntry, ...current.entries],
         lists: exists
           ? current.lists.map((list) => list.id === updatedDestination.id ? updatedDestination : list)
           : [...current.lists, updatedDestination],
@@ -1002,6 +1025,7 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
     setState((current) => ({
       ...current,
       lists: current.lists.map((item) => item.id === listId ? updated : item),
+      entries: current.entries.map((entry) => entry.id === itemId ? { ...entry, completed: willBeDone } : entry),
       todayPriorityIds: willBeDone ? current.todayPriorityIds.filter((id) => id !== itemId) : current.todayPriorityIds,
     }));
     if (updated.shared) void updateSharedList(updated);
@@ -1028,6 +1052,9 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
           ? { ...item, plannedDate: localDateKey(), due: "Today", planMode: item.planMode ?? "anytime" }
           : item),
       })),
+      entries: current.entries.map((entry) => entry.id === itemId
+        ? { ...entry, timestamp: taskTimestamp({ plannedDate: localDateKey(), startTime: entry.timestamp ? localTimeKey(new Date(entry.timestamp)) : undefined }), completed: false }
+        : entry),
     }));
   }
 
@@ -1080,7 +1107,15 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
       ...current,
       lists: current.lists.map((list) => list.id === taskEditor.listId && updatedSharedList ? updatedSharedList : list),
       entries: current.entries.map((entry) => entry.id === nextItem.id
-        ? { ...entry, title: nextItem.text, timestamp: taskTimestamp(nextItem), minutes: nextItem.durationMinutes }
+        ? {
+            ...entry,
+            title: nextItem.text,
+            timestamp: taskTimestamp(nextItem),
+            endTimestamp: nextItem.planMode === "anytime" || !nextItem.endTime ? undefined : new Date(`${nextItem.plannedDate}T${nextItem.endTime}:00`).toISOString(),
+            minutes: nextItem.durationMinutes,
+            completed: sourceList?.items.find((item) => item.id === nextItem.id)?.done ?? false,
+            listId: taskEditor.listId,
+          }
         : entry),
       todayPriorityIds: nextItem.plannedDate === localDateKey()
         ? current.todayPriorityIds
@@ -1114,7 +1149,9 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
     setState((current) => ({
       ...current,
       lists: current.lists.map((candidate) => candidate.id === listId && updated ? updated : candidate),
-      entries: current.entries.map((entry) => entry.id === item.id ? { ...entry, timestamp: taskTimestamp(nextItem) } : entry),
+      entries: current.entries.map((entry) => entry.id === item.id
+        ? { ...entry, timestamp: taskTimestamp(nextItem), endTimestamp: entry.endTimestamp ? shiftTimestamp(entry.endTimestamp, days) : undefined }
+        : entry),
       todayPriorityIds: current.todayPriorityIds.filter((id) => id !== item.id),
     }));
     if (updated?.shared) void updateSharedList(updated);
@@ -1151,6 +1188,8 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
       title: newListItem.trim(),
       kind: "list",
       timestamp: new Date().toISOString(),
+      listId: selectedList.id,
+      completed: false,
     };
     const updated = { ...selectedList, items: [{ id: itemId, text: newListItem.trim(), done: false }, ...selectedList.items] };
     setState((current) => ({ ...current, entries: [entry, ...current.entries], lists: current.lists.map((list) => list.id === selectedList.id ? updated : list) }));
@@ -1788,13 +1827,63 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
   function saveEditedEntry(event: FormEvent) {
     event.preventDefault();
     if (!editingEntry) return;
+    if (editingEntry.endTimestamp && new Date(editingEntry.endTimestamp) < new Date(editingEntry.timestamp)) {
+      setNotice("Choose an end time after the start time.");
+      return;
+    }
+    const capabilities = entryCapabilities(editingEntry.kind);
+    const nextEntry: Entry = {
+      ...editingEntry,
+      amount: capabilities.usesAmount ? editingEntry.amount : undefined,
+      minutes: capabilities.usesDuration ? editingEntry.minutes : undefined,
+      status: capabilities.usesStatus ? editingEntry.status ?? "planned" : undefined,
+      completed: capabilities.completable ? editingEntry.completed ?? false : undefined,
+      tripId: capabilities.canLinkTrip ? editingEntry.tripId : undefined,
+    };
+    const sourceList = state.lists.find((list) => list.items.some((item) => item.id === nextEntry.id));
+    const targetList = sourceList ?? (nextEntry.kind === "list" ? selectedList : undefined);
+    const synchronizedEntry: Entry = {
+      ...nextEntry,
+      listId: nextEntry.kind === "list" ? targetList?.id : undefined,
+    };
+    const updatedList = targetList
+      ? {
+          ...targetList,
+          items: synchronizedEntry.kind === "list"
+            ? (() => {
+                const start = new Date(synchronizedEntry.timestamp);
+                const end = synchronizedEntry.endTimestamp ? new Date(synchronizedEntry.endTimestamp) : undefined;
+                const projected: ListItem = {
+                  id: synchronizedEntry.id,
+                  text: synchronizedEntry.title,
+                  done: synchronizedEntry.completed ?? false,
+                  plannedDate: localDateKey(start),
+                  due: localDateKey(start) === localDateKey() ? "Today" : localDateKey(start) === dateKeyAtOffset(1) ? "Tomorrow" : localDateKey(start),
+                  planMode: end ? "exact" : "anytime",
+                  startTime: end ? localTimeKey(start) : undefined,
+                  endTime: end ? localTimeKey(end) : undefined,
+                  durationMinutes: synchronizedEntry.minutes,
+                };
+                return targetList.items.some((item) => item.id === synchronizedEntry.id)
+                  ? targetList.items.map((item) => item.id === synchronizedEntry.id ? { ...item, ...projected } : item)
+                  : [projected, ...targetList.items];
+              })()
+            : targetList.items.filter((item) => item.id !== synchronizedEntry.id),
+        }
+      : undefined;
     setState((current) => ({
       ...current,
       entries: current.entries.map((entry) =>
-        entry.id === editingEntry.id ? editingEntry : entry,
+        entry.id === synchronizedEntry.id ? synchronizedEntry : entry,
       ),
+      lists: current.lists.map((list) => list.id === updatedList?.id ? updatedList : list),
+      todayPriorityIds: synchronizedEntry.kind !== "list" || synchronizedEntry.completed || localDateKey(new Date(synchronizedEntry.timestamp)) !== localDateKey()
+        ? current.todayPriorityIds.filter((id) => id !== synchronizedEntry.id)
+        : current.todayPriorityIds,
     }));
+    if (updatedList?.shared) void updateSharedList(updatedList);
     setEditingEntry(undefined);
+    setNotice("Entry updated everywhere it appears.");
   }
 
   function deleteEditedEntry() {
@@ -1802,7 +1891,11 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
     setState((current) => ({
       ...current,
       entries: current.entries.filter((entry) => entry.id !== editingEntry.id),
+      lists: current.lists.map((list) => ({ ...list, items: list.items.filter((item) => item.id !== editingEntry.id) })),
+      todayPriorityIds: current.todayPriorityIds.filter((id) => id !== editingEntry.id),
     }));
+    const sharedList = state.lists.find((list) => list.shared && list.items.some((item) => item.id === editingEntry.id));
+    if (sharedList) void updateSharedList({ ...sharedList, items: sharedList.items.filter((item) => item.id !== editingEntry.id) });
     setEditingEntry(undefined);
     setNotice("Timeline entry deleted.");
   }
@@ -2809,12 +2902,23 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
         <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Edit timeline entry">
           <button className="modal-backdrop" onClick={() => setEditingEntry(undefined)} aria-label="Close editor" />
           <form className="edit-modal" onSubmit={saveEditedEntry}>
-            <div className="section-heading"><div><span className="eyebrow">Timeline</span><h2>Edit entry</h2></div><button type="button" className="icon-button" onClick={() => setEditingEntry(undefined)}><X size={18} /></button></div>
-            <label>What happened<input value={editingEntry.title} onChange={(event) => setEditingEntry({ ...editingEntry, title: event.target.value })} /></label>
+            <div className="section-heading"><div><span className="eyebrow">One object · every view</span><h2>Edit entry</h2></div><button type="button" className="icon-button" onClick={() => setEditingEntry(undefined)}><X size={18} /></button></div>
+            <p className="editor-help">Every entry can be edited, deleted, or placed in time. Its type adds only the fields and actions that make sense.</p>
+            <label>Title<input value={editingEntry.title} onChange={(event) => setEditingEntry({ ...editingEntry, title: event.target.value })} /></label>
             <label>Category<select value={editingEntry.kind} onChange={(event) => setEditingEntry({ ...editingEntry, kind: event.target.value as EntryKind })}>{Object.entries(kindMeta).map(([kind, meta]) => <option key={kind} value={kind}>{meta.label}</option>)}</select></label>
-            <label>Date and time<input type="datetime-local" value={new Date(new Date(editingEntry.timestamp).getTime() - new Date(editingEntry.timestamp).getTimezoneOffset() * 60_000).toISOString().slice(0, 16)} onChange={(event) => setEditingEntry({ ...editingEntry, timestamp: new Date(event.target.value).toISOString() })} /></label>
-            <label>Amount in EUR<input type="number" min="0" step="0.01" value={editingEntry.amount ?? ""} onChange={(event) => setEditingEntry({ ...editingEntry, amount: event.target.value ? Number(event.target.value) : undefined })} /></label>
-            <label>Duration in minutes<input type="number" min="0" step="1" value={editingEntry.minutes ?? ""} onChange={(event) => setEditingEntry({ ...editingEntry, minutes: event.target.value ? Number(event.target.value) : undefined })} /></label>
+            <div className="entry-time-editor">
+              <label>Starts or happened at<input type="datetime-local" value={datetimeLocalValue(editingEntry.timestamp)} onChange={(event) => setEditingEntry({ ...editingEntry, timestamp: new Date(event.target.value).toISOString() })} /></label>
+              {editingEntry.endTimestamp ? (
+                <><label>Ends<input type="datetime-local" min={datetimeLocalValue(editingEntry.timestamp)} value={datetimeLocalValue(editingEntry.endTimestamp)} onChange={(event) => setEditingEntry({ ...editingEntry, endTimestamp: new Date(event.target.value).toISOString() })} /></label><button type="button" className="text-button" onClick={() => setEditingEntry({ ...editingEntry, endTimestamp: undefined })}>Use one moment</button></>
+              ) : (
+                <button type="button" className="secondary-button" onClick={() => setEditingEntry({ ...editingEntry, endTimestamp: new Date(new Date(editingEntry.timestamp).getTime() + Math.max(editingEntry.minutes ?? 60, 15) * 60_000).toISOString() })}><Clock3 size={15} /> Add an end time</button>
+              )}
+            </div>
+            {editingCapabilities?.completable && <label className="entry-toggle"><input type="checkbox" checked={editingEntry.completed ?? false} onChange={(event) => setEditingEntry({ ...editingEntry, completed: event.target.checked })} /><span><strong>Completed</strong><small>This updates Today and the linked list.</small></span></label>}
+            {editingCapabilities?.usesAmount && <label>Amount in EUR<input type="number" min="0" step="0.01" value={editingEntry.amount ?? ""} onChange={(event) => setEditingEntry({ ...editingEntry, amount: event.target.value ? Number(event.target.value) : undefined })} /></label>}
+            {editingCapabilities?.canLinkTrip && !!state.trips.length && <label>Trip plan<select value={editingEntry.tripId ?? ""} onChange={(event) => setEditingEntry({ ...editingEntry, tripId: event.target.value || undefined })}><option value="">Not linked to a trip</option>{state.trips.map((trip) => <option key={trip.id} value={trip.id}>{trip.name} · {trip.destination}</option>)}</select></label>}
+            {editingCapabilities?.usesDuration && <label>Duration in minutes<input type="number" min="0" step="1" value={editingEntry.minutes ?? ""} onChange={(event) => setEditingEntry({ ...editingEntry, minutes: event.target.value ? Number(event.target.value) : undefined })} /></label>}
+            {editingCapabilities?.usesStatus && <label>Status<select value={editingEntry.status ?? "planned"} onChange={(event) => setEditingEntry({ ...editingEntry, status: event.target.value as Entry["status"] })}><option value="planned">Want to</option><option value="inProgress">In progress</option><option value="completed">Completed</option></select></label>}
             <label>Note<textarea value={editingEntry.note ?? ""} onChange={(event) => setEditingEntry({ ...editingEntry, note: event.target.value })} rows={3} /></label>
             <div className="modal-actions"><button type="button" className="danger-button" onClick={deleteEditedEntry}>Delete</button><button className="primary-button" disabled={!editingEntry.title.trim()}>Save changes</button></div>
           </form>

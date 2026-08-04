@@ -167,3 +167,27 @@ export function tripBudgetSummary(trip: TripBudget, expenses: TripExpense[]) {
     expenseCount: linkedExpenses.length,
   };
 }
+
+export type EntryCapabilities = {
+  editable: true;
+  deletable: true;
+  schedulable: true;
+  completable: boolean;
+  usesAmount: boolean;
+  usesDuration: boolean;
+  usesStatus: boolean;
+  canLinkTrip: boolean;
+};
+
+export function entryCapabilities(kind: string): EntryCapabilities {
+  return {
+    editable: true,
+    deletable: true,
+    schedulable: true,
+    completable: kind === "list",
+    usesAmount: kind === "expense",
+    usesDuration: ["work", "movement", "sleep", "book", "movie"].includes(kind),
+    usesStatus: kind === "book" || kind === "movie",
+    canLinkTrip: kind === "expense",
+  };
+}

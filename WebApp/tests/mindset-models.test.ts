@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  entryCapabilities,
   finitePriorityView,
   initialPriorityIds,
   isInsideMoneyCycle,
@@ -116,4 +117,22 @@ test("builds a trip budget from the same linked expense ledger", () => {
   assert.equal(overBudget.remaining, 0);
   assert.equal(overBudget.over, 50);
   assert.equal(overBudget.progress, 100);
+});
+
+test("gives every entry a lifecycle and adds only relevant type capabilities", () => {
+  assert.deepEqual(entryCapabilities("journal"), {
+    editable: true,
+    deletable: true,
+    schedulable: true,
+    completable: false,
+    usesAmount: false,
+    usesDuration: false,
+    usesStatus: false,
+    canLinkTrip: false,
+  });
+  assert.equal(entryCapabilities("list").completable, true);
+  assert.equal(entryCapabilities("expense").usesAmount, true);
+  assert.equal(entryCapabilities("expense").canLinkTrip, true);
+  assert.equal(entryCapabilities("movement").usesDuration, true);
+  assert.equal(entryCapabilities("book").usesStatus, true);
 });
