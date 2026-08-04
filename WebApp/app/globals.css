@@ -2094,8 +2094,19 @@ h3 {
   background: #f8fcf8;
   box-shadow: var(--shadow);
   transform: translateX(-50%);
+  animation: toast-enter 160ms ease-out, toast-leave 180ms ease-in 3.8s forwards;
   font-size: 12px;
   font-weight: 650;
+}
+
+@keyframes toast-enter {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+@keyframes toast-leave {
+  from { opacity: 1; transform: translate(-50%, 0); }
+  to { opacity: 0; transform: translate(-50%, 6px); }
 }
 
 .toast button {
@@ -3950,6 +3961,10 @@ h3 {
   *::after {
     scroll-behavior: auto !important;
     transition: none !important;
+  }
+
+  .toast {
+    animation: none !important;
   }
 }
 
