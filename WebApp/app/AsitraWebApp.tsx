@@ -21,6 +21,7 @@ import {
   Film,
   Flag,
   Grid2X2,
+  GripVertical,
   HeartPulse,
   Home,
   Inbox,
@@ -41,6 +42,7 @@ import {
   ShieldCheck,
   Sparkles,
   Target,
+  Timer,
   Trash2,
   Upload,
   Users,
@@ -331,6 +333,39 @@ function taskTimeLabel(item: ListItem) {
   return "Anytime";
 }
 
+function timeToMinutes(value?: string) {
+  if (!value) return undefined;
+  const [hours, minutes] = value.split(":").map(Number);
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return undefined;
+  return hours * 60 + minutes;
+}
+
+function taskProgress(item: ListItem, now: Date, selectedDate: Date) {
+  const start = timeToMinutes(item.startTime);
+  const end = timeToMinutes(item.endTime);
+  const isToday = localDateKey(now) === localDateKey(selectedDate);
+  if (start === undefined || end === undefined || end <= start || !isToday) {
+    return { value: 0, status: taskTimeLabel(item), detail: item.planMode === "anytime" ? "Ready when you are" : "Scheduled" };
+  }
+
+  const current = now.getHours() * 60 + now.getMinutes();
+  if (current < start) {
+    const difference = start - current;
+    return { value: 0, status: `In ${minutesLabel(difference)}`, detail: `${minutesLabel(end - start)} planned` };
+  }
+  if (current >= end) {
+    return { value: 100, status: "Ready to finish", detail: `${minutesLabel(end - start)} planned` };
+  }
+
+  const elapsed = current - start;
+  const remaining = end - current;
+  return {
+    value: Math.min(100, Math.max(0, (elapsed / (end - start)) * 100)),
+    status: `${minutesLabel(elapsed)} elapsed`,
+    detail: `${minutesLabel(remaining)} left`,
+  };
+}
+
 function taskTimestamp(item: Pick<ListItem, "plannedDate" | "startTime">) {
   const date = item.plannedDate || localDateKey();
   const time = item.startTime || "12:00";
@@ -555,10 +590,10 @@ const onboardingSteps = [
 
 const NOTICE_DURATION_MS = 4_000;
 
-export default function AsitraWebApp({ userName, logoutPath }: { userName: string; logoutPath: string }) {
+export default function AsitraWebApp({ userName, logoutPath, designPreview = false }: { userName: string; logoutPath: string; designPreview?: boolean }) {
   const [section, setSection] = useState<Section>("today");
-  const [state, setState] = useState<PersistedState>(emptyState);
-  const [hydrated, setHydrated] = useState(false);
+  const [state, setState] = useState<PersistedState>(designPreview ? seedState : emptyState);
+  const [hydrated, setHydrated] = useState(designPreview);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [capture, setCapture] = useState("");
   const [capturePhoto, setCapturePhoto] = useState<string>();
@@ -580,6 +615,8 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
   const [columnEditor, setColumnEditor] = useState<TaskColumn>();
   const [draggedTask, setDraggedTask] = useState<{ listId: string; itemId: string }>();
   const [dayClosed, setDayClosed] = useState(false);
+  const [arrangeMode, setArrangeMode] = useState(false);
+  const [clock, setClock] = useState<Date>();
   const [reflection, setReflection] = useState("");
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -719,11 +756,21 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
   }
 
   useEffect(() => {
+    if (designPreview) return;
     // The state update happens after the authenticated network request resolves.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadState();
     // Loading is intentionally limited to the initial authenticated mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [designPreview]);
+
+  useEffect(() => {
+    const initial = window.setTimeout(() => setClock(new Date()), 0);
+    const timer = window.setInterval(() => setClock(new Date()), 60_000);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -783,7 +830,7 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
   }
 
   useEffect(() => {
-    if (!hydrated || accountDeletedRef.current) return;
+    if (!hydrated || designPreview || accountDeletedRef.current) return;
     const timeout = window.setTimeout(() => {
       saveQueueRef.current = saveQueueRef.current
         .catch(() => undefined)
@@ -793,7 +840,7 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
       });
     }, 350);
     return () => window.clearTimeout(timeout);
-  }, [hydrated, state]);
+  }, [designPreview, hydrated, state]);
 
   const dayEntries = useMemo(
     () =>
@@ -1119,6 +1166,17 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
         ? { ...entry, timestamp: taskTimestamp({ plannedDate: localDateKey(), startTime: entry.timestamp ? localTimeKey(new Date(entry.timestamp)) : undefined }), completed: false }
         : entry),
     }));
+  }
+
+  function movePriority(itemId: string, direction: -1 | 1) {
+    setState((current) => {
+      const from = current.todayPriorityIds.indexOf(itemId);
+      const to = from + direction;
+      if (from < 0 || to < 0 || to >= current.todayPriorityIds.length) return current;
+      const reordered = [...current.todayPriorityIds];
+      [reordered[from], reordered[to]] = [reordered[to], reordered[from]];
+      return { ...current, todayPriorityIds: reordered };
+    });
   }
 
   function openTaskEditor(listId: string, item: ListItem) {
@@ -2760,134 +2818,142 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
       );
     }
 
+    const activeCommitment = todayCommitments[0];
+    const upcomingCommitments = todayCommitments.slice(1, 3);
+    const activeProgress = activeCommitment && clock
+      ? taskProgress(activeCommitment, clock, selectedDate)
+      : activeCommitment
+        ? { value: 0, status: taskTimeLabel(activeCommitment), detail: "Scheduled" }
+        : undefined;
+    const timelineStart = 7 * 60;
+    const timelineEnd = 21 * 60;
+    const timelineSpan = timelineEnd - timelineStart;
+    const selectedIsToday = Boolean(clock && localDateKey(selectedDate) === localDateKey(clock));
+    const nowPosition = clock ? Math.min(100, Math.max(0, ((clock.getHours() * 60 + clock.getMinutes() - timelineStart) / timelineSpan) * 100)) : 0;
+    const latestMoment = dayEntries[0];
+    const budgetRemaining = Math.max(financeViews.budgetRemaining, 0);
+    const budgetRemainingRatio = state.monthlyBudget > 0 ? Math.min(100, (budgetRemaining / state.monthlyBudget) * 100) : 0;
+
     return (
-      <div className="page-shell today-page">
-        <header className="finite-day-header">
+      <div className="page-shell today-page adaptive-today">
+        <header className="studio-day-header">
           <div>
-            <h1>Good {new Date().getHours() < 12 ? "morning" : new Date().getHours() < 18 ? "afternoon" : "evening"}, {userFirstName}.</h1>
+            <h1>Good {!clock || clock.getHours() < 12 ? "morning" : clock.getHours() < 18 ? "afternoon" : "evening"}, {userFirstName}.</h1>
             <p>Choose a day you can actually live.</p>
           </div>
-          <div className="finite-date-control">
-            <button className="icon-button" onClick={() => changeDay(-1)} aria-label="Previous day"><ChevronLeft size={18} /></button>
-            <span><CalendarDays size={16} /> {longDate.format(selectedDate)}</span>
-            <button className="icon-button" onClick={() => changeDay(1)} aria-label="Next day"><ChevronRight size={18} /></button>
+          <div className="studio-day-tools">
+            <div className="studio-date-control">
+              <button onClick={() => changeDay(-1)} aria-label="Previous day"><ChevronLeft size={17} /></button>
+              <span>{longDate.format(selectedDate)}</span>
+              <button onClick={() => changeDay(1)} aria-label="Next day"><ChevronRight size={17} /></button>
+              {selectedIsToday && clock && <time><Clock3 size={14} /> {localTimeKey(clock)}</time>}
+            </div>
+            <button className="studio-search-button" onClick={() => setSearchOpen(true)} aria-label="Search your life"><Search size={17} /><span>Search</span></button>
+            <button className={`arrange-button ${arrangeMode ? "active" : ""}`} onClick={() => setArrangeMode((active) => !active)} aria-pressed={arrangeMode}>
+              <GripVertical size={17} /> {arrangeMode ? "Done" : "Arrange"}
+            </button>
           </div>
         </header>
 
-        <div className="finite-day-layout">
-          <section className="finite-commitments" aria-labelledby="today-commitments-title">
-            <div className="finite-section-heading">
-              <div>
-                <span className="eyebrow">A realistic day</span>
-                <h2 id="today-commitments-title">For today</h2>
-              </div>
-              <button className="later-count" onClick={() => setPriorityChooserOpen((open) => !open)}>
-                Later {laterCommitments.length}
-              </button>
-            </div>
-
-            <div className="commitment-list">
-              {todayCommitments.map((item, index) => {
-                const Icon = index === 0 ? Target : index === 1 ? HeartPulse : BookOpen;
-                return (
-                  <article className="commitment-row" key={item.id}>
-                    <span className="commitment-icon"><Icon size={21} /></span>
-                    <div>
-                      <strong>{item.text}</strong>
-                      <small><CalendarClock size={13} /> {item.plannedDate === localDateKey() ? "Today" : item.plannedDate || "Today"} · {taskTimeLabel(item)} · {item.listName}</small>
-                    </div>
-                    <div className="commitment-actions">
-                      <button onClick={() => openTaskEditor(item.listId, item)} aria-label={`Edit ${item.text}`} title="Edit"><Pencil size={15} /></button>
-                      <button onClick={() => postponeTask(item.listId, item)} aria-label={`Move ${item.text} to tomorrow`} title="Move to tomorrow"><CalendarClock size={15} /></button>
-                      <button onClick={() => movePriorityToLater(item.id)} aria-label={`Move ${item.text} to Later`} title="Keep for later">Later</button>
-                      <button className="delete" onClick={() => deleteTask(item.listId, item.id)} aria-label={`Delete ${item.text}`} title="Delete"><Trash2 size={15} /></button>
-                    </div>
-                    <button className="commitment-check" onClick={() => toggleListItem(item.listId, item.id)} aria-label={`Complete ${item.text}`}>
-                      <Check size={17} />
-                    </button>
-                  </article>
-                );
-              })}
-              {!todayCommitments.length && (
-                <div className="finite-empty">
-                  <CheckCircle2 size={24} />
-                  <strong>Nothing is demanding your attention.</strong>
-                  <span>Bring in only what genuinely matters today.</span>
+        <section className={`priority-studio ${arrangeMode ? "arranging" : ""}`} aria-label="Three priorities for today">
+          {activeCommitment ? (() => {
+            const ActiveIcon = Target;
+            return (
+              <article className="focus-block focus-block-primary">
+                <header className="focus-block-topline">
+                  <span className="drag-affordance"><GripVertical size={17} /></span>
+                  <span className="focus-kicker"><i /> Next</span>
+                  <div className="focus-actions">
+                    {arrangeMode && <button onClick={() => movePriority(activeCommitment.id, 1)} aria-label={`Move ${activeCommitment.text} later`}><ChevronRight size={16} /></button>}
+                    <button onClick={() => openTaskEditor(activeCommitment.listId, activeCommitment)} aria-label={`Edit ${activeCommitment.text}`}><Pencil size={16} /></button>
+                    <button onClick={() => toggleListItem(activeCommitment.listId, activeCommitment.id)} aria-label={`Complete ${activeCommitment.text}`}><CheckCircle2 size={17} /></button>
+                    <button onClick={() => postponeTask(activeCommitment.listId, activeCommitment)} aria-label={`Move ${activeCommitment.text} to tomorrow`}><CalendarDays size={16} /></button>
+                    <button className="delete" onClick={() => deleteTask(activeCommitment.listId, activeCommitment.id)} aria-label={`Delete ${activeCommitment.text}`}><Trash2 size={15} /></button>
+                  </div>
+                </header>
+                <div className="primary-focus-title">
+                  <span className="focus-icon"><ActiveIcon size={25} /></span>
+                  <div><h2>{activeCommitment.text}</h2><p><Clock3 size={14} /> {taskTimeLabel(activeCommitment)} <span>{activeProgress?.status}</span></p></div>
                 </div>
-              )}
-              {todayCommitments.length > 0 && Array.from({ length: 3 - todayCommitments.length }, (_, index) => (
-                <button className="commitment-empty-slot" key={`priority-slot-${index}`} onClick={() => setPriorityChooserOpen(true)}>
-                  <Plus size={16} /> Choose something important
-                </button>
-              ))}
-            </div>
-
-            <div className="tradeoff-row">
-              <Sparkles size={18} />
-              <span>{todayCommitments.length >= 3 ? "Something new means something else waits." : `You have room for ${3 - todayCommitments.length} more.`}</span>
-              <button onClick={() => setPriorityChooserOpen((open) => !open)}>{priorityChooserOpen ? "Close" : "Choose"}</button>
-            </div>
-
-            {priorityChooserOpen && (
-              <div className="later-picker">
-                <div><strong>Later</strong><span>Move one out before bringing in a fourth.</span></div>
-                {laterCommitments.slice(0, 6).map((item) => (
-                  <button key={item.id} onClick={() => bringPriorityIntoToday(item.id)} disabled={todayCommitments.length >= 3}>
-                    <span>{item.text}</span><small>{item.listName}</small><Plus size={15} />
-                  </button>
-                ))}
-                {!laterCommitments.length && <small>Nothing is waiting.</small>}
-              </div>
-            )}
-
-            <button className={`enough-button ${dayClosed ? "done" : ""}`} onClick={() => setDayClosed((closed) => !closed)}>
-              <CheckCircle2 size={21} /> {dayClosed ? "Today is closed" : "This is enough for today"}
+                <div className="focus-progress" aria-label={`${Math.round(activeProgress?.value ?? 0)} percent of the scheduled time elapsed`}>
+                  <i style={{ width: `${activeProgress?.value ?? 0}%` }} />
+                  <span>{activeProgress?.status}</span><small>{activeProgress?.detail}</small>
+                </div>
+                <div className="focus-context">
+                  <span className="eyebrow">Focus</span>
+                  <p>{activeCommitment.listName} · {activeCommitment.planMode === "window" ? `Use ${minutesLabel(activeCommitment.durationMinutes)} inside this window.` : "Give this one clear finish line."}</p>
+                  <div className="focus-detail-grid">
+                    <span><small>When</small><strong>{taskTimeLabel(activeCommitment)}</strong></span>
+                    <span><small>Effort</small><strong>{minutesLabel(activeCommitment.durationMinutes) || (activeCommitment.planMode === "anytime" ? "Open" : "Fixed block")}</strong></span>
+                    <span><small>Lives in</small><strong>{activeCommitment.listName}</strong></span>
+                  </div>
+                </div>
+                <div className="focus-block-footer">
+                  <button className="quiet-action" onClick={() => movePriorityToLater(activeCommitment.id)}>Keep for later</button>
+                  <button className="secondary-button" onClick={() => openTaskEditor(activeCommitment.listId, activeCommitment)}>Open details <ArrowRight size={15} /></button>
+                </div>
+              </article>
+            );
+          })() : (
+            <button className="focus-block focus-block-empty" onClick={() => setPriorityChooserOpen(true)}>
+              <span><Plus size={22} /></span><strong>Choose what matters first</strong><small>Give today one clear starting point.</small>
             </button>
+          )}
 
-            <form className="reflection-line" onSubmit={saveReflection}>
-              <Brain size={20} />
-              <label>
-                <span>What did today teach you?</span>
-                <input value={reflection} onChange={(event) => setReflection(event.target.value)} placeholder="A few honest words help tomorrow." />
-              </label>
-              <button disabled={!reflection.trim()} aria-label="Save reflection"><ArrowRight size={17} /></button>
-            </form>
-          </section>
+          <div className="upcoming-focus-stack">
+            {upcomingCommitments.map((item, index) => {
+              const Icon = index === 0 ? HeartPulse : BookOpen;
+              const temporal = clock ? taskProgress(item, clock, selectedDate) : { value: 0, status: taskTimeLabel(item), detail: "Scheduled" };
+              const absoluteIndex = index + 1;
+              return (
+                <article className="focus-block focus-block-upcoming" key={item.id}>
+                  <header className="focus-block-topline">
+                    <span className="drag-affordance"><GripVertical size={16} /></span>
+                    <span className="focus-kicker">{index === 0 ? "Upcoming" : "Evening"}</span>
+                    {arrangeMode && <div className="arrange-actions">
+                      <button onClick={() => movePriority(item.id, -1)} disabled={absoluteIndex === 0} aria-label={`Move ${item.text} earlier`}><ChevronLeft size={15} /></button>
+                      <button onClick={() => movePriority(item.id, 1)} disabled={absoluteIndex === todayCommitments.length - 1} aria-label={`Move ${item.text} later`}><ChevronRight size={15} /></button>
+                    </div>}
+                  </header>
+                  <div className="upcoming-focus-title">
+                    <span className={`focus-icon tone-${index + 2}`}><Icon size={22} /></span>
+                    <div><h3>{item.text}</h3><p>{taskTimeLabel(item)} <span>{temporal.status}</span></p></div>
+                  </div>
+                  <div className="upcoming-actions">
+                    <button onClick={() => openTaskEditor(item.listId, item)} aria-label={`Edit ${item.text}`}><Pencil size={15} /></button>
+                    <button onClick={() => toggleListItem(item.listId, item.id)} aria-label={`Complete ${item.text}`}><CheckCircle2 size={16} /></button>
+                    <button onClick={() => postponeTask(item.listId, item)} aria-label={`Move ${item.text} to tomorrow`}><CalendarDays size={15} /></button>
+                    <button onClick={() => movePriorityToLater(item.id)} aria-label={`Move ${item.text} to later`}><MoreHorizontal size={16} /></button>
+                  </div>
+                </article>
+              );
+            })}
+            {Array.from({ length: Math.max(0, 2 - upcomingCommitments.length) }, (_, index) => (
+              <button className="focus-block focus-block-empty compact" key={`studio-empty-${index}`} onClick={() => setPriorityChooserOpen(true)}>
+                <span><Plus size={18} /></span><strong>Choose another priority</strong><small>{3 - todayCommitments.length} place{3 - todayCommitments.length === 1 ? "" : "s"} left</small>
+              </button>
+            ))}
+          </div>
+        </section>
 
-          <aside className="daily-context-rail">
-            <section className="context-section">
-              <div className="context-title"><div><CalendarDays size={18} /><span>Coming up</span></div><small>{longDate.format(selectedDate)}</small></div>
-              <div className="agenda-list">
-                {dayEntries.slice().sort((a, b) => a.timestamp.localeCompare(b.timestamp)).slice(0, 4).map((entry) => (
-                  <button key={entry.id} onClick={() => setEditingEntry(entry)}>
-                    <time>{timeOnly.format(new Date(entry.timestamp))}</time>
-                    <span style={{ background: kindMeta[entry.kind].color }} />
-                    <strong>{entry.title}</strong>
-                  </button>
-                ))}
-                {!dayEntries.length && <p>Nothing scheduled yet. Leave room on purpose.</p>}
-              </div>
-            </section>
-
-            <section className="context-section money-glance">
-              <div className="context-title"><div><WalletCards size={18} /><span>Money this cycle</span></div><button onClick={() => { setMoneyView("budget"); setSection("money"); }}>Open Money <ArrowRight size={14} /></button></div>
-              <div className="money-glance-budget"><span>Budget remaining</span><strong>{currency.format(Math.max(financeViews.budgetRemaining, 0))}</strong></div>
-              <div className="allocation-mini-grid">
-                {[
-                  ["Spend", monthSpent],
-                  ["Save", monthSaved],
-                  ["Invest", monthInvested],
-                  ["Unassigned", Math.max(financeViews.unassigned, 0)],
-                ].map(([label, value]) => (
-                  <div key={String(label)}><span>{label}</span><strong>{monthIncome > 0 ? Math.round((Number(value) / monthIncome) * 100) : 0}%</strong></div>
-                ))}
-              </div>
-              <div className="net-worth-line"><span>Net worth</span><strong>{currency.format(netWorth)}</strong></div>
-            </section>
-          </aside>
+        <div className="priority-studio-meta">
+          <button onClick={() => setPriorityChooserOpen((open) => !open)}><Sparkles size={16} /> {todayCommitments.length}/3 chosen · {laterCommitments.length} later <ChevronRight size={15} /></button>
+          <span>{todayCommitments.length >= 3 ? "Something new means something else waits." : "Leave room for the day to happen."}</span>
         </div>
 
-        <form className="capture-card capture-dock" onSubmit={addCapture}>
+        {priorityChooserOpen && (
+          <div className="later-picker studio-later-picker">
+            <div><strong>Later</strong><span>Bring in only what deserves space today.</span></div>
+            {laterCommitments.slice(0, 6).map((item) => (
+              <button key={item.id} onClick={() => bringPriorityIntoToday(item.id)} disabled={todayCommitments.length >= 3}>
+                <span>{item.text}</span><small>{item.listName}</small><Plus size={15} />
+              </button>
+            ))}
+            {!laterCommitments.length && <small>Nothing is waiting.</small>}
+          </div>
+        )}
+
+        <form className="capture-card studio-capture" onSubmit={addCapture}>
           {suggested && (
             <div className="capture-review-strip">
               <span>Review before saving</span>
@@ -2897,43 +2963,71 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
             </div>
           )}
           <div className="capture-input-row">
+            <Sparkles className="capture-spark" size={19} />
+            <textarea value={capture} onChange={(event) => setCapture(event.target.value)} placeholder="Capture anything… a task, expense, note, or idea" rows={1} />
             <div className="capture-tools">
               <button type="button" className={`tool-button ${isListening ? "recording" : ""}`} onClick={() => toggleListening("capture")} aria-label="Voice note"><Mic size={18} /></button>
               <label className="tool-button" aria-label="Add photo"><Camera size={18} /><input type="file" accept="image/jpeg,image/png,image/webp" onChange={attachPhoto} hidden /></label>
+              <button className="add-button" disabled={!capture.trim()} aria-label="Review and add">Add</button>
             </div>
-            <textarea value={capture} onChange={(event) => setCapture(event.target.value)} placeholder="Tell Asitra what happened or what you need…" rows={1} />
-            <button className="add-button" disabled={!capture.trim()} aria-label="Review and add"><ArrowRight size={17} /></button>
           </div>
-          {capturePhoto && (
-            <div className="photo-preview">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={capturePhoto} alt="Capture attachment preview" />
-              <span>Photo attached</span>
-              <button type="button" onClick={() => setCapturePhoto(undefined)}><X size={15} /></button>
-            </div>
-          )}
+          {capturePhoto && <div className="photo-preview">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={capturePhoto} alt="Capture attachment preview" /><span>Photo attached</span><button type="button" onClick={() => setCapturePhoto(undefined)}><X size={15} /></button>
+          </div>}
         </form>
 
-        <details className="timeline-disclosure">
-          <summary><span>Your day so far</span><small>{dayEntries.length} {dayEntries.length === 1 ? "moment" : "moments"}</small></summary>
-          <div className="timeline">
-            {dayEntries.length ? dayEntries.map((entry) => {
-              const meta = kindMeta[entry.kind];
-              const Icon = meta.icon;
-              return (
-                <article className="timeline-entry" key={entry.id}>
-                  <time>{timeOnly.format(new Date(entry.timestamp))}</time>
-                  <span className="timeline-node" style={{ color: meta.color }}><Icon size={17} /></span>
-                  <div className="entry-card">
-                    <div><span className="entry-kind" style={{ color: meta.color }}>{meta.label}</span><strong>{entry.title}</strong></div>
-                    {entry.amount && <b>{currency.format(entry.amount)}</b>}
-                    <button className="icon-button" onClick={() => setEditingEntry(entry)} aria-label={`Edit ${entry.title}`}><MoreHorizontal size={18} /></button>
-                  </div>
-                </article>
-              );
-            }) : <div className="empty-timeline"><Clock3 size={23} /><strong>No moments recorded yet</strong><span>Your next entry will appear here.</span></div>}
+        <section className="studio-insight-grid">
+          <div className="studio-timeline panel">
+            <div className="studio-card-heading"><div><span className="eyebrow">Today&apos;s timeline</span><strong>{dayEntries.length + todayCommitments.length} moments</strong></div><button onClick={() => setPriorityChooserOpen(true)}><CalendarDays size={16} /> Plan</button></div>
+            <div className="timeline-hours" aria-hidden="true">{[7, 9, 11, 13, 15, 17, 19, 21].map((hour) => <span key={hour}>{String(hour).padStart(2, "0")}:00</span>)}</div>
+            <div className="day-track">
+              {selectedIsToday && clock && <span className="now-marker" style={{ left: `${nowPosition}%` }}><b>{localTimeKey(clock)}</b><i /></span>}
+              {todayCommitments.filter((item) => item.startTime).map((item, index) => {
+                const start = timeToMinutes(item.startTime) ?? timelineStart;
+                const end = timeToMinutes(item.endTime) ?? start + 30;
+                const left = Math.min(96, Math.max(0, ((start - timelineStart) / timelineSpan) * 100));
+                const width = Math.min(100 - left, Math.max(8, ((end - start) / timelineSpan) * 100));
+                return <button className={`timeline-task timeline-task-${index + 1}`} style={{ left: `${left}%`, width: `${width}%` }} key={item.id} onClick={() => openTaskEditor(item.listId, item)}><strong>{item.text}</strong><small>{item.startTime}–{item.endTime}</small></button>;
+              })}
+              {dayEntries.slice(0, 5).map((entry) => {
+                const date = new Date(entry.timestamp);
+                const position = Math.min(98, Math.max(1, ((date.getHours() * 60 + date.getMinutes() - timelineStart) / timelineSpan) * 100));
+                return <button className="timeline-moment" style={{ left: `${position}%`, color: kindMeta[entry.kind].color }} key={entry.id} onClick={() => setEditingEntry(entry)} aria-label={`Edit ${entry.title}`} title={entry.title}><span /></button>;
+              })}
+            </div>
+            <div className="timeline-legend"><span><i className="done" />Done</span><span><i className="current" />Current</span><span><i className="upcoming" />Upcoming</span></div>
           </div>
-        </details>
+
+          <button className="studio-pulse-card panel" onClick={() => setSection("balance")}>
+            <div className="studio-card-heading"><span><HeartPulse size={17} /> Readiness</span><ArrowRight size={15} /></div>
+            <div className="readiness-ring" style={{ "--readiness": `${balanceScore * 3.6}deg` } as React.CSSProperties}><strong>{balanceScore}</strong><small>{balanceScore > 72 ? "Good" : "Gentle"}</small></div>
+            <p>{todayInsight}</p>
+            <small>{minutesLabel(weekActivity) || "No movement"} this week</small>
+          </button>
+
+          <button className="studio-pulse-card studio-money-card panel" onClick={() => { setMoneyView("budget"); setSection("money"); }}>
+            <div className="studio-card-heading"><span><WalletCards size={17} /> Money</span><ArrowRight size={15} /></div>
+            <strong className="pulse-value">{currency.format(budgetRemaining)}</strong>
+            <p>Budget remaining</p>
+            <div className="pulse-progress"><i style={{ width: `${budgetRemainingRatio}%` }} /></div>
+            <small>of {currency.format(state.monthlyBudget)} this cycle</small>
+          </button>
+        </section>
+
+        <section className="recent-moment-strip">
+          <span className="recent-moment-icon">{latestMoment ? (() => { const MomentIcon = kindMeta[latestMoment.kind].icon; return <MomentIcon size={21} />; })() : <Timer size={21} />}</span>
+          <div><span className="eyebrow">Recent moment</span><strong>{latestMoment?.title ?? "Your day is ready"}</strong></div>
+          <small>{latestMoment ? `${timeOnly.format(new Date(latestMoment.timestamp))} · ${kindMeta[latestMoment.kind].label}` : "Capture the first thing that happens."}</small>
+          {latestMoment ? <button onClick={() => setEditingEntry(latestMoment)}>Edit <ArrowRight size={14} /></button> : <button onClick={() => setPriorityChooserOpen(true)}>Choose focus <ArrowRight size={14} /></button>}
+        </section>
+
+        <section className="day-close-strip">
+          <button className={`enough-button ${dayClosed ? "done" : ""}`} onClick={() => setDayClosed((closed) => !closed)}><CheckCircle2 size={19} /> {dayClosed ? "Today is closed" : "This is enough for today"}</button>
+          <form className="reflection-line" onSubmit={saveReflection}>
+            <Brain size={18} /><label><span>What did today teach you?</span><input value={reflection} onChange={(event) => setReflection(event.target.value)} placeholder="A few honest words help tomorrow." /></label><button disabled={!reflection.trim()} aria-label="Save reflection"><ArrowRight size={17} /></button>
+          </form>
+        </section>
       </div>
     );
   })();
@@ -2972,7 +3066,7 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
         </div>
       </aside>
       {mobileMenu && <button className="scrim" onClick={() => setMobileMenu(false)} aria-label="Close menu" />}
-      <main>
+      <main className={section === "today" ? "today-main" : undefined}>
         <header className="topbar">
           <button className="menu-button" onClick={() => setMobileMenu(true)} aria-label="Open navigation"><Menu size={21} /></button>
           <div className="mobile-brand"><span className="brand-mark small">A</span><strong>Asitra</strong></div>
