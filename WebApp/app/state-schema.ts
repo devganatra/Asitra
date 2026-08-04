@@ -23,6 +23,7 @@ const BALANCE_SHEET_CATEGORIES = new Set([
   "otherLiability",
 ]);
 const TASK_PLAN_MODES = new Set(["anytime", "exact", "window"]);
+const ENTRY_STATUSES = new Set(["planned", "inProgress", "completed"]);
 const ATTACHMENT_PATH = /^\/api\/attachments\/[0-9a-f-]{36}$/i;
 const LEGACY_IMAGE = /^data:image\/(?:jpeg|png|webp);base64,/i;
 
@@ -38,6 +39,12 @@ export function validatePersistedState(value: unknown, options: ValidationOption
     if (!ENTRY_KINDS.has(kind)) throw new Error("Unknown entry category.");
     const timestamp = shortString(entry.timestamp, "entry date", 64);
     if (!Number.isFinite(Date.parse(timestamp))) throw new Error("An entry has an invalid date.");
+    const endTimestamp = optionalString(entry.endTimestamp, "entry end date", 64);
+    if (endTimestamp && (!Number.isFinite(Date.parse(endTimestamp)) || Date.parse(endTimestamp) < Date.parse(timestamp))) {
+      throw new Error("An entry has an invalid time range.");
+    }
+    const status = optionalString(entry.status, "entry status", 32);
+    if (status && !ENTRY_STATUSES.has(status)) throw new Error("An entry has an invalid status.");
     const photo = optionalString(entry.photo, "attachment", 2_100_000);
     if (
       photo &&
@@ -57,6 +64,10 @@ export function validatePersistedState(value: unknown, options: ValidationOption
       source: optionalString(entry.source, "entry source", 200),
       photo,
       tripId: entry.tripId == null ? undefined : identifier(entry.tripId),
+      listId: entry.listId == null ? undefined : identifier(entry.listId),
+      endTimestamp,
+      completed: optionalBoolean(entry.completed, "entry completion"),
+      status,
     };
   });
 
@@ -235,6 +246,12 @@ function integer(value: unknown, label: string, minimum: number, maximum: number
 function optionalFiniteNumber(value: unknown, minimum: number, maximum: number): number | undefined {
   if (value == null) return undefined;
   return finiteNumber(value, "number", minimum, maximum);
+}
+
+function optionalBoolean(value: unknown, label: string): boolean | undefined {
+  if (value == null) return undefined;
+  if (typeof value !== "boolean") throw new Error(`${label} is invalid.`);
+  return value;
 }
 
 function safeColor(value: unknown): string {
