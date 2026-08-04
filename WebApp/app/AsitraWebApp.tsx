@@ -52,7 +52,7 @@ import {
 } from "lucide-react";
 import { ASITRA_RELEASE_LABEL } from "./release";
 import { ASITRA_AI_CONTRACT, type AsitraAIContract } from "./ai-contract";
-import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   extractPdfText,
   ImportedMoneyTransaction,
@@ -62,7 +62,7 @@ import {
   type ParsedMoneyInstruction,
 } from "./money-import";
 import { type EntryKind, parseCapture } from "./capture-parser";
-import { entryCapabilities, finitePriorityView, initialPriorityIds, isInsideMoneyCycle, moneyCycleRange, personalFinancePerspectives, postponeDate, taskBoardColumn, taskPriorityQuadrant, tripBudgetSummary, validateTaskPlan } from "./mindset-models";
+import { entryCapabilities, finitePriorityView, initialPriorityIds, isInsideMoneyCycle, moneyCycleRange, personalFinancePerspectives, postponeDate, taskBoardColumn, taskPriorityFlags, taskPriorityQuadrant, type TaskPriorityQuadrant, tripBudgetSummary, validateTaskPlan } from "./mindset-models";
 import { validatePersistedState } from "./state-schema";
 
 type Section = "today" | "tasks" | "lists" | "track" | "money" | "balance" | "settings";
@@ -614,6 +614,7 @@ export default function AsitraWebApp({ userName, logoutPath, designPreview = fal
   const [taskDumpUrgent, setTaskDumpUrgent] = useState(false);
   const [columnEditor, setColumnEditor] = useState<TaskColumn>();
   const [draggedTask, setDraggedTask] = useState<{ listId: string; itemId: string }>();
+  const [taskDropTarget, setTaskDropTarget] = useState<string>();
   const [dayClosed, setDayClosed] = useState(false);
   const [arrangeMode, setArrangeMode] = useState(false);
   const [clock, setClock] = useState<Date>();
@@ -651,6 +652,7 @@ export default function AsitraWebApp({ userName, logoutPath, designPreview = fal
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const draggedTaskRef = useRef<{ listId: string; itemId: string }>();
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const stateVersionRef = useRef(0);
   const accountDeletedRef = useRef(false);
@@ -1240,7 +1242,7 @@ export default function AsitraWebApp({ userName, logoutPath, designPreview = fal
             timestamp: taskTimestamp(nextItem),
             endTimestamp: nextItem.planMode === "anytime" || !nextItem.endTime ? undefined : new Date(`${nextItem.plannedDate}T${nextItem.endTime}:00`).toISOString(),
             minutes: nextItem.durationMinutes,
-            completed: sourceList?.items.find((item) => item.id === nextItem.id)?.done ?? false,
+            completed: nextItem.done,
             listId: taskEditor.listId,
           }
         : entry),
@@ -1304,9 +1306,66 @@ export default function AsitraWebApp({ userName, logoutPath, designPreview = fal
     setState((current) => ({
       ...current,
       lists: current.lists.map((candidate) => candidate.id === listId ? updated : candidate),
+      entries: current.entries.map((entry) => entry.id === itemId ? { ...entry, completed: done } : entry),
       todayPriorityIds: done ? current.todayPriorityIds.filter((id) => id !== itemId) : current.todayPriorityIds,
     }));
     if (updated.shared) void updateSharedList(updated);
+    const task = updated.items.find((item) => item.id === itemId);
+    const column = taskColumns.find((candidate) => candidate.id === boardColumnId);
+    if (task && column) setNotice(`Moved “${task.text}” to ${column.name}. It remains in ${list.name}.`);
+  }
+
+  function moveTaskToPriority(listId: string, itemId: string, quadrant: TaskPriorityQuadrant) {
+    const list = state.lists.find((candidate) => candidate.id === listId);
+    if (!list) return;
+    const flags = taskPriorityFlags(quadrant);
+    const updated = {
+      ...list,
+      items: list.items.map((item) => item.id === itemId ? { ...item, ...flags } : item),
+    };
+    setState((current) => ({
+      ...current,
+      lists: current.lists.map((candidate) => candidate.id === listId ? updated : candidate),
+    }));
+    if (updated.shared) void updateSharedList(updated);
+    const task = updated.items.find((item) => item.id === itemId);
+    const destination = quadrant === "do" ? "Do now" : quadrant === "plan" ? "Plan" : quadrant === "simplify" ? "Simplify" : "Later";
+    if (task) setNotice(`Moved “${task.text}” to ${destination}. It remains in ${list.name}.`);
+  }
+
+  function beginTaskDrag(event: DragEvent<HTMLElement>, listId: string, itemId: string) {
+    const payload = { listId, itemId };
+    draggedTaskRef.current = payload;
+    setDraggedTask(payload);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("application/x-asitra-task", JSON.stringify(payload));
+    event.dataTransfer.setData("text/plain", itemId);
+  }
+
+  function taskFromDrop(event: DragEvent<HTMLElement>) {
+    const encoded = event.dataTransfer.getData("application/x-asitra-task");
+    if (encoded) {
+      try {
+        const parsed = JSON.parse(encoded) as { listId?: unknown; itemId?: unknown };
+        if (typeof parsed.listId === "string" && typeof parsed.itemId === "string") {
+          return { listId: parsed.listId, itemId: parsed.itemId };
+        }
+      } catch {
+        // Fall through to the in-memory drag payload.
+      }
+    }
+    return draggedTaskRef.current ?? draggedTask;
+  }
+
+  function finishTaskDrag() {
+    draggedTaskRef.current = undefined;
+    setDraggedTask(undefined);
+    setTaskDropTarget(undefined);
+  }
+
+  function openTaskList(listId: string) {
+    setSelectedListId(listId);
+    setSection("lists");
   }
 
   function setTaskPriority(listId: string, itemId: string, priority: "important" | "urgent") {
@@ -2231,7 +2290,7 @@ export default function AsitraWebApp({ userName, logoutPath, designPreview = fal
 
   const mainContent = (() => {
     if (section === "tasks") {
-      const matrix = [
+      const matrix: Array<{ id: TaskPriorityQuadrant; title: string; note: string; tone: string; items: typeof openTasks }> = [
         { id: "do", title: "Do now", note: "Important and urgent", tone: "sage", items: openTasks.filter(({ item }) => taskPriorityQuadrant(item) === "do") },
         { id: "plan", title: "Plan", note: "Important, not urgent", tone: "blue", items: openTasks.filter(({ item }) => taskPriorityQuadrant(item) === "plan") },
         { id: "simplify", title: "Simplify", note: "Urgent, not important", tone: "warm", items: openTasks.filter(({ item }) => taskPriorityQuadrant(item) === "simplify") },
@@ -2239,11 +2298,11 @@ export default function AsitraWebApp({ userName, logoutPath, designPreview = fal
       ];
       const renderTaskCard = ({ item, listId, listName, listColor }: typeof allTasks[number], compact = false) => (
         <article
-          className={`task-planning-card ${item.done ? "done" : ""} ${compact ? "compact" : ""}`}
+          className={`task-planning-card ${item.done ? "done" : ""} ${compact ? "compact" : ""} ${draggedTask?.itemId === item.id ? "dragging" : ""}`}
           key={`${listId}-${item.id}`}
           draggable
-          onDragStart={() => setDraggedTask({ listId, itemId: item.id })}
-          onDragEnd={() => setDraggedTask(undefined)}
+          onDragStart={(event) => beginTaskDrag(event, listId, item.id)}
+          onDragEnd={finishTaskDrag}
         >
           <div className="task-card-heading">
             <button className="task-complete-button" onClick={() => toggleListItem(listId, item.id)} aria-label={`${item.done ? "Reopen" : "Complete"} ${item.text}`}>
@@ -2258,11 +2317,19 @@ export default function AsitraWebApp({ userName, logoutPath, designPreview = fal
           <div className="task-card-controls">
             <button className={item.important ? "active important" : ""} onClick={() => setTaskPriority(listId, item.id, "important")} aria-pressed={Boolean(item.important)}><Flag size={13} /> Important</button>
             <button className={item.urgent ? "active urgent" : ""} onClick={() => setTaskPriority(listId, item.id, "urgent")} aria-pressed={Boolean(item.urgent)}><Zap size={13} /> Urgent</button>
-            {!compact && (
+            {compact ? (
+              <select className="task-priority-select" value={taskPriorityQuadrant(item)} onChange={(event) => moveTaskToPriority(listId, item.id, event.target.value as TaskPriorityQuadrant)} aria-label={`Priority position for ${item.text}`}>
+                <option value="do">Do now</option>
+                <option value="plan">Plan</option>
+                <option value="simplify">Simplify</option>
+                <option value="later">Later</option>
+              </select>
+            ) : (
               <select value={taskBoardColumn(item, taskColumns.map((column) => column.id))} onChange={(event) => moveTaskToColumn(listId, item.id, event.target.value)} aria-label={`Board column for ${item.text}`}>
                 {taskColumns.map((column) => <option key={column.id} value={column.id}>{column.name}</option>)}
               </select>
             )}
+            <button className="task-list-link" onClick={() => openTaskList(listId)} aria-label={`Open ${listName}`}><ListChecks size={12} /> List</button>
           </div>
         </article>
       );
@@ -2271,7 +2338,7 @@ export default function AsitraWebApp({ userName, logoutPath, designPreview = fal
           <PageHeader
             eyebrow="Clear the mind"
             title="Tasks"
-            description="Put everything down first. Then decide what deserves attention and where it belongs."
+            description="Capture once, then move the same task through priority and progress views. Its original list always remains the source."
           />
           <section className="task-dump-card">
             <div className="task-dump-copy"><Inbox size={20} /><div><strong>Task inbox</strong><span>Capture it now. Organize it in a second.</span></div></div>
@@ -2296,7 +2363,22 @@ export default function AsitraWebApp({ userName, logoutPath, designPreview = fal
               <div className="matrix-axis matrix-axis-top"><strong>Urgent</strong><span>Not urgent</span></div>
               <div className="matrix-axis matrix-axis-side"><span>Not important</span><strong>Important</strong></div>
               {matrix.map((quadrant) => (
-                <section className={`matrix-quadrant ${quadrant.tone}`} key={quadrant.id}>
+                <section
+                  className={`matrix-quadrant ${quadrant.tone} ${taskDropTarget === `priority-${quadrant.id}` ? "drop-target" : ""}`}
+                  key={quadrant.id}
+                  onDragEnter={() => setTaskDropTarget(`priority-${quadrant.id}`)}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                    setTaskDropTarget(`priority-${quadrant.id}`);
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    const task = taskFromDrop(event);
+                    if (task) moveTaskToPriority(task.listId, task.itemId, quadrant.id);
+                    finishTaskDrag();
+                  }}
+                >
                   <header><div><h2>{quadrant.title}</h2><p>{quadrant.note}</p></div><span>{quadrant.items.length}</span></header>
                   <div className="matrix-task-list">
                     {quadrant.items.map((task) => renderTaskCard(task, true))}
@@ -2316,12 +2398,19 @@ export default function AsitraWebApp({ userName, logoutPath, designPreview = fal
                   const columnTasks = allTasks.filter(({ item }) => taskBoardColumn(item, taskColumns.map((candidate) => candidate.id)) === column.id);
                   return (
                     <section
-                      className="task-board-column"
+                      className={`task-board-column ${taskDropTarget === `board-${column.id}` ? "drop-target" : ""}`}
                       key={column.id}
-                      onDragOver={(event) => event.preventDefault()}
-                      onDrop={() => {
-                        if (draggedTask) moveTaskToColumn(draggedTask.listId, draggedTask.itemId, column.id);
-                        setDraggedTask(undefined);
+                      onDragEnter={() => setTaskDropTarget(`board-${column.id}`)}
+                      onDragOver={(event) => {
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = "move";
+                        setTaskDropTarget(`board-${column.id}`);
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        const task = taskFromDrop(event);
+                        if (task) moveTaskToColumn(task.listId, task.itemId, column.id);
+                        finishTaskDrag();
                       }}
                     >
                       <header><div><h2>{column.name}</h2><span>{columnTasks.length}</span></div><button onClick={() => setColumnEditor(column)} aria-label={`Rename ${column.name}`}><Pencil size={14} /></button></header>

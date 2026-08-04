@@ -4274,6 +4274,11 @@ h3 {
 .matrix-quadrant.blue { border-color: #c9d2df; background: #f5f7fa; }
 .matrix-quadrant.warm { border-color: #e4cbb8; background: #fcf7f2; }
 .matrix-quadrant.quiet { background: #f7f7f3; }
+.matrix-quadrant.drop-target,
+.task-board-column.drop-target {
+  border-color: #6f8f7b;
+  box-shadow: 0 0 0 3px rgba(111, 143, 123, 0.16), 0 18px 34px rgba(42, 67, 52, 0.08);
+}
 .matrix-quadrant > header {
   display: flex;
   align-items: flex-start;
@@ -4309,6 +4314,10 @@ h3 {
   cursor: grab;
 }
 .task-planning-card:active { cursor: grabbing; }
+.task-planning-card.dragging {
+  opacity: 0.48;
+  transform: rotate(1deg) scale(0.985);
+}
 .task-planning-card.done { opacity: 0.66; }
 .task-planning-card.done .task-card-title strong { text-decoration: line-through; }
 .task-card-heading { display: flex; align-items: flex-start; gap: 9px; }
@@ -4344,8 +4353,9 @@ h3 {
   background: white;
   font-size: 9px;
 }
-.task-planning-card.compact { box-shadow: none; cursor: default; }
+.task-planning-card.compact { box-shadow: none; }
 .task-planning-card.compact .task-card-controls { padding-left: 30px; }
+.task-card-controls .task-list-link { color: #456755; background: #f3f7f3; }
 
 .task-board-toolbar { margin-top: 2px; }
 .task-board {

@@ -97,6 +97,13 @@ export function taskPriorityQuadrant(task: { important?: boolean; urgent?: boole
   return "later";
 }
 
+export function taskPriorityFlags(quadrant: TaskPriorityQuadrant) {
+  return {
+    important: quadrant === "do" || quadrant === "plan",
+    urgent: quadrant === "do" || quadrant === "simplify",
+  };
+}
+
 export function taskBoardColumn(
   task: { done: boolean; boardColumnId?: string },
   availableColumnIds: string[],
