@@ -8,6 +8,11 @@ export const dynamic = "force-dynamic";
 
 export default async function Page() {
   const requestHeaders = await headers();
+  const host = requestHeaders.get("host") ?? "";
+  const isLocalDesignPreview = process.env.NODE_ENV !== "production" && /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host);
+  if (isLocalDesignPreview) {
+    return <AsitraWebApp userName="Dev" logoutPath="/login" designPreview />;
+  }
   const request = new Request("https://asitra.local", { headers: requestHeaders });
   const session = await betterAuthSession(request);
   if (session?.user) {

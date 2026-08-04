@@ -9,6 +9,7 @@ import {
   personalFinancePerspectives,
   postponeDate,
   taskBoardColumn,
+  taskPriorityFlags,
   taskPriorityQuadrant,
   tripBudgetSummary,
   validateTaskPlan,
@@ -80,6 +81,10 @@ test("keeps one task consistent across the priority matrix and editable board", 
   assert.equal(taskPriorityQuadrant({ important: true, urgent: false }), "plan");
   assert.equal(taskPriorityQuadrant({ important: false, urgent: true }), "simplify");
   assert.equal(taskPriorityQuadrant({ important: false, urgent: false }), "later");
+  assert.deepEqual(taskPriorityFlags("do"), { important: true, urgent: true });
+  assert.deepEqual(taskPriorityFlags("plan"), { important: true, urgent: false });
+  assert.deepEqual(taskPriorityFlags("simplify"), { important: false, urgent: true });
+  assert.deepEqual(taskPriorityFlags("later"), { important: false, urgent: false });
   assert.equal(taskBoardColumn({ done: false, boardColumnId: "waiting" }, ["todo", "waiting", "done"]), "waiting");
   assert.equal(taskBoardColumn({ done: true, boardColumnId: "waiting" }, ["todo", "waiting", "done"]), "done");
   assert.equal(taskBoardColumn({ done: false, boardColumnId: "removed" }, ["todo", "done"]), "todo");

@@ -2,6 +2,17 @@
 
 This ledger is the source of truth for what changed, where it was developed, and which pull request delivered it. Every feature release must add a new entry and update `release.json`.
 
+## 0.2.0-beta.7 — 2026-08-04
+
+- Branch: `codex/dynamic-ui`
+- Pull request: [#43](https://github.com/devganatra/Asitra/pull/43)
+- Platforms: Web, macOS, iOS, iPadOS
+- Changes:
+  - Redesigned Today as a more adaptive daily workspace with clearer progress and focus.
+  - Made tasks draggable between priority quadrants and progress columns.
+  - Added direct movement controls for touch and keyboard use.
+  - Kept every task anchored to its original list while synchronizing completion and timeline state.
+
 ## 0.2.0-beta.6 — 2026-08-04
 
 - Branch: `codex/release-tracking`
