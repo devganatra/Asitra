@@ -9,6 +9,11 @@ const port = 31_000 + (process.pid % 1_000);
 const origin = `http://localhost:${port}`;
 const persistencePath = join(tmpdir(), `asitra-integration-${process.pid}`);
 const signedOutHeaders = { "oai-authenticated-user-email": " " };
+const releaseManifest = JSON.parse(
+  await readFile(new URL("../../release.json", import.meta.url), "utf8"),
+);
+const releaseVersion = releaseManifest.version;
+const escapedReleaseVersion = releaseVersion.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 let server;
 let serverOutput = "";
 
@@ -162,8 +167,8 @@ test("shows independent public sign-in without exposing provider secrets", async
   assert.equal(login.status, 200);
   const loginHTML = await login.text();
   assert.match(loginHTML, /Welcome to Asitra/);
-  assert.match(loginHTML, /Release 0\.2\.0-beta\.5/);
-  assert.match(loginHTML, /name="asitra-release" content="0\.2\.0-beta\.5"/);
+  assert.match(loginHTML, new RegExp(`Release ${escapedReleaseVersion}`));
+  assert.match(loginHTML, new RegExp(`name="asitra-release" content="${escapedReleaseVersion}"`));
 
   const providers = await integrationFetch("/api/auth/providers");
   assert.equal(providers.status, 200);
@@ -188,7 +193,7 @@ test("publishes one traceable release number", async () => {
   assert.deepEqual(await response.json(), {
     status: "ok",
     service: "asitra-web",
-    version: "0.2.0-beta.5",
+    version: releaseVersion,
   });
 
   const [releaseSource, healthSource, clientSource, loginSource] = await Promise.all([
@@ -197,7 +202,7 @@ test("publishes one traceable release number", async () => {
     readFile(new URL("../app/AsitraWebApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/login/LoginPage.tsx", import.meta.url), "utf8"),
   ]);
-  assert.match(releaseSource, /ASITRA_RELEASE = "0\.2\.0-beta\.5"/);
+  assert.match(releaseSource, new RegExp(`ASITRA_RELEASE = "${escapedReleaseVersion}"`));
   assert.match(healthSource, /version: ASITRA_RELEASE/);
   assert.match(clientSource, /ASITRA_RELEASE_LABEL/);
   assert.match(loginSource, /ASITRA_RELEASE_LABEL/);

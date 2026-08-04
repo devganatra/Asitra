@@ -7,22 +7,41 @@ Asitra uses two related release channels:
 
 ## Version convention
 
-- Xcode marketing version: `0.1.0`
-- Xcode build number: `1`, incremented for every App Store Connect upload
-- Git tag: `v0.1.0-beta.1`
+- Canonical release: `release.json`
+- Xcode marketing version: `0.2.0`
+- Xcode build number: the beta number, for example `6` for beta.6
+- Web and repository version: `0.2.0-beta.6`
+- Git tag: `v0.2.0-beta.6`
 
 The marketing version must contain only numbers and periods. The beta label belongs in the Git tag and TestFlight metadata.
 
+## Feature branch release workflow
+
+Every user-visible feature gets its own beta number and trace entry:
+
+1. Create a `codex/...` branch from `main`.
+2. Set the next beta before opening the pull request:
+
+   ```bash
+   npm run release:set -- 0.2.0-beta.7
+   ```
+
+3. Add an entry to `RELEASES.md` with the release, date, branch, pull request, platforms, and user-visible changes.
+4. Run `npm run release:check` and the platform tests.
+5. Merge only after the **Release number and branch history** check passes.
+
+The release check blocks product changes when the version did not advance or the current branch and pull request are absent from the release ledger.
+
 ## GitHub beta release
 
-1. Update `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in the Xcode project.
-2. Update `CHANGELOG.md`.
+1. Run `npm run release:set -- <version>`.
+2. Update `RELEASES.md`.
 3. Open and merge the release pull request.
 4. Tag the merged commit and push the tag:
 
    ```bash
-   git tag -a v0.1.0-beta.1 -m "Asitra 0.1.0 Beta 1"
-   git push origin v0.1.0-beta.1
+   git tag -a v0.2.0-beta.6 -m "Asitra 0.2.0 Beta 6"
+   git push origin v0.2.0-beta.6
    ```
 
 The release workflow verifies Mac and iOS Simulator builds before creating a GitHub prerelease.
@@ -39,7 +58,7 @@ The release workflow verifies Mac and iOS Simulator builds before creating a Git
 
 This route is suitable for development. TestFlight is the better route for repeatable beta installation and updates.
 
-## Upload Beta 1 to TestFlight
+## Upload a beta to TestFlight
 
 Prerequisites:
 
@@ -57,7 +76,7 @@ Steps:
 4. Choose **TestFlight & App Store** or **TestFlight Internal Only**.
 5. Keep automatic signing and symbol upload enabled, then upload.
 6. In App Store Connect > Asitra > TestFlight, wait for processing.
-7. Add Beta 1 to an internal testing group and enter the following What to Test text:
+7. Add the beta to an internal testing group and enter the following What to Test text:
 
    > Test Quick Capture, the calendar, private and shared-list setup, reminders, Health import, and timeline-to-tracker updates. Shared-list live invitations are not enabled in this build.
 

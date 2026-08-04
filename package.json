@@ -1,6 +1,6 @@
 {
   "name": "asitra-monorepo",
-  "version": "0.2.0-beta.1",
+  "version": "0.2.0-beta.6",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -8,6 +8,8 @@
   "scripts": {
     "build": "npm --prefix WebApp ci && npm --prefix WebApp run build && mkdir -p dist && cp -R WebApp/dist/. dist/",
     "test": "npm --prefix WebApp test",
-    "lint": "npm --prefix WebApp run lint"
+    "lint": "npm --prefix WebApp run lint",
+    "release:set": "node scripts/set-release.mjs",
+    "release:check": "node scripts/release-policy.mjs"
   }
 }

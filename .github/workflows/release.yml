@@ -20,9 +20,9 @@ jobs:
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME#v}"
-          expected_version="${tag%%-*}"
-          project_version="$(sed -n 's/.*MARKETING_VERSION = \([^;]*\);/\1/p' AppleMobileApp.xcodeproj/project.pbxproj | head -1)"
-          test "$expected_version" = "$project_version"
+          manifest_version="$(node -p "require('./release.json').version")"
+          test "$tag" = "$manifest_version"
+          npm run release:check
 
       - name: Build Asitra for Mac
         run: >-

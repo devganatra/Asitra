@@ -16,9 +16,11 @@ The responsive web companion lives in `WebApp/`. It mirrors Today, Lists, Track,
 
 The web version uses authenticated, account-isolated storage and keeps Apple Health, Screen Time, Calendar, Reminders, and CloudKit as native integrations. See `WebApp/README.md` for local setup and validation.
 
-## Install Beta 1 on iPhone or iPad
+## Install the beta on iPhone or iPad
 
-The current beta is version **0.1.0 (1)**.
+The current beta is version **0.2.0-beta.6 (6)**.
+
+Release metadata is centralized in `release.json`. Every feature branch must bump it and add the branch, pull request, platforms, and user-visible changes to `RELEASES.md`; CI enforces this before merge.
 
 For your own device, connect the iPhone or iPad to the Mac, select it as the run destination in Xcode, choose your signing team, and press Run. For distribution to other people, archive the iOS app and upload it to TestFlight through Xcode Organizer. See [RELEASING.md](RELEASING.md) for the complete checklist.
 
