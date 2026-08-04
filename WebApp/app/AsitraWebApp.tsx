@@ -62,7 +62,7 @@ import {
   type ParsedMoneyInstruction,
 } from "./money-import";
 import { type EntryKind, parseCapture } from "./capture-parser";
-import { entryCapabilities, finitePriorityView, initialPriorityIds, isInsideMoneyCycle, moneyCycleRange, personalFinancePerspectives, postponeDate, taskBoardColumn, taskPriorityFlags, taskPriorityQuadrant, type TaskPriorityQuadrant, tripBudgetSummary, validateTaskPlan } from "./mindset-models";
+import { entryCapabilities, finitePriorityView, initialPriorityIds, isInsideMoneyCycle, moneyCycleRange, personalFinancePerspectives, postponeDate, taskBoardColumn, taskPriorityFlags, taskPriorityQuadrant, type TaskPriorityFlag, type TaskPriorityQuadrant, toggleTaskPriorityFlag, tripBudgetSummary, validateTaskPlan } from "./mindset-models";
 import { validatePersistedState } from "./state-schema";
 
 type Section = "today" | "tasks" | "lists" | "track" | "money" | "balance" | "settings";
@@ -657,6 +657,9 @@ export default function AsitraWebApp({ userName, logoutPath, designPreview = fal
   const stateVersionRef = useRef(0);
   const accountDeletedRef = useRef(false);
   const sharedListMetaRef = useRef<Record<string, { version: number; owner: boolean }>>({});
+  const stateRef = useRef(state);
+  const sharedListSyncTimersRef = useRef<Record<string, number>>({});
+  const sharedListSaveQueuesRef = useRef<Record<string, Promise<void>>>({});
 
   function setNotice(message: string | undefined) {
     setNoticeState(message);
@@ -765,6 +768,14 @@ export default function AsitraWebApp({ userName, logoutPath, designPreview = fal
     // Loading is intentionally limited to the initial authenticated mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [designPreview]);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  useEffect(() => () => {
+    Object.values(sharedListSyncTimersRef.current).forEach((timer) => window.clearTimeout(timer));
+  }, []);
 
   useEffect(() => {
     const initial = window.setTimeout(() => setClock(new Date()), 0);
@@ -1368,20 +1379,21 @@ export default function AsitraWebApp({ userName, logoutPath, designPreview = fal
     setSection("lists");
   }
 
-  function setTaskPriority(listId: string, itemId: string, priority: "important" | "urgent") {
+  function setTaskPriority(listId: string, itemId: string, priority: TaskPriorityFlag) {
     const list = state.lists.find((candidate) => candidate.id === listId);
     if (!list) return;
-    const updated = {
-      ...list,
-      items: list.items.map((item) => item.id === itemId
-        ? { ...item, [priority]: !item[priority] }
-        : item),
-    };
     setState((current) => ({
       ...current,
-      lists: current.lists.map((candidate) => candidate.id === listId ? updated : candidate),
+      lists: current.lists.map((candidate) => candidate.id === listId
+        ? {
+            ...candidate,
+            items: candidate.items.map((item) => item.id === itemId
+              ? toggleTaskPriorityFlag(item, priority)
+              : item),
+          }
+        : candidate),
     }));
-    if (updated.shared) void updateSharedList(updated);
+    if (list.shared) updateSharedList(list);
   }
 
   function saveTaskColumn(event: FormEvent) {
@@ -1515,22 +1527,45 @@ export default function AsitraWebApp({ userName, logoutPath, designPreview = fal
     setSharingOpen(true);
   }
 
-  async function updateSharedList(list: LifeList) {
+  function updateSharedList(list: LifeList) {
+    const existingTimer = sharedListSyncTimersRef.current[list.id];
+    if (existingTimer) window.clearTimeout(existingTimer);
+    sharedListSyncTimersRef.current[list.id] = window.setTimeout(() => {
+      delete sharedListSyncTimersRef.current[list.id];
+      const latest = stateRef.current.lists.find((candidate) => candidate.id === list.id);
+      if (!latest?.shared) return;
+      const previous = sharedListSaveQueuesRef.current[list.id] ?? Promise.resolve();
+      const next = previous
+        .catch(() => undefined)
+        .then(() => persistSharedList(latest));
+      sharedListSaveQueuesRef.current[list.id] = next;
+      void next.finally(() => {
+        if (sharedListSaveQueuesRef.current[list.id] === next) {
+          delete sharedListSaveQueuesRef.current[list.id];
+        }
+      });
+    }, 200);
+  }
+
+  async function persistSharedList(list: LifeList) {
     const meta = sharedListMetaRef.current[list.id];
     if (!meta) return;
-    const response = await fetch("/api/shared-lists", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "content-type": "application/json", "x-asitra-request": "1" },
-      body: JSON.stringify({ action: "update", list, version: meta.version }),
-    });
-    const result = (await response.json()) as { list?: LifeList; version?: number; owner?: boolean; code?: string; error?: string };
-    if (!response.ok || !result.list || typeof result.version !== "number") {
-      setNotice(result.code === "LIST_CONFLICT" ? "This shared list changed elsewhere. Reload before editing it again." : result.error ?? "The shared list could not sync.");
-      return;
+    try {
+      const response = await fetch("/api/shared-lists", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json", "x-asitra-request": "1" },
+        body: JSON.stringify({ action: "update", list, version: meta.version }),
+      });
+      const result = (await response.json()) as { list?: LifeList; version?: number; owner?: boolean; code?: string; error?: string };
+      if (!response.ok || !result.list || typeof result.version !== "number") {
+        setNotice(result.code === "LIST_CONFLICT" ? "This shared list changed elsewhere. Reload before editing it again." : result.error ?? "The shared list could not sync.");
+        return;
+      }
+      sharedListMetaRef.current[list.id] = { version: result.version, owner: result.owner ?? meta.owner };
+    } catch {
+      setNotice("The shared list could not sync. Your latest changes remain on this device.");
     }
-    sharedListMetaRef.current[list.id] = { version: result.version, owner: Boolean(result.owner) };
-    setState((current) => ({ ...current, lists: current.lists.map((item) => item.id === list.id ? result.list! : item) }));
   }
 
   async function joinSharedList() {

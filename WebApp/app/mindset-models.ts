@@ -104,6 +104,15 @@ export function taskPriorityFlags(quadrant: TaskPriorityQuadrant) {
   };
 }
 
+export type TaskPriorityFlag = "important" | "urgent";
+
+export function toggleTaskPriorityFlag<T extends { important?: boolean; urgent?: boolean }>(
+  task: T,
+  flag: TaskPriorityFlag,
+): T {
+  return { ...task, [flag]: !task[flag] };
+}
+
 export function taskBoardColumn(
   task: { done: boolean; boardColumnId?: string },
   availableColumnIds: string[],
