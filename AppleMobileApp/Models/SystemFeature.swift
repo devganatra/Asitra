@@ -524,6 +524,21 @@ struct TrackerDefinition: Identifiable, Codable, Hashable {
     var family: TrackerFamily { template.family }
 }
 
+struct TaskBoardColumn: Identifiable, Codable, Hashable {
+    var id: UUID
+    var name: String
+
+    static let toDoID = UUID(uuidString: "A5100000-0000-0000-0000-000000000001")!
+    static let inProgressID = UUID(uuidString: "A5100000-0000-0000-0000-000000000002")!
+    static let doneID = UUID(uuidString: "A5100000-0000-0000-0000-000000000003")!
+
+    static let defaults = [
+        TaskBoardColumn(id: toDoID, name: "To do"),
+        TaskBoardColumn(id: inProgressID, name: "In progress"),
+        TaskBoardColumn(id: doneID, name: "Done")
+    ]
+}
+
 struct SystemWorkspace: Codable {
     var goals: [SystemGoal]
     var systems: [PersonalSystem]
@@ -533,8 +548,9 @@ struct SystemWorkspace: Codable {
     var dashboardLayout: [DashboardWidgetConfiguration]?
     var financeWorkspace: FinanceWorkspace?
     var trackers: [TrackerDefinition]?
+    var taskColumns: [TaskBoardColumn]?
 
-    static let empty = SystemWorkspace(goals: [], systems: [], processes: [], actions: [], reviews: [], dashboardLayout: nil, financeWorkspace: nil, trackers: nil)
+    static let empty = SystemWorkspace(goals: [], systems: [], processes: [], actions: [], reviews: [], dashboardLayout: nil, financeWorkspace: nil, trackers: nil, taskColumns: nil)
 }
 
 @Model
@@ -702,6 +718,29 @@ final class SystemFeatureModel {
 
     var trackers: [TrackerDefinition] {
         workspace.trackers ?? []
+    }
+
+    var taskColumns: [TaskBoardColumn] {
+        workspace.taskColumns.flatMap { $0.isEmpty ? nil : $0 } ?? TaskBoardColumn.defaults
+    }
+
+    func addTaskColumn(name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        var columns = taskColumns
+        columns.append(TaskBoardColumn(id: UUID(), name: trimmed))
+        workspace.taskColumns = columns
+        persist()
+    }
+
+    func renameTaskColumn(id: UUID, name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        var columns = taskColumns
+        guard let index = columns.firstIndex(where: { $0.id == id }) else { return }
+        columns[index].name = trimmed
+        workspace.taskColumns = columns
+        persist()
     }
 
     func addTracker(name: String, template: TrackerTemplate) -> TrackerDefinition {
@@ -977,7 +1016,8 @@ final class SystemFeatureModel {
             reviews: [],
             dashboardLayout: DashboardWidgetConfiguration.defaults,
             financeWorkspace: .empty,
-            trackers: starterTrackers()
+            trackers: starterTrackers(),
+            taskColumns: TaskBoardColumn.defaults
         )
     }
 

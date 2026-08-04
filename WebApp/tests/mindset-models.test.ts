@@ -8,6 +8,8 @@ import {
   moneyCycleRange,
   personalFinancePerspectives,
   postponeDate,
+  taskBoardColumn,
+  taskPriorityQuadrant,
   tripBudgetSummary,
   validateTaskPlan,
 } from "../app/mindset-models";
@@ -71,6 +73,16 @@ test("validates exact blocks and flexible windows, then postpones the whole plan
   assert.equal(validateTaskPlan({ mode: "window", startTime: "13:00", endTime: "17:00", durationMinutes: 90 }).valid, true);
   assert.equal(validateTaskPlan({ mode: "window", startTime: "13:00", endTime: "14:00", durationMinutes: 90 }).valid, false);
   assert.equal(postponeDate("2026-08-31"), "2026-09-01");
+});
+
+test("keeps one task consistent across the priority matrix and editable board", () => {
+  assert.equal(taskPriorityQuadrant({ important: true, urgent: true }), "do");
+  assert.equal(taskPriorityQuadrant({ important: true, urgent: false }), "plan");
+  assert.equal(taskPriorityQuadrant({ important: false, urgent: true }), "simplify");
+  assert.equal(taskPriorityQuadrant({ important: false, urgent: false }), "later");
+  assert.equal(taskBoardColumn({ done: false, boardColumnId: "waiting" }, ["todo", "waiting", "done"]), "waiting");
+  assert.equal(taskBoardColumn({ done: true, boardColumnId: "waiting" }, ["todo", "waiting", "done"]), "done");
+  assert.equal(taskBoardColumn({ done: false, boardColumnId: "removed" }, ["todo", "done"]), "todo");
 });
 
 test("builds salary-aligned monthly cycles and clamps short months", () => {

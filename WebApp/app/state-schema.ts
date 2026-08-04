@@ -99,8 +99,19 @@ export function validatePersistedState(value: unknown, options: ValidationOption
           startTime,
           endTime,
           durationMinutes: optionalFiniteNumber(listItem.durationMinutes, 1, 10_080),
+          important: Boolean(listItem.important),
+          urgent: Boolean(listItem.urgent),
+          boardColumnId: optionalString(listItem.boardColumnId, "task board column", 100),
         };
       }),
+    };
+  });
+
+  const taskColumns = optionalArray(source.taskColumns, "task columns", 24).map((item) => {
+    const column = record(item, "task column");
+    return {
+      id: identifier(column.id),
+      name: shortString(column.name, "task column name", 80),
     };
   });
 
@@ -175,6 +186,11 @@ export function validatePersistedState(value: unknown, options: ValidationOption
     entries,
     lists,
     trackers,
+    taskColumns: taskColumns.length ? taskColumns : [
+      { id: "todo", name: "To do" },
+      { id: "in-progress", name: "In progress" },
+      { id: "done", name: "Done" },
+    ],
     priorityDay: optionalString(source.priorityDay, "priority day", 10) ?? "",
     todayPriorityIds: optionalArray(source.todayPriorityIds, "today priorities", 3).map(identifier),
     monthlyBudget: finiteNumber(source.monthlyBudget, "monthly budget", 0, 1_000_000_000),

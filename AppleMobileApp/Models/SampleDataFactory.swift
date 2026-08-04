@@ -50,10 +50,10 @@ enum SampleDataFactory {
 
         let due = calendar.date(byAdding: .hour, value: 3, to: now)
         output += [
-            LogEntry(timestamp: now, category: .list, title: "Milk, spinach and bananas", listKind: .grocery, listID: groceries, isSampleData: true),
-            LogEntry(timestamp: now.addingTimeInterval(-60), category: .list, title: "New running shoes", listKind: .shopping, listID: shopping, isSampleData: true),
-            LogEntry(timestamp: now.addingTimeInterval(-120), category: .list, title: "Call the dentist", listKind: .reminder, listID: reminders, dueDate: due, isSampleData: true),
-            LogEntry(timestamp: now.addingTimeInterval(-180), category: .list, title: "Plan the week", listKind: .task, listID: tasks, isSampleData: true)
+            LogEntry(timestamp: now, category: .list, title: "Milk, spinach and bananas", listKind: .grocery, listID: groceries, taskUrgent: true, taskColumnID: TaskBoardColumn.toDoID, isSampleData: true),
+            LogEntry(timestamp: now.addingTimeInterval(-60), category: .list, title: "New running shoes", listKind: .shopping, listID: shopping, taskColumnID: TaskBoardColumn.toDoID, isSampleData: true),
+            LogEntry(timestamp: now.addingTimeInterval(-120), category: .list, title: "Call the dentist", listKind: .reminder, listID: reminders, dueDate: due, taskImportant: true, taskUrgent: true, taskColumnID: TaskBoardColumn.toDoID, isSampleData: true),
+            LogEntry(timestamp: now.addingTimeInterval(-180), category: .list, title: "Plan the week", listKind: .task, listID: tasks, taskImportant: true, taskColumnID: TaskBoardColumn.inProgressID, isSampleData: true)
         ]
         return output.sorted { $0.timestamp > $1.timestamp }
     }

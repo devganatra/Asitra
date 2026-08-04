@@ -29,6 +29,7 @@
 		A10000000000000000000017 /* TodaySystemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000016 /* TodaySystemView.swift */; };
 		A10000000000000000000018 /* ExpensesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000017 /* ExpensesView.swift */; };
 		A10000000000000000000019 /* AsitraAIAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000018 /* AsitraAIAccount.swift */; };
+		A1000000000000000000001A /* TasksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000019 /* TasksView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -56,6 +57,7 @@
 		B10000000000000000000016 /* TodaySystemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodaySystemView.swift; sourceTree = "<group>"; };
 		B10000000000000000000017 /* ExpensesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpensesView.swift; sourceTree = "<group>"; };
 		B10000000000000000000018 /* AsitraAIAccount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsitraAIAccount.swift; sourceTree = "<group>"; };
+		B10000000000000000000019 /* TasksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -124,6 +126,7 @@
 				B10000000000000000000003 /* RootView.swift */,
 				B10000000000000000000004 /* HomeView.swift */,
 				B10000000000000000000016 /* TodaySystemView.swift */,
+				B10000000000000000000019 /* TasksView.swift */,
 				B10000000000000000000005 /* LibraryView.swift */,
 				B10000000000000000000017 /* ExpensesView.swift */,
 				B10000000000000000000006 /* SettingsView.swift */,
@@ -225,6 +228,7 @@
 				A10000000000000000000003 /* RootView.swift in Sources */,
 				A10000000000000000000004 /* HomeView.swift in Sources */,
 				A10000000000000000000017 /* TodaySystemView.swift in Sources */,
+				A1000000000000000000001A /* TasksView.swift in Sources */,
 				A10000000000000000000005 /* LibraryView.swift in Sources */,
 				A10000000000000000000018 /* ExpensesView.swift in Sources */,
 				A10000000000000000000006 /* SettingsView.swift in Sources */,
