@@ -11,6 +11,7 @@ import {
   taskBoardColumn,
   taskPriorityFlags,
   taskPriorityQuadrant,
+  toggleTaskPriorityFlag,
   tripBudgetSummary,
   validateTaskPlan,
 } from "../app/mindset-models";
@@ -88,6 +89,13 @@ test("keeps one task consistent across the priority matrix and editable board", 
   assert.equal(taskBoardColumn({ done: false, boardColumnId: "waiting" }, ["todo", "waiting", "done"]), "waiting");
   assert.equal(taskBoardColumn({ done: true, boardColumnId: "waiting" }, ["todo", "waiting", "done"]), "done");
   assert.equal(taskBoardColumn({ done: false, boardColumnId: "removed" }, ["todo", "done"]), "todo");
+});
+
+test("combines rapid important and urgent updates instead of reverting the first flag", () => {
+  const important = toggleTaskPriorityFlag({ important: false, urgent: false }, "important");
+  const doNow = toggleTaskPriorityFlag(important, "urgent");
+  assert.deepEqual(doNow, { important: true, urgent: true });
+  assert.equal(taskPriorityQuadrant(doNow), "do");
 });
 
 test("builds salary-aligned monthly cycles and clamps short months", () => {
