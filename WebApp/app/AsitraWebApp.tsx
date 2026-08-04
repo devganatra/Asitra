@@ -2383,7 +2383,7 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
         <div className="brand">
           <span className="brand-mark">A</span>
           <div><strong>Asitra</strong><small>Your everyday assistant</small></div>
-          <button className="mobile-close" onClick={() => setMobileMenu(false)}><X size={20} /></button>
+          <button className="mobile-close" onClick={() => setMobileMenu(false)} aria-label="Close navigation"><X size={20} /></button>
         </div>
         <nav>
           {navItems.map((item) => {
@@ -2413,7 +2413,7 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
       {mobileMenu && <button className="scrim" onClick={() => setMobileMenu(false)} aria-label="Close menu" />}
       <main>
         <header className="topbar">
-          <button className="menu-button" onClick={() => setMobileMenu(true)}><Menu size={21} /></button>
+          <button className="menu-button" onClick={() => setMobileMenu(true)} aria-label="Open navigation"><Menu size={21} /></button>
           <div className="mobile-brand"><span className="brand-mark small">A</span><strong>Asitra</strong></div>
           <button className="search-button" onClick={() => setSearchOpen(true)}><Search size={17} /><span>Search your life</span><kbd>⌘ K</kbd></button>
           <div className="account-menu-wrap">

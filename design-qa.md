@@ -2,29 +2,41 @@
 
 - reference: `/Users/devganatra/.codex/generated_images/019f5bc3-a0c9-79d1-b316-2749d37b7b65/exec-e361c048-a86e-4f30-9f5a-79ac67a3c926.png`
 - reference pixels: 1487 × 1058
-- intended viewport: 1440 × 1024 CSS pixels at device scale factor 1
-- route and state: signed-in desktop Today dashboard with seeded data and three selected commitments
-- implementation screenshot: unavailable
-- comparison method: blocked before the required same-viewport combined reference/implementation comparison
+- primary implementation screenshot: `design-qa/option3-today.png`
+- additional Money screenshot: `design-qa/option3-money.png`
+- responsive screenshot: `design-qa/option3-mobile.png`
+- desktop viewport: 1440 × 1024 CSS pixels at device scale factor 1
+- mobile viewport: 390 × 844 CSS pixels at device scale factor 1
+- route and state: authenticated Today dashboard and Money workspace with controlled realistic data
 
-## Browser evidence
+## Visual comparison
 
-The selected in-app browser could not reach the local development server through localhost, 127.0.0.1, the host LAN address, or host.docker.internal. The server itself started normally and the production web build completed, but no valid browser-rendered screenshot could be captured in the user-selected browser.
+The reference and the browser-rendered Today screenshot were opened together at their intended desktop sizes. The implementation preserves the selected direction’s dark evergreen navigation, warm off-white canvas, serif hierarchy, three finite commitments, Later trade-off, humane completion point, reflection prompt, contextual right rail, capture dock and floating assistant. Spacing, proportions, borders, typography and density are coherent at 1440 × 1024.
 
-- primary interactions tested in browser: not run because the local page could not be opened
-- console errors checked: not available because the local page could not be opened
-- focused region: not captured; a full-screen comparison must succeed before a focused mismatch pass is meaningful
+The implementation intentionally keeps Asitra’s established information architecture: Calendar and Notes remain connected through Today and captured entries rather than becoming separate navigation items. The existing search and account toolbar also remains. These are product-structure differences, not visual defects.
 
-## Non-visual verification completed
+Money uses the same visual language and presents one entry point with Budget, Cash flow, Monthly allocation and Balance sheet perspectives. At 390 × 844, the navigation drawer opens and closes correctly, the segmented views remain horizontally reachable, and the page does not create document-level horizontal overflow.
 
-- web lint passed
-- web production build passed
-- 28 automated web and API tests passed
-- clean unsigned macOS build passed
-- iOS build remains unavailable because the Xcode iOS 26.5 platform component is not installed
+## Primary interactions tested
 
-## Blocking issue
+- loaded an authenticated account with isolated seeded data
+- opened and closed the task editor
+- toggled “This is enough for today”
+- saved a reflection to the timeline and Notes
+- opened all four Money perspectives
+- added an income record through Guided entry
+- added “Buy bananas tomorrow” through the universal capture input and confirmed it appeared
+- opened the mobile navigation, selected Money and confirmed the drawer closed
+- checked desktop Today, desktop Money and mobile Money for horizontal document overflow
 
-- P1: Required browser-rendered implementation evidence and visual comparison are missing. Permission is needed to use local Playwright as a fallback, or the in-app browser must be given a route to the host-local preview.
+## Browser and accessibility checks
 
-final result: blocked
+- browser console errors: none
+- uncaught page errors: none
+- desktop document width: 1440 at a 1440 viewport
+- mobile document width: 390 at a 390 viewport
+- fixed during QA: added accessible names to the mobile open- and close-navigation icon buttons
+- outstanding P0/P1/P2 issues: none
+- focused region: not required after the full-screen comparison and core-flow checks showed no unresolved P0/P1/P2 mismatch
+
+final result: passed
