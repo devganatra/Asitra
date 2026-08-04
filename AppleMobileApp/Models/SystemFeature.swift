@@ -737,8 +737,18 @@ final class SystemFeatureModel {
         }
     }
 
-    func addTrip(_ trip: TripBudgetPlan) {
-        updateFinance { $0.trips.append(trip) }
+    func upsertTrip(_ trip: TripBudgetPlan) {
+        updateFinance { finance in
+            if let index = finance.trips.firstIndex(where: { $0.id == trip.id }) {
+                finance.trips[index] = trip
+            } else {
+                finance.trips.append(trip)
+            }
+        }
+    }
+
+    func deleteTrip(_ id: UUID) {
+        updateFinance { $0.trips.removeAll { $0.id == id } }
     }
 
     func addMoneyEntry(kind: PersonalFinanceEntryKind, amount: Double, date: Date, note: String) {
