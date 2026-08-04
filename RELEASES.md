@@ -5,7 +5,7 @@ This ledger is the source of truth for what changed, where it was developed, and
 ## 0.2.0-beta.8 — 2026-08-04
 
 - Branch: `codex/automated-smoke-regression`
-- Pull request: pending
+- Pull request: [#44](https://github.com/devganatra/Asitra/pull/44)
 - Platforms: Web, macOS, iOS, iPadOS
 - Changes:
   - Added explicit smoke tests for startup, sign-in, protected APIs, account storage, trust pages, and the shared AI contract.
