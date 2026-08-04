@@ -18,7 +18,7 @@ The web version uses authenticated, account-isolated storage and keeps Apple Hea
 
 ## Install the beta on iPhone or iPad
 
-The current beta is version **0.2.0-beta.7 (7)**.
+The current beta is version **0.2.0-beta.8 (8)**.
 
 Release metadata is centralized in `release.json`. Every feature branch must bump it and add the branch, pull request, platforms, and user-visible changes to `RELEASES.md`; CI enforces this before merge.
 

@@ -26,8 +26,9 @@ jobs:
         run: npm run release:check
 
   web:
-    name: Web contracts and integration
+    name: Web smoke and regression
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -39,8 +40,12 @@ jobs:
         run: npm --prefix WebApp ci
       - name: Lint web app
         run: npm --prefix WebApp run lint
-      - name: Test production web build and shared AI contract
-        run: npm --prefix WebApp test
+      - name: Build production web app
+        run: npm --prefix WebApp run build
+      - name: Run smoke tests for startup, sign-in, storage, and protected APIs
+        run: npm --prefix WebApp run test:smoke:built
+      - name: Run regression tests for product behavior and security
+        run: npm --prefix WebApp run test:regression:built
 
   macos:
     name: macOS
