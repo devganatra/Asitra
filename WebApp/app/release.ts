@@ -1,3 +1,3 @@
-export const ASITRA_RELEASE = "0.2.0-beta.8";
+export const ASITRA_RELEASE = "0.2.0-beta.9";
 
 export const ASITRA_RELEASE_LABEL = `Release ${ASITRA_RELEASE}`;

@@ -2,6 +2,16 @@
 
 This ledger is the source of truth for what changed, where it was developed, and which pull request delivered it. Every feature release must add a new entry and update `release.json`.
 
+## 0.2.0-beta.9 — 2026-08-04
+
+- Branch: `codex/task-priority-persistence`
+- Pull request: [#45](https://github.com/devganatra/Asitra/pull/45)
+- Platforms: Web, macOS, iOS, iPadOS
+- Changes:
+  - Kept rapid Important and Urgent task updates cumulative instead of allowing one flag to overwrite the other.
+  - Debounced and serialized shared-list saves so stale responses cannot move a task back to an older priority.
+  - Added regression coverage for the Important → Urgent → Do now flow.
+
 ## 0.2.0-beta.8 — 2026-08-04
 
 - Branch: `codex/automated-smoke-regression`
