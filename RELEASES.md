@@ -2,6 +2,16 @@
 
 This ledger is the source of truth for what changed, where it was developed, and which pull request delivered it. Every feature release must add a new entry and update `release.json`.
 
+## 0.2.0-beta.8 — 2026-08-04
+
+- Branch: `codex/automated-smoke-regression`
+- Pull request: pending
+- Platforms: Web, macOS, iOS, iPadOS
+- Changes:
+  - Added explicit smoke tests for startup, sign-in, protected APIs, account storage, trust pages, and the shared AI contract.
+  - Added a separate regression gate for product behavior and security on every pull request and push to `main`.
+  - Kept the production web build single-pass while retaining Swift contract tests and macOS, iPhone, and iPad build gates.
+
 ## 0.2.0-beta.7 — 2026-08-04
 
 - Branch: `codex/dynamic-ui`

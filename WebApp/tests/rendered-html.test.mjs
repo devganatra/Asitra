@@ -130,6 +130,139 @@ test.after(() => {
   server?.kill("SIGTERM");
 });
 
+test("smoke: serves the signed-out app shell and current release", async () => {
+  const signedOut = await integrationFetch("/", {
+    redirect: "manual",
+    headers: signedOutHeaders,
+  });
+  assert.equal(signedOut.status, 307);
+  assert.equal(new URL(signedOut.headers.get("location")).pathname, "/login");
+
+  const login = await integrationFetch("/login", { headers: signedOutHeaders });
+  assert.equal(login.status, 200);
+  const loginHTML = await login.text();
+  assert.match(loginHTML, /Welcome to Asitra/);
+  assert.match(loginHTML, /Continue with Google/);
+  assert.match(loginHTML, new RegExp(`Release ${escapedReleaseVersion}`));
+
+  const health = await integrationFetch("/api/health");
+  assert.equal(health.status, 200);
+  assert.deepEqual(await health.json(), {
+    status: "ok",
+    service: "asitra-web",
+    version: releaseVersion,
+  });
+});
+
+test("smoke: keeps private state and assistant endpoints protected", async () => {
+  const state = await integrationFetch("/api/state", {
+    redirect: "manual",
+    headers: signedOutHeaders,
+  });
+  assert.equal(state.status, 401);
+
+  const assistant = await integrationFetch("/api/assistant", {
+    method: "POST",
+    headers: {
+      ...signedOutHeaders,
+      "content-type": "application/json",
+      origin,
+      "x-asitra-request": "1",
+    },
+    body: JSON.stringify({
+      messages: [{ role: "user", text: "Tell me about today" }],
+      consent: true,
+    }),
+  });
+  assert.equal(assistant.status, 401);
+});
+
+test("smoke: saves and reads a synthetic account workspace", async () => {
+  const accountHeaders = {
+    "oai-authenticated-user-email": `smoke-${process.pid}@example.com`,
+  };
+  const state = {
+    onboardingCompleted: true,
+    entries: [
+      {
+        id: `smoke-entry-${process.pid}`,
+        title: "Morning walk",
+        kind: "movement",
+        timestamp: "2026-08-04T07:30:00.000Z",
+        minutes: 30,
+        source: "automated smoke test",
+      },
+    ],
+    lists: [
+      {
+        id: `smoke-list-${process.pid}`,
+        name: "Today",
+        shared: false,
+        members: 1,
+        color: "#37624d",
+        items: [
+          {
+            id: `smoke-task-${process.pid}`,
+            text: "Pack walking shoes",
+            done: false,
+            important: true,
+            urgent: false,
+            boardColumnId: "todo",
+          },
+        ],
+      },
+    ],
+    trackers: [],
+    monthlyBudget: 900,
+    savingsTarget: 2_000,
+    savingsCurrent: 300,
+    moneyEntries: [],
+    balanceSheetItems: [],
+  };
+
+  const saved = await integrationFetch("/api/state", {
+    method: "PUT",
+    headers: {
+      ...accountHeaders,
+      "content-type": "application/json",
+      origin,
+      "x-asitra-request": "1",
+      "if-match": "0",
+    },
+    body: JSON.stringify(state),
+  });
+  assert.equal(saved.status, 200);
+  assert.equal((await saved.json()).version, 1);
+
+  const restored = await integrationFetch("/api/state", { headers: accountHeaders });
+  assert.equal(restored.status, 200);
+  const restoredBody = await restored.json();
+  assert.equal(restoredBody.version, 1);
+  assert.equal(restoredBody.state.entries[0].title, "Morning walk");
+  assert.equal(restoredBody.state.lists[0].items[0].text, "Pack walking shoes");
+  assert.equal(restoredBody.state.monthlyBudget, 900);
+});
+
+test("smoke: serves public trust pages and the shared AI contract", async () => {
+  const [about, privacy, terms, assistantConfig] = await Promise.all([
+    integrationFetch("/about"),
+    integrationFetch("/privacy"),
+    integrationFetch("/terms"),
+    integrationFetch("/api/assistant/config"),
+  ]);
+  assert.equal(about.status, 200);
+  assert.equal(privacy.status, 200);
+  assert.equal(terms.status, 200);
+  assert.equal(assistantConfig.status, 200);
+  assert.deepEqual(await assistantConfig.json(), {
+    version: 1,
+    profile: "Everyday",
+    label: "Terra",
+    model: "gpt-5.6-terra",
+    provider: "openai",
+  });
+});
+
 test("server-renders the Asitra everyday app", async () => {
   const response = await render();
   assert.equal(response.status, 200);

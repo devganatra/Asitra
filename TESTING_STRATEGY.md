@@ -21,11 +21,33 @@ The default is the balanced `gpt-5.6-terra` tier with low reasoning. A custom co
 
 ## Automated matrix
 
-Run before every pull request and release:
+Every pull request and every push to `main` runs visible smoke and regression gates in GitHub Actions. The smoke gate answers whether the production build starts and its most important paths work. The regression gate then exercises the broader behavior and security contract.
+
+### Smoke gate
+
+The smoke suite uses only synthetic data and verifies:
+
+- the signed-out app redirects to a working Google sign-in screen;
+- the health endpoint reports the current release;
+- private state and assistant endpoints reject signed-out access;
+- an isolated user can save and read a timeline entry, task, and money setting;
+- public trust pages and the shared web/Apple AI contract remain available.
+
+Run it locally with:
 
 ```sh
-npm test
-npm run lint
+npm --prefix WebApp run test:smoke
+```
+
+### Regression gate
+
+The regression suite covers capture parsing, dates, money, task matrix and board consistency, account isolation, attachments, exports, recovery, deletion, AI consent, shared model routing, and production security headers. GitHub also runs Swift contract tests and unsigned macOS, iPhone, and iPad Simulator builds.
+
+Run the full automated matrix before a release:
+
+```sh
+npm --prefix WebApp run lint
+npm --prefix WebApp run test:regression
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun swift test --package-path Packages/AsitraContracts
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -project AppleMobileApp.xcodeproj -scheme AppleMobileApp -configuration Release -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -project AppleMobileApp.xcodeproj -scheme AppleMobileApp -configuration Release -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
