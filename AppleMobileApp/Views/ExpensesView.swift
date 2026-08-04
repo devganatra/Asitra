@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 struct ExpensesView: View {
     @Environment(AppModel.self) private var model
     @Environment(SystemFeatureModel.self) private var systemFeature
-    @State private var section: MoneySection = .overview
+    @State private var section: MoneySection = .budget
     @State private var selectedMonth = Calendar.current.dateInterval(of: .month, for: .now)?.start ?? .now
     @State private var showingBudget = false
     @State private var showingExpense = false
@@ -57,6 +57,14 @@ struct ExpensesView: View {
     private var totalAssets: Double { assets.reduce(0) { $0 + $1.balance } }
     private var totalLiabilities: Double { liabilities.reduce(0) { $0 + $1.balance } }
     private var netWorth: Double { totalAssets - totalLiabilities }
+    private var editableFinanceRecords: [EditableFinanceRecord] {
+        let expenses = model.entries
+            .filter { $0.category == .expense }
+            .map(EditableFinanceRecord.expense)
+        let entries = finance.moneyEntries.map(EditableFinanceRecord.money)
+        let balances = finance.balanceSheetItems.map(EditableFinanceRecord.balance)
+        return (expenses + entries + balances).sorted { $0.date > $1.date }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -71,12 +79,14 @@ struct ExpensesView: View {
             .padding(.bottom, 12)
 
             ScrollView {
-                Group {
+                VStack(alignment: .leading, spacing: 18) {
+                    unifiedEntryCard
+                    moneyActivityCard
                     switch section {
-                    case .overview: positionOverview
-                    case .month: monthlyView
-                    case .savings: savingsView
-                    case .trips: tripsView
+                    case .budget: budgetPerspective
+                    case .cashFlow: focusedCashFlow
+                    case .allocation: focusedAllocation
+                    case .netWorth: focusedNetWorth
                     }
                 }
                 .padding()
@@ -168,22 +178,58 @@ struct ExpensesView: View {
     }
 
     private func saveUnifiedFinanceEntry(_ entry: UnifiedFinanceDraft) {
+        removeOriginalRecordIfNeeded(entry)
         switch entry.kind {
         case .expense:
-            model.add(
-                LogEntry(timestamp: entry.date, category: .expense, title: entry.note, amount: entry.amount, lifeArea: .personal, deviceSource: currentDeviceSource),
-                syncToCalendar: false
-            )
+            if let id = entry.expenseEntryID,
+               var existing = model.entries.first(where: { $0.id == id }) {
+                existing.timestamp = entry.date
+                existing.title = entry.note
+                existing.amount = entry.amount
+                model.update(existing)
+            } else {
+                model.add(
+                    LogEntry(timestamp: entry.date, category: .expense, title: entry.note, amount: entry.amount, lifeArea: .personal, deviceSource: currentDeviceSource),
+                    syncToCalendar: false
+                )
+            }
         case .income:
-            systemFeature.addMoneyEntry(kind: .income, amount: entry.amount, date: entry.date, note: entry.note)
+            saveMoneyEntry(entry, kind: .income)
         case .saving:
-            systemFeature.addMoneyEntry(kind: .saving, amount: entry.amount, date: entry.date, note: entry.note)
+            saveMoneyEntry(entry, kind: .saving)
         case .investment:
-            systemFeature.addMoneyEntry(kind: .investment, amount: entry.amount, date: entry.date, note: entry.note)
+            saveMoneyEntry(entry, kind: .investment)
         case .asset, .liability:
             systemFeature.upsertBalanceSheetItem(
                 BalanceSheetItem(id: entry.balanceItemID ?? UUID(), name: entry.note, balance: entry.amount, category: entry.balanceCategory, updatedAt: entry.date)
             )
+        }
+    }
+
+    private func saveMoneyEntry(_ entry: UnifiedFinanceDraft, kind: PersonalFinanceEntryKind) {
+        systemFeature.upsertMoneyEntry(
+            PersonalFinanceEntry(
+                id: entry.moneyEntryID ?? UUID(),
+                kind: kind,
+                amount: entry.amount,
+                date: entry.date,
+                note: entry.note
+            )
+        )
+    }
+
+    private func removeOriginalRecordIfNeeded(_ entry: UnifiedFinanceDraft) {
+        if let id = entry.expenseEntryID, entry.kind != .expense,
+           let original = model.entries.first(where: { $0.id == id }) {
+            model.delete(original)
+        }
+        if let id = entry.moneyEntryID,
+           ![UnifiedFinanceKind.income, .saving, .investment].contains(entry.kind) {
+            systemFeature.deleteMoneyEntry(id)
+        }
+        if let id = entry.balanceItemID,
+           ![UnifiedFinanceKind.asset, .liability].contains(entry.kind) {
+            systemFeature.deleteBalanceSheetItem(id)
         }
     }
 
@@ -259,7 +305,6 @@ struct ExpensesView: View {
     private var positionOverview: some View {
         VStack(alignment: .leading, spacing: 18) {
             monthSelector
-            unifiedEntryCard
             netWorthHero
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 16)], spacing: 16) {
                 cashFlowCard
@@ -270,6 +315,46 @@ struct ExpensesView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 4)
+        }
+    }
+
+    private var budgetPerspective: some View {
+        VStack(alignment: .leading, spacing: 26) {
+            monthlyView
+            Divider()
+            savingsView
+            Divider()
+            tripsView
+        }
+    }
+
+    private var focusedCashFlow: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            monthSelector
+            cashFlowCard
+            Text("This view follows cash: income comes in; spending and transferred investments leave usable cash. Money earmarked for a goal remains cash until it is moved.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var focusedAllocation: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            monthSelector
+            personalProfitLossCard
+            Text("The aim is not business profit. It is clarity: income is spent, saved, invested, or still waiting for a purpose.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var focusedNetWorth: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            netWorthHero
+            balanceSheetCard
+            Text("Your personal balance sheet is a snapshot of what you own minus what you owe. It changes only when an account or debt balance changes.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -298,6 +383,80 @@ struct ExpensesView: View {
         .padding(14)
         .background(Color.green.opacity(0.07), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.green.opacity(0.16)))
+    }
+
+    private var moneyActivityCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Money activity")
+                        .font(.headline)
+                    Text("Edit once here; every money perspective updates from the same record.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text("\(editableFinanceRecords.count) records")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+
+            if editableFinanceRecords.isEmpty {
+                Text("Your spending, income, saving, investments and account balances will appear here.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(editableFinanceRecords.prefix(8)) { record in
+                    HStack(spacing: 11) {
+                        Image(systemName: record.icon)
+                            .foregroundStyle(record.tint)
+                            .frame(width: 34, height: 34)
+                            .background(record.tint.opacity(0.11), in: Circle())
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(record.title)
+                                .font(.subheadline.weight(.semibold))
+                                .lineLimit(1)
+                            Text("\(record.kindLabel) · \(record.date.formatted(date: .abbreviated, time: .omitted))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text(record.displayAmount.formatted(.currency(code: currencyCode)))
+                            .font(.subheadline.weight(.semibold))
+                            .monospacedDigit()
+                        Menu {
+                            Button("Edit", systemImage: "pencil") {
+                                financeEntryDraft = record.draft
+                            }
+                            Button("Delete", systemImage: "trash", role: .destructive) {
+                                deleteFinanceRecord(record)
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .frame(width: 28, height: 28)
+                        }
+                        .menuStyle(.borderlessButton)
+                        .accessibilityLabel("More options for \(record.title)")
+                    }
+                    if record.id != editableFinanceRecords.prefix(8).last?.id {
+                        Divider()
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private func deleteFinanceRecord(_ record: EditableFinanceRecord) {
+        switch record {
+        case .expense(let entry):
+            model.delete(entry)
+        case .money(let entry):
+            systemFeature.deleteMoneyEntry(entry.id)
+        case .balance(let item):
+            systemFeature.deleteBalanceSheetItem(item.id)
+        }
     }
 
     private var netWorthHero: some View {
@@ -361,8 +520,8 @@ struct ExpensesView: View {
         let isBalanced = abs(remainder) < 0.01
         return VStack(alignment: .leading, spacing: 13) {
             statementHeading(
-                eyebrow: "Zero-based allocation",
-                title: "Personal P&L",
+                eyebrow: "Personal P&L",
+                title: "Monthly allocation",
                 subtitle: "Give every euro of your monthly surplus a purpose.",
                 icon: "equal.circle"
             )
@@ -531,7 +690,7 @@ struct ExpensesView: View {
                 ContentUnavailableView {
                     Label("No spending recorded", systemImage: "wallet.bifold")
                 } description: {
-                    Text("Add an expense here or write “spent €12 on lunch” in Today’s System.")
+                    Text("Add an expense here or write “spent €12 on lunch” from Today.")
                 } actions: {
                     Button("Add first expense") { showingExpense = true }
                         .buttonStyle(.borderedProminent)
@@ -907,22 +1066,22 @@ struct ExpensesView: View {
 }
 
 private enum MoneySection: String, CaseIterable, Identifiable {
-    case overview, month, savings, trips
+    case budget, cashFlow, allocation, netWorth
     var id: Self { self }
     var title: String {
         switch self {
-        case .overview: "Overview"
-        case .month: "Spending"
-        case .savings: "Goals"
-        case .trips: "Trips"
+        case .budget: "Budget"
+        case .cashFlow: "Cash flow"
+        case .allocation: "Allocation"
+        case .netWorth: "Net worth"
         }
     }
     var icon: String {
         switch self {
-        case .overview: "rectangle.3.group"
-        case .month: "chart.bar"
-        case .savings: "target"
-        case .trips: "airplane"
+        case .budget: "chart.bar"
+        case .cashFlow: "arrow.left.arrow.right"
+        case .allocation: "equal.circle"
+        case .netWorth: "scale.3d"
         }
     }
 }
@@ -1311,6 +1470,76 @@ private enum UnifiedFinanceKind: String, CaseIterable, Identifiable {
     }
 }
 
+private enum EditableFinanceRecord: Identifiable {
+    case expense(LogEntry)
+    case money(PersonalFinanceEntry)
+    case balance(BalanceSheetItem)
+
+    var id: String {
+        switch self {
+        case .expense(let entry): "expense-\(entry.id.uuidString)"
+        case .money(let entry): "money-\(entry.id.uuidString)"
+        case .balance(let item): "balance-\(item.id.uuidString)"
+        }
+    }
+
+    var date: Date {
+        switch self {
+        case .expense(let entry): entry.timestamp
+        case .money(let entry): entry.date
+        case .balance(let item): item.updatedAt
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .expense(let entry): entry.title
+        case .money(let entry): entry.note
+        case .balance(let item): item.name
+        }
+    }
+
+    var displayAmount: Double {
+        switch self {
+        case .expense(let entry): entry.amount ?? 0
+        case .money(let entry): entry.amount
+        case .balance(let item): item.balance
+        }
+    }
+
+    var kindLabel: String {
+        switch self {
+        case .expense: "Expense"
+        case .money(let entry): entry.kind.title
+        case .balance(let item): item.category.title
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .expense: "arrow.up.right.circle.fill"
+        case .money(let entry): entry.kind.systemImage
+        case .balance(let item): item.category.systemImage
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .expense: .orange
+        case .money(let entry): entry.kind == .income ? .green : .blue
+        case .balance(let item): item.category.isAsset ? .green : .orange
+        }
+    }
+
+    var draft: UnifiedFinanceDraft {
+        switch self {
+        case .expense(let entry): UnifiedFinanceDraft(expense: entry)
+        case .money(let entry): UnifiedFinanceDraft(moneyEntry: entry)
+        case .balance(let item): UnifiedFinanceDraft(item: item)
+        }
+    }
+}
+
 private struct UnifiedFinanceDraft: Identifiable {
     var id = UUID()
     var kind: UnifiedFinanceKind = .expense
@@ -1318,9 +1547,31 @@ private struct UnifiedFinanceDraft: Identifiable {
     var date = Date.now
     var note = ""
     var balanceCategory: BalanceSheetCategory = .cash
+    var expenseEntryID: UUID?
+    var moneyEntryID: UUID?
     var balanceItemID: UUID?
 
     init() {}
+
+    init(expense: LogEntry) {
+        kind = .expense
+        amount = expense.amount ?? 0
+        date = expense.timestamp
+        note = expense.title
+        expenseEntryID = expense.id
+    }
+
+    init(moneyEntry: PersonalFinanceEntry) {
+        switch moneyEntry.kind {
+        case .income: kind = .income
+        case .saving: kind = .saving
+        case .investment: kind = .investment
+        }
+        amount = moneyEntry.amount
+        date = moneyEntry.date
+        note = moneyEntry.note
+        moneyEntryID = moneyEntry.id
+    }
 
     init(item: BalanceSheetItem) {
         kind = item.category.isAsset ? .asset : .liability
@@ -1329,6 +1580,10 @@ private struct UnifiedFinanceDraft: Identifiable {
         note = item.name
         balanceCategory = item.category
         balanceItemID = item.id
+    }
+
+    var isEditing: Bool {
+        expenseEntryID != nil || moneyEntryID != nil || balanceItemID != nil
     }
 }
 
@@ -1389,7 +1644,7 @@ private struct UnifiedFinanceEntrySheet: View {
     init(draft: UnifiedFinanceDraft, onSave: @escaping (UnifiedFinanceDraft) -> Void) {
         _draft = State(initialValue: draft)
         _amount = State(initialValue: draft.amount > 0 ? String(format: "%.2f", draft.amount) : "")
-        _mode = State(initialValue: draft.balanceItemID == nil ? 0 : 1)
+        _mode = State(initialValue: draft.isEditing ? 1 : 0)
         self.onSave = onSave
     }
 
@@ -1429,11 +1684,11 @@ private struct UnifiedFinanceEntrySheet: View {
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle(draft.balanceItemID == nil ? "Add money activity" : "Update balance")
+            .navigationTitle(draft.isEditing ? "Edit money activity" : "Add money activity")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Confirm & add once") {
+                    Button(draft.isEditing ? "Save changes" : "Confirm & add once") {
                         if mode == 1 { syncGuidedDraft() }
                         guard draft.amount > 0, !draft.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
                         onSave(draft)

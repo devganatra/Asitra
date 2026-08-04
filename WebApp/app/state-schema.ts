@@ -22,6 +22,7 @@ const BALANCE_SHEET_CATEGORIES = new Set([
   "loan",
   "otherLiability",
 ]);
+const TASK_PLAN_MODES = new Set(["anytime", "exact", "window"]);
 const ATTACHMENT_PATH = /^\/api\/attachments\/[0-9a-f-]{36}$/i;
 const LEGACY_IMAGE = /^data:image\/(?:jpeg|png|webp);base64,/i;
 
@@ -68,11 +69,24 @@ export function validatePersistedState(value: unknown, options: ValidationOption
       color: safeColor(list.color),
       items: array(list.items, "list items", 1_000).map((rawItem) => {
         const listItem = record(rawItem, "list item");
+        const planMode = optionalString(listItem.planMode, "task plan mode", 16);
+        if (planMode && !TASK_PLAN_MODES.has(planMode)) throw new Error("Unknown task plan mode.");
+        const plannedDate = optionalString(listItem.plannedDate, "task planned date", 10);
+        if (plannedDate && !/^\d{4}-\d{2}-\d{2}$/.test(plannedDate)) throw new Error("A task has an invalid planned date.");
+        const startTime = optionalString(listItem.startTime, "task start time", 5);
+        const endTime = optionalString(listItem.endTime, "task end time", 5);
+        if (startTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime)) throw new Error("A task has an invalid start time.");
+        if (endTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(endTime)) throw new Error("A task has an invalid end time.");
         return {
           id: identifier(listItem.id),
           text: shortString(listItem.text, "list item", 1_000),
           done: Boolean(listItem.done),
           due: optionalString(listItem.due, "due date", 200),
+          plannedDate,
+          planMode,
+          startTime,
+          endTime,
+          durationMinutes: optionalFiniteNumber(listItem.durationMinutes, 1, 10_080),
         };
       }),
     };
@@ -127,6 +141,8 @@ export function validatePersistedState(value: unknown, options: ValidationOption
     entries,
     lists,
     trackers,
+    priorityDay: optionalString(source.priorityDay, "priority day", 10) ?? "",
+    todayPriorityIds: optionalArray(source.todayPriorityIds, "today priorities", 3).map(identifier),
     monthlyBudget: finiteNumber(source.monthlyBudget, "monthly budget", 0, 1_000_000_000),
     savingsTarget: finiteNumber(source.savingsTarget, "savings target", 0, 1_000_000_000),
     savingsCurrent: finiteNumber(source.savingsCurrent, "savings amount", 0, 1_000_000_000),

@@ -18,6 +18,21 @@ enum ActionEnergy: String, Codable, CaseIterable, Identifiable {
     var id: Self { self }
 }
 
+enum TaskPlanningMode: String, Codable, CaseIterable, Identifiable {
+    case anytime
+    case exact
+    case window
+
+    var id: Self { self }
+    var title: String {
+        switch self {
+        case .anytime: "Anytime"
+        case .exact: "Exact time"
+        case .window: "Flexible window"
+        }
+    }
+}
+
 enum SystemReviewKind: String, Codable {
     case morning
     case evening
@@ -72,6 +87,10 @@ struct SystemAction: Identifiable, Codable, Hashable {
     var priority: Int
     var lastCompletedAt: Date?
     var isActive = true
+    var planningMode: TaskPlanningMode?
+    var windowEndDate: Date?
+
+    var effectivePlanningMode: TaskPlanningMode { planningMode ?? .exact }
 
     func occurs(on date: Date, calendar: Calendar = .current) -> Bool {
         guard isActive else { return false }
@@ -691,6 +710,20 @@ final class SystemFeatureModel {
         }
     }
 
+    func upsertMoneyEntry(_ entry: PersonalFinanceEntry) {
+        updateFinance { finance in
+            if let index = finance.moneyEntries.firstIndex(where: { $0.id == entry.id }) {
+                finance.moneyEntries[index] = entry
+            } else {
+                finance.moneyEntries.append(entry)
+            }
+        }
+    }
+
+    func deleteMoneyEntry(_ id: UUID) {
+        updateFinance { $0.moneyEntries.removeAll { $0.id == id } }
+    }
+
     func upsertBalanceSheetItem(_ item: BalanceSheetItem) {
         updateFinance { finance in
             var updated = item
@@ -701,6 +734,10 @@ final class SystemFeatureModel {
                 finance.balanceSheetItems.append(updated)
             }
         }
+    }
+
+    func deleteBalanceSheetItem(_ id: UUID) {
+        updateFinance { $0.balanceSheetItems.removeAll { $0.id == id } }
     }
 
     func linkExpense(_ entryID: UUID, toTrip tripID: UUID) {
@@ -744,6 +781,38 @@ final class SystemFeatureModel {
     func toggle(_ action: SystemAction, on date: Date) {
         guard let index = workspace.actions.firstIndex(where: { $0.id == action.id }) else { return }
         workspace.actions[index].lastCompletedAt = action.isCompleted(on: date) ? nil : date
+        persist()
+    }
+
+    func updateAction(_ action: SystemAction) {
+        guard let index = workspace.actions.firstIndex(where: { $0.id == action.id }) else { return }
+        workspace.actions[index] = action
+        persist()
+    }
+
+    func upsertAction(_ action: SystemAction) {
+        if let index = workspace.actions.firstIndex(where: { $0.id == action.id }) {
+            workspace.actions[index] = action
+        } else {
+            workspace.actions.append(action)
+        }
+        persist()
+    }
+
+    func deleteAction(_ actionID: UUID) {
+        workspace.actions.removeAll { $0.id == actionID }
+        persist()
+    }
+
+    func postponeAction(_ actionID: UUID, to date: Date) {
+        guard let index = workspace.actions.firstIndex(where: { $0.id == actionID }) else { return }
+        let duration = workspace.actions[index].windowEndDate.map {
+            $0.timeIntervalSince(workspace.actions[index].scheduledDate)
+        }
+        workspace.actions[index].scheduledDate = date
+        if let duration { workspace.actions[index].windowEndDate = date.addingTimeInterval(duration) }
+        workspace.actions[index].cadence = nil
+        workspace.actions[index].lastCompletedAt = nil
         persist()
     }
 

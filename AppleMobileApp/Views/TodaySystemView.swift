@@ -7,6 +7,7 @@ struct TodaySystemView: View {
     @State private var reviewKind: ReviewSheetKind?
     @State private var expandedProcessID: UUID?
     @State private var isEditingDashboard = false
+    @State private var editingAction: SystemAction?
 
     private var snapshot: TodaySystemSnapshot {
         systemFeature.snapshot(on: date, timeline: model.entries)
@@ -40,6 +41,26 @@ struct TodaySystemView: View {
                 systemFeature.saveReview(review)
             }
         }
+        .sheet(item: $editingAction) { action in
+            TaskPlanEditorSheet(
+                action: action,
+                isNew: !systemFeature.workspace.actions.contains(where: { $0.id == action.id }),
+                canSchedule: canSchedule,
+                onSave: {
+                    systemFeature.upsertAction($0)
+                    editingAction = nil
+                },
+                onDelete: {
+                    systemFeature.deleteAction($0.id)
+                    editingAction = nil
+                },
+                onPostpone: {
+                    systemFeature.updateAction($0)
+                    postpone($0)
+                    editingAction = nil
+                }
+            )
+        }
     }
 
     private var visibleLayout: [DashboardWidgetConfiguration] {
@@ -65,13 +86,27 @@ struct TodaySystemView: View {
     private var dashboardToolbar: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Your dashboard")
+                Text("For today")
                     .font(.title2.bold())
-                Text(isEditingDashboard ? "Drag blocks to reorder them" : "A system you can shape around your life")
+                Text(isEditingDashboard ? "Drag blocks to reorder them" : "Keep the day honest and leave room to live it")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            if !isEditingDashboard {
+                if snapshot.actions.count < 3 {
+                    Button {
+                        editingAction = newPriorityAction
+                    } label: {
+                        Label("Add priority", systemImage: "plus")
+                    }
+                    .buttonStyle(.borderedProminent)
+                } else {
+                    Label("3 priorities", systemImage: "checkmark.circle")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
             if isEditingDashboard, !systemFeature.hiddenDashboardWidgets.isEmpty {
                 Menu {
                     ForEach(systemFeature.hiddenDashboardWidgets) { configuration in
@@ -217,7 +252,7 @@ struct TodaySystemView: View {
                 HStack(spacing: 14) {
                     progressRing(diameter: 52, lineWidth: 6, compact: true)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Today’s system")
+                        Text("Your day")
                             .font(.headline)
                         Text(compactSystemSummary)
                             .font(.caption)
@@ -228,8 +263,8 @@ struct TodaySystemView: View {
             case .standard:
                 HStack(alignment: .center, spacing: 16) {
                     VStack(alignment: .leading, spacing: 5) {
-                        widgetEyebrow("TODAY’S SYSTEM", icon: "circle.dotted.circle")
-                        Text("Your day at a glance")
+                        widgetEyebrow("A REALISTIC DAY", icon: "circle.dotted.circle")
+                        Text("What matters today")
                             .font(.title2.bold())
                         Text(systemSummary)
                             .font(.subheadline)
@@ -243,8 +278,8 @@ struct TodaySystemView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(alignment: .center, spacing: 16) {
                         VStack(alignment: .leading, spacing: 5) {
-                            widgetEyebrow("TODAY’S SYSTEM", icon: "circle.dotted.circle")
-                            Text("Your day at a glance")
+                            widgetEyebrow("A REALISTIC DAY", icon: "circle.dotted.circle")
+                            Text("What matters today")
                                 .font(.title.bold())
                             Text(systemSummary)
                                 .font(.subheadline)
@@ -414,11 +449,12 @@ struct TodaySystemView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(action.title)
                     .font(.title3.bold())
-                Text("\(action.durationMinutes) min · \(action.energy.rawValue) · \(system?.title ?? "Independent action")")
+                Text("\(planningSummary(action)) · \(action.energy.rawValue) · \(system?.title ?? "Independent action")")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            actionMenu(action)
             Button("Complete") { complete(action) }
                 .buttonStyle(.borderedProminent)
         }
@@ -430,9 +466,9 @@ struct TodaySystemView: View {
                 .font(.largeTitle)
                 .foregroundStyle(.green)
             VStack(alignment: .leading, spacing: 3) {
-                Text("Today’s actions are complete")
+                Text("This is enough for today")
                     .font(.title3.bold())
-                Text("Use the reflection to make tomorrow’s system even easier.")
+                Text("Take a breath, then keep one honest thought for tomorrow.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -444,14 +480,14 @@ struct TodaySystemView: View {
 
     private func nextActionsCard(size: DashboardWidgetSize) -> some View {
         let allNext = snapshot.actions.filter { !$0.isCompleted(on: date) }.dropFirst()
-        let limit = size == .compact ? 1 : (size == .standard ? 3 : Int.max)
+        let limit = size == .compact ? 1 : 2
         let displayed = Array(allNext.prefix(limit))
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label("Next actions", systemImage: "list.bullet.rectangle")
+                Label("Worth making time for", systemImage: "list.bullet.rectangle")
                     .font(.headline)
                 Spacer()
-                Text("\(allNext.count) remaining")
+                Text("\(allNext.count) waiting")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
@@ -461,30 +497,35 @@ struct TodaySystemView: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(displayed) { action in
-                    Button { complete(action) } label: {
-                        HStack(spacing: 10) {
+                    HStack(spacing: 10) {
+                        Button { complete(action) } label: {
                             Image(systemName: action.isCompleted(on: date) ? "checkmark.circle.fill" : "circle")
                                 .foregroundStyle(action.isCompleted(on: date) ? .green : .secondary)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(action.title)
-                                    .font(.subheadline.weight(.semibold))
-                                Text("\(action.durationMinutes) min · \(action.scheduledDate.formatted(date: .omitted, time: .shortened))")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                if size == .expanded,
-                                   let system = systemFeature.workspace.systems.first(where: { $0.id == action.systemID }) {
-                                    Label("\(system.title) · \(action.energy.rawValue)", systemImage: system.icon)
-                                        .font(.caption2)
-                                        .foregroundStyle(.tertiary)
-                                }
-                            }
-                            Spacer()
                         }
-                        .contentShape(Rectangle())
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Complete \(action.title)")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(action.title)
+                                .font(.subheadline.weight(.semibold))
+                            Text(planningSummary(action))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            if size == .expanded,
+                               let system = systemFeature.workspace.systems.first(where: { $0.id == action.systemID }) {
+                                Label("\(system.title) · \(action.energy.rawValue)", systemImage: system.icon)
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                        Spacer()
+                        actionMenu(action)
                     }
-                    .buttonStyle(.plain)
                 }
             }
+            Divider()
+            Label("Something new means something else waits.", systemImage: "leaf")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -537,11 +578,11 @@ struct TodaySystemView: View {
     private func reviewsCard(size: DashboardWidgetSize) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label("Daily review", systemImage: "sparkles.rectangle.stack")
+                Label("A moment for you", systemImage: "sparkles.rectangle.stack")
                     .font(.headline)
                 Spacer()
                 if size == .expanded {
-                    Text("Learn from the system")
+                    Text("Notice what the day taught you")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -586,7 +627,7 @@ struct TodaySystemView: View {
                                 .font(.subheadline)
                         }
                     } else {
-                        Label("A short reflection helps Asitra improve tomorrow’s process.", systemImage: "lightbulb")
+                        Label("A short reflection can make tomorrow a little clearer.", systemImage: "lightbulb")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -629,7 +670,7 @@ struct TodaySystemView: View {
     private func systemProgress(size: DashboardWidgetSize) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("System progress")
+                Text("Patterns this week")
                     .font(.title3.bold())
                 Spacer()
                 Text("This week")
@@ -715,8 +756,8 @@ struct TodaySystemView: View {
 
     private var systemSummary: String {
         let remaining = snapshot.actions.count - snapshot.completedCount
-        if remaining == 0 { return "The system is complete. Reflect, recover, and prepare tomorrow." }
-        return "\(remaining) meaningful \(remaining == 1 ? "action" : "actions") remain. Follow the process, then record the evidence."
+        if remaining == 0 { return "You have done enough. Reflect, recover, and let tomorrow wait." }
+        return "\(min(remaining, 3)) meaningful \(remaining == 1 ? "commitment" : "commitments") for today. The rest can wait."
     }
 
     private var compactSystemSummary: String {
@@ -732,6 +773,66 @@ struct TodaySystemView: View {
         case "orange": .orange
         default: .blue
         }
+    }
+
+    private func planningSummary(_ action: SystemAction) -> String {
+        switch action.effectivePlanningMode {
+        case .anytime:
+            return "Anytime · \(action.durationMinutes) min"
+        case .exact:
+            let end = action.scheduledDate.addingTimeInterval(TimeInterval(action.durationMinutes * 60))
+            return "\(action.scheduledDate.formatted(date: .omitted, time: .shortened))–\(end.formatted(date: .omitted, time: .shortened))"
+        case .window:
+            let end = action.windowEndDate ?? action.scheduledDate.addingTimeInterval(TimeInterval(action.durationMinutes * 60))
+            return "\(action.scheduledDate.formatted(date: .omitted, time: .shortened))–\(end.formatted(date: .omitted, time: .shortened)) · \(action.durationMinutes) min"
+        }
+    }
+
+    private func actionMenu(_ action: SystemAction) -> some View {
+        Menu {
+            Button("Edit", systemImage: "pencil") { editingAction = action }
+            Button("Move to tomorrow", systemImage: "calendar.badge.clock") { postpone(action) }
+            Divider()
+            Button("Delete", systemImage: "trash", role: .destructive) {
+                systemFeature.deleteAction(action.id)
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .frame(width: 30, height: 30)
+        }
+        .menuStyle(.borderlessButton)
+        .accessibilityLabel("More options for \(action.title)")
+    }
+
+    private func postpone(_ action: SystemAction) {
+        let calendar = Calendar.current
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: action.scheduledDate) ?? action.scheduledDate
+        systemFeature.postponeAction(action.id, to: tomorrow)
+    }
+
+    private var newPriorityAction: SystemAction {
+        let start = Calendar.current.date(
+            bySettingHour: 9,
+            minute: 0,
+            second: 0,
+            of: date
+        ) ?? date
+        return SystemAction(
+            title: "",
+            scheduledDate: start,
+            cadence: nil,
+            durationMinutes: 30,
+            energy: .medium,
+            priority: max(1, 3 - snapshot.actions.count),
+            planningMode: .anytime
+        )
+    }
+
+    private func canSchedule(_ action: SystemAction) -> Bool {
+        let occupied = systemFeature.workspace.actions.filter {
+            $0.id != action.id && $0.occurs(on: action.scheduledDate)
+        }
+        return occupied.count < 3
     }
 
     private func complete(_ action: SystemAction) {
@@ -754,7 +855,7 @@ struct TodaySystemView: View {
                 timestamp: timestamp,
                 category: system.evidenceCategory,
                 title: action.title,
-                note: "Completed through Today’s System · \(system.title)",
+                note: "Completed with Asitra · \(system.title)",
                 durationMinutes: action.durationMinutes,
                 status: .completed,
                 lifeArea: system.evidenceCategory.defaultLifeArea,
@@ -771,6 +872,225 @@ struct TodaySystemView: View {
 #else
         .phone
 #endif
+    }
+}
+
+private struct TaskPlanEditorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft: SystemAction
+    @State private var confirmsDelete = false
+
+    let isNew: Bool
+    let canSchedule: (SystemAction) -> Bool
+    let onSave: (SystemAction) -> Void
+    let onDelete: (SystemAction) -> Void
+    let onPostpone: (SystemAction) -> Void
+
+    init(
+        action: SystemAction,
+        isNew: Bool,
+        canSchedule: @escaping (SystemAction) -> Bool,
+        onSave: @escaping (SystemAction) -> Void,
+        onDelete: @escaping (SystemAction) -> Void,
+        onPostpone: @escaping (SystemAction) -> Void
+    ) {
+        _draft = State(initialValue: action)
+        self.isNew = isNew
+        self.canSchedule = canSchedule
+        self.onSave = onSave
+        self.onDelete = onDelete
+        self.onPostpone = onPostpone
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("What matters") {
+                    TextField("Task", text: $draft.title)
+                    DatePicker(
+                        "Day",
+                        selection: $draft.scheduledDate,
+                        displayedComponents: .date
+                    )
+                }
+
+                Section {
+                    Picker("Time plan", selection: planningMode) {
+                        ForEach(TaskPlanningMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    if draft.effectivePlanningMode != .anytime {
+                        DatePicker(
+                            draft.effectivePlanningMode == .window ? "Available from" : "Starts",
+                            selection: $draft.scheduledDate,
+                            displayedComponents: .hourAndMinute
+                        )
+                    }
+
+                    if draft.effectivePlanningMode == .window {
+                        DatePicker(
+                            "Available until",
+                            selection: windowEndDate,
+                            in: draft.scheduledDate...,
+                            displayedComponents: .hourAndMinute
+                        )
+                    }
+
+                    Stepper(value: $draft.durationMinutes, in: 5...720, step: 5) {
+                        LabeledContent("Time needed", value: durationLabel)
+                    }
+
+                    if let validationMessage {
+                        Label(validationMessage, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                } header: {
+                    Text("When should it happen?")
+                } footer: {
+                    Text(scheduleHelp)
+                }
+
+                Section("Quick choices") {
+                    ViewThatFits(in: .horizontal) {
+                        HStack {
+                            quickChoice("Morning", hour: 9)
+                            quickChoice("Afternoon", hour: 14)
+                            quickChoice("Evening", hour: 18)
+                            Button("Anytime") {
+                                draft.planningMode = .anytime
+                                draft.windowEndDate = nil
+                            }
+                        }
+                        VStack(alignment: .leading) {
+                            quickChoice("Morning", hour: 9)
+                            quickChoice("Afternoon", hour: 14)
+                            quickChoice("Evening", hour: 18)
+                            Button("Anytime") {
+                                draft.planningMode = .anytime
+                                draft.windowEndDate = nil
+                            }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                if !isNew {
+                    Section {
+                        Button("Move to tomorrow", systemImage: "calendar.badge.clock") {
+                            onPostpone(draft)
+                            dismiss()
+                        }
+                        Button("Delete task", systemImage: "trash", role: .destructive) {
+                            confirmsDelete = true
+                        }
+                    }
+                }
+            }
+            .formStyle(.grouped)
+            .navigationTitle("Plan task")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        onSave(draft)
+                        dismiss()
+                    }
+                    .disabled(!canSave)
+                }
+            }
+            .confirmationDialog(
+                "Delete this task?",
+                isPresented: $confirmsDelete,
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive) {
+                    onDelete(draft)
+                    dismiss()
+                }
+            } message: {
+                Text("This removes the task from your plan. Completed timeline entries remain intact.")
+            }
+        }
+        .frame(minWidth: 390, minHeight: 540)
+    }
+
+    private var planningMode: Binding<TaskPlanningMode> {
+        Binding(
+            get: { draft.effectivePlanningMode },
+            set: { mode in
+                draft.planningMode = mode
+                if mode == .window {
+                    draft.windowEndDate = draft.scheduledDate.addingTimeInterval(3 * 60 * 60)
+                } else {
+                    draft.windowEndDate = nil
+                }
+            }
+        )
+    }
+
+    private var windowEndDate: Binding<Date> {
+        Binding(
+            get: {
+                draft.windowEndDate
+                    ?? draft.scheduledDate.addingTimeInterval(TimeInterval(max(draft.durationMinutes, 60) * 60))
+            },
+            set: { draft.windowEndDate = $0 }
+        )
+    }
+
+    private var canSave: Bool {
+        !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && validationMessage == nil
+    }
+
+    private var validationMessage: String? {
+        guard canSchedule(draft) else {
+            return "That day already has three priorities. Move or postpone one first."
+        }
+        guard draft.effectivePlanningMode == .window, let end = draft.windowEndDate else { return nil }
+        let availableMinutes = Int(end.timeIntervalSince(draft.scheduledDate) / 60)
+        if availableMinutes <= 0 { return "The end of the window must be after its start." }
+        if draft.durationMinutes > availableMinutes {
+            return "The task needs more time than this window provides."
+        }
+        return nil
+    }
+
+    private var durationLabel: String {
+        if draft.durationMinutes < 60 { return "\(draft.durationMinutes) min" }
+        let hours = draft.durationMinutes / 60
+        let minutes = draft.durationMinutes % 60
+        return minutes == 0 ? "\(hours) hr" : "\(hours) hr \(minutes) min"
+    }
+
+    private var scheduleHelp: String {
+        switch draft.effectivePlanningMode {
+        case .anytime:
+            "Keep it on this day without forcing a time."
+        case .exact:
+            "Reserve a clear start time; the end follows from the time needed."
+        case .window:
+            "Choose a flexible span in which Asitra can help you fit the task."
+        }
+    }
+
+    private func quickChoice(_ title: String, hour: Int) -> some View {
+        Button(title) {
+            draft.planningMode = .exact
+            draft.windowEndDate = nil
+            draft.scheduledDate = Calendar.current.date(
+                bySettingHour: hour,
+                minute: 0,
+                second: 0,
+                of: draft.scheduledDate
+            ) ?? draft.scheduledDate
+        }
     }
 }
 
@@ -820,7 +1140,7 @@ private struct SystemReviewSheet: View {
                     Section("Reflection") {
                         TextField("What worked today?", text: $worked, axis: .vertical)
                             .lineLimit(2...5)
-                        TextField("Where did the system create friction?", text: $friction, axis: .vertical)
+                        TextField("What made the day harder than it needed to be?", text: $friction, axis: .vertical)
                             .lineLimit(2...5)
                         TextField("What should change tomorrow?", text: $adjustment, axis: .vertical)
                             .lineLimit(2...5)
