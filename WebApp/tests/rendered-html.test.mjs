@@ -1,12 +1,27 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 const port = 31_000 + (process.pid % 1_000);
 const origin = `http://localhost:${port}`;
+const persistencePath = join(tmpdir(), `asitra-integration-${process.pid}`);
 const signedOutHeaders = { "oai-authenticated-user-email": " " };
 let server;
+let serverOutput = "";
+
+function captureServerOutput(chunk) {
+  serverOutput = `${serverOutput}${chunk}`.slice(-12_000);
+}
+
+function stoppedServerError() {
+  const diagnostic = serverOutput.trim();
+  return new Error(
+    `Local security test server stopped unexpectedly.${diagnostic ? `\n${diagnostic}` : ""}`,
+  );
+}
 
 async function integrationFetch(path, init) {
   let response;
@@ -19,6 +34,7 @@ async function integrationFetch(path, init) {
     } catch (error) {
       lastError = error;
     }
+    if (server?.exitCode !== null) throw stoppedServerError();
     await new Promise((resolve) => setTimeout(resolve, 40));
   }
   if (response) return response;
@@ -37,7 +53,18 @@ async function render() {
 test.before(async () => {
   const migration = spawnSync(
     process.execPath,
-    ["node_modules/wrangler/bin/wrangler.js", "d1", "migrations", "apply", "DB", "--local", "--config", "dist/server/wrangler.json"],
+    [
+      "node_modules/wrangler/bin/wrangler.js",
+      "d1",
+      "migrations",
+      "apply",
+      "DB",
+      "--local",
+      "--persist-to",
+      persistencePath,
+      "--config",
+      "dist/server/wrangler.json",
+    ],
     { cwd: new URL("..", import.meta.url), encoding: "utf8" },
   );
   if (migration.status !== 0) {
@@ -52,6 +79,10 @@ test.before(async () => {
       "dist/server/wrangler.json",
       "--port",
       String(port),
+      "--persist-to",
+      persistencePath,
+      "--log-level",
+      "error",
       "--var",
       "BETTER_AUTH_SECRET:integration-test-secret-at-least-32-bytes-long",
       "--var",
@@ -61,11 +92,13 @@ test.before(async () => {
       "--var",
       "GOOGLE_CLIENT_SECRET:integration-test-google-secret",
     ],
-    { cwd: new URL("..", import.meta.url), stdio: "ignore" },
+    { cwd: new URL("..", import.meta.url), stdio: ["ignore", "pipe", "pipe"] },
   );
+  server.stdout.on("data", captureServerOutput);
+  server.stderr.on("data", captureServerOutput);
 
   for (let attempt = 0; attempt < 100; attempt += 1) {
-    if (server.exitCode !== null) throw new Error("Local security test server stopped unexpectedly.");
+    if (server.exitCode !== null) throw stoppedServerError();
     try {
       const response = await fetch(origin, { redirect: "manual" });
       if (response.status > 0) return;
