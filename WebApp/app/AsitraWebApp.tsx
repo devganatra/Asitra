@@ -553,6 +553,8 @@ const onboardingSteps = [
   },
 ];
 
+const NOTICE_DURATION_MS = 4_000;
+
 export default function AsitraWebApp({ userName, logoutPath }: { userName: string; logoutPath: string }) {
   const [section, setSection] = useState<Section>("today");
   const [state, setState] = useState<PersistedState>(emptyState);
@@ -593,7 +595,8 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
   const [importedTransactions, setImportedTransactions] = useState<ImportedMoneyTransaction[]>([]);
   const [importFileName, setImportFileName] = useState("");
   const [importReading, setImportReading] = useState(false);
-  const [notice, setNotice] = useState<string>();
+  const [notice, setNoticeState] = useState<string>();
+  const [noticeSequence, setNoticeSequence] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [policyOpen, setPolicyOpen] = useState(false);
@@ -615,6 +618,11 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
   const stateVersionRef = useRef(0);
   const accountDeletedRef = useRef(false);
   const sharedListMetaRef = useRef<Record<string, { version: number; owner: boolean }>>({});
+
+  function setNotice(message: string | undefined) {
+    setNoticeState(message);
+    if (message) setNoticeSequence((current) => current + 1);
+  }
 
   async function loadState() {
     try {
@@ -732,6 +740,12 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
       })
       .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timeout = window.setTimeout(() => setNoticeState(undefined), NOTICE_DURATION_MS);
+    return () => window.clearTimeout(timeout);
+  }, [notice, noticeSequence]);
 
   async function updateAIConsent(granted: boolean) {
     const response = await fetch("/api/account/consent", {
@@ -3021,10 +3035,10 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
         );
       })()}
       {notice && (
-        <div className="toast">
+        <div className="toast" role="status" aria-live="polite">
           <CheckCircle2 size={18} />
           <span>{notice}</span>
-          <button onClick={() => setNotice(undefined)}><X size={15} /></button>
+          <button onClick={() => setNotice(undefined)} aria-label="Dismiss message"><X size={15} /></button>
         </div>
       )}
       {searchOpen && (
