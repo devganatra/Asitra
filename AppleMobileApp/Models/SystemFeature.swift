@@ -296,6 +296,7 @@ struct BalanceSheetItem: Identifiable, Codable, Hashable {
 
 struct FinanceWorkspace: Codable, Hashable {
     var monthlyBudget: Double?
+    var moneyCycleStartDay: Int
     var savingPlans: [SavingPlan]
     var trips: [TripBudgetPlan]
     var moneyEntries: [PersonalFinanceEntry]
@@ -303,12 +304,14 @@ struct FinanceWorkspace: Codable, Hashable {
 
     init(
         monthlyBudget: Double?,
+        moneyCycleStartDay: Int = 1,
         savingPlans: [SavingPlan],
         trips: [TripBudgetPlan],
         moneyEntries: [PersonalFinanceEntry] = [],
         balanceSheetItems: [BalanceSheetItem] = []
     ) {
         self.monthlyBudget = monthlyBudget
+        self.moneyCycleStartDay = min(max(moneyCycleStartDay, 1), 31)
         self.savingPlans = savingPlans
         self.trips = trips
         self.moneyEntries = moneyEntries
@@ -316,12 +319,13 @@ struct FinanceWorkspace: Codable, Hashable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case monthlyBudget, savingPlans, trips, moneyEntries, balanceSheetItems
+        case monthlyBudget, moneyCycleStartDay, savingPlans, trips, moneyEntries, balanceSheetItems
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         monthlyBudget = try container.decodeIfPresent(Double.self, forKey: .monthlyBudget)
+        moneyCycleStartDay = min(max(try container.decodeIfPresent(Int.self, forKey: .moneyCycleStartDay) ?? 1, 1), 31)
         savingPlans = try container.decodeIfPresent([SavingPlan].self, forKey: .savingPlans) ?? []
         trips = try container.decodeIfPresent([TripBudgetPlan].self, forKey: .trips) ?? []
         moneyEntries = try container.decodeIfPresent([PersonalFinanceEntry].self, forKey: .moneyEntries) ?? []
@@ -329,6 +333,35 @@ struct FinanceWorkspace: Codable, Hashable {
     }
 
     static let empty = FinanceWorkspace(monthlyBudget: nil, savingPlans: [], trips: [])
+}
+
+struct MoneyCyclePeriod {
+    static func interval(
+        containing reference: Date,
+        startDay: Int,
+        offset: Int = 0,
+        calendar: Calendar = .current
+    ) -> DateInterval {
+        let day = min(max(startDay, 1), 31)
+        let referenceMonth = calendar.dateInterval(of: .month, for: reference)?.start
+            ?? calendar.startOfDay(for: reference)
+        let candidate = date(inMonthOf: referenceMonth, offset: 0, day: day, calendar: calendar)
+        let anchorOffset = reference < candidate ? -1 : 0
+        let start = date(inMonthOf: referenceMonth, offset: anchorOffset + offset, day: day, calendar: calendar)
+        let end = date(inMonthOf: referenceMonth, offset: anchorOffset + offset + 1, day: day, calendar: calendar)
+        return DateInterval(start: start, end: end)
+    }
+
+    private static func date(
+        inMonthOf month: Date,
+        offset: Int,
+        day: Int,
+        calendar: Calendar
+    ) -> Date {
+        let targetMonth = calendar.date(byAdding: .month, value: offset, to: month) ?? month
+        let lastDay = calendar.range(of: .day, in: .month, for: targetMonth)?.count ?? 28
+        return calendar.date(byAdding: .day, value: min(day, lastDay) - 1, to: targetMonth) ?? targetMonth
+    }
 }
 
 enum TrackerFamily: String, Codable, CaseIterable, Identifiable {
@@ -683,6 +716,10 @@ final class SystemFeatureModel {
 
     func setMonthlyBudget(_ amount: Double?) {
         updateFinance { $0.monthlyBudget = amount }
+    }
+
+    func setMoneyCycleStartDay(_ day: Int) {
+        updateFinance { $0.moneyCycleStartDay = min(max(day, 1), 31) }
     }
 
     func addSavingPlan(name: String, targetAmount: Double, targetDate: Date?) {

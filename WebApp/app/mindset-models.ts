@@ -88,6 +88,37 @@ export function postponeDate(dateKey: string, days = 1) {
   return `${year}-${month}-${day}`;
 }
 
+export type MoneyCycleRange = {
+  start: Date;
+  end: Date;
+};
+
+export function normalizeMoneyCycleStartDay(value: number): number {
+  if (!Number.isFinite(value)) return 1;
+  return Math.min(Math.max(Math.trunc(value), 1), 31);
+}
+
+function cycleDate(year: number, month: number, startDay: number): Date {
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  return new Date(year, month, Math.min(normalizeMoneyCycleStartDay(startDay), lastDay));
+}
+
+export function moneyCycleRange(reference: Date, startDay: number, offset = 0): MoneyCycleRange {
+  const normalizedDay = normalizeMoneyCycleStartDay(startDay);
+  let currentStart = cycleDate(reference.getFullYear(), reference.getMonth(), normalizedDay);
+  if (reference < currentStart) {
+    currentStart = cycleDate(reference.getFullYear(), reference.getMonth() - 1, normalizedDay);
+  }
+  const start = cycleDate(currentStart.getFullYear(), currentStart.getMonth() + offset, normalizedDay);
+  const end = cycleDate(start.getFullYear(), start.getMonth() + 1, normalizedDay);
+  return { start, end };
+}
+
+export function isInsideMoneyCycle(value: string | Date, range: MoneyCycleRange): boolean {
+  const date = typeof value === "string" ? new Date(value) : value;
+  return Number.isFinite(date.getTime()) && date >= range.start && date < range.end;
+}
+
 export function personalFinancePerspectives(input: {
   monthlyBudget: number;
   income: number;

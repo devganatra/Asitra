@@ -55,7 +55,7 @@ import {
   type ParsedMoneyInstruction,
 } from "./money-import";
 import { type EntryKind, parseCapture } from "./capture-parser";
-import { finitePriorityView, initialPriorityIds, personalFinancePerspectives, postponeDate, validateTaskPlan } from "./mindset-models";
+import { finitePriorityView, initialPriorityIds, isInsideMoneyCycle, moneyCycleRange, personalFinancePerspectives, postponeDate, validateTaskPlan } from "./mindset-models";
 import { validatePersistedState } from "./state-schema";
 
 type Section = "today" | "lists" | "track" | "money" | "balance" | "settings";
@@ -166,6 +166,7 @@ type PersistedState = {
   priorityDay: string;
   todayPriorityIds: string[];
   monthlyBudget: number;
+  moneyCycleStartDay: number;
   savingsTarget: number;
   savingsCurrent: number;
   moneyEntries: MoneyEntry[];
@@ -201,6 +202,7 @@ const emptyState: PersistedState = {
   priorityDay: "",
   todayPriorityIds: [],
   monthlyBudget: 0,
+  moneyCycleStartDay: 1,
   savingsTarget: 0,
   savingsCurrent: 0,
   moneyEntries: [],
@@ -230,6 +232,26 @@ function dateKeyAtOffset(days: number) {
   const date = new Date();
   date.setDate(date.getDate() + days);
   return localDateKey(date);
+}
+
+function ordinalDay(day: number) {
+  const remainder100 = day % 100;
+  if (remainder100 >= 11 && remainder100 <= 13) return `${day}th`;
+  if (day % 10 === 1) return `${day}st`;
+  if (day % 10 === 2) return `${day}nd`;
+  if (day % 10 === 3) return `${day}rd`;
+  return `${day}th`;
+}
+
+function moneyCycleLabel(start: Date, end: Date) {
+  const inclusiveEnd = new Date(end);
+  inclusiveEnd.setDate(inclusiveEnd.getDate() - 1);
+  const short = new Intl.DateTimeFormat("en", { day: "numeric", month: "short" });
+  const startLabel = short.format(start);
+  const endLabel = short.format(inclusiveEnd);
+  return start.getFullYear() === inclusiveEnd.getFullYear()
+    ? `${startLabel} – ${endLabel} ${inclusiveEnd.getFullYear()}`
+    : `${startLabel} ${start.getFullYear()} – ${endLabel} ${inclusiveEnd.getFullYear()}`;
 }
 
 function taskTimeLabel(item: ListItem) {
@@ -308,6 +330,7 @@ const seedState: PersistedState = {
   priorityDay: localDateKey(),
   todayPriorityIds: ["li5", "li8", "li2"],
   monthlyBudget: 1200,
+  moneyCycleStartDay: 25,
   savingsTarget: 3000,
   savingsCurrent: 1840,
   moneyEntries: [
@@ -463,6 +486,7 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
   const [newListItem, setNewListItem] = useState("");
   const [trackerFamily, setTrackerFamily] = useState<TrackerFamily>("Health");
   const [moneyView, setMoneyView] = useState<"budget" | "cashflow" | "allocation" | "networth">("budget");
+  const [moneyCycleOffset, setMoneyCycleOffset] = useState(0);
   const [priorityChooserOpen, setPriorityChooserOpen] = useState(false);
   const [taskEditor, setTaskEditor] = useState<TaskEditorDraft>();
   const [dayClosed, setDayClosed] = useState(false);
@@ -685,21 +709,20 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
     () => state.entries.filter((entry) => new Date(entry.timestamp) >= weekStart),
     [state.entries, weekStart],
   );
-  const monthEntries = useMemo(() => {
-    const now = new Date();
-    return state.entries.filter((entry) => {
-      const date = new Date(entry.timestamp);
-      return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
-    });
-  }, [state.entries]);
+  const activeMoneyCycle = useMemo(
+    () => moneyCycleRange(new Date(), state.moneyCycleStartDay, moneyCycleOffset),
+    [moneyCycleOffset, state.moneyCycleStartDay],
+  );
+  const activeMoneyCycleLabel = moneyCycleLabel(activeMoneyCycle.start, activeMoneyCycle.end);
+  const monthEntries = useMemo(
+    () => state.entries.filter((entry) => isInsideMoneyCycle(entry.timestamp, activeMoneyCycle)),
+    [activeMoneyCycle, state.entries],
+  );
   const monthSpent = monthEntries.reduce((sum, entry) => sum + (entry.amount ?? 0), 0);
-  const monthMoneyEntries = useMemo(() => {
-    const now = new Date();
-    return state.moneyEntries.filter((entry) => {
-      const date = new Date(entry.date);
-      return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
-    });
-  }, [state.moneyEntries]);
+  const monthMoneyEntries = useMemo(
+    () => state.moneyEntries.filter((entry) => isInsideMoneyCycle(entry.date, activeMoneyCycle)),
+    [activeMoneyCycle, state.moneyEntries],
+  );
   const monthIncome = monthMoneyEntries
     .filter((entry) => entry.kind === "income")
     .reduce((sum, entry) => sum + entry.amount, 0);
@@ -1387,6 +1410,14 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
     setNotice("Money activity deleted and all perspectives recalculated.");
   }
 
+  function changeMoneyCycleStartDay(value: string) {
+    const day = Number(value);
+    if (!Number.isInteger(day) || day < 1 || day > 31) return;
+    setState((current) => ({ ...current, moneyCycleStartDay: day }));
+    setMoneyCycleOffset(0);
+    setNotice(`Your money cycle now starts on the ${ordinalDay(day)} of each month.`);
+  }
+
   async function submitMoneyInstruction(event: FormEvent) {
     event.preventDefault();
     const local = parseMoneyInstruction(moneyInstruction);
@@ -1616,7 +1647,7 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
     if (/(today|day|schedule)/.test(lower)) {
       answer = `Today has ${dayEntries.length} recorded moments, ${openItems} open list items, and ${minutesLabel(dayEntries.filter((entry) => entry.kind === "movement").reduce((sum, entry) => sum + (entry.minutes ?? 0), 0)) || "no movement yet"}.`;
     } else if (/(spend|money|expense|budget)/.test(lower)) {
-      answer = `You received ${currency.format(monthIncome)} and spent ${currency.format(monthSpent)} this month. Your recorded net worth is ${currency.format(netWorth)}, and ${currency.format(Math.max(state.monthlyBudget - monthSpent, 0))} remains in your spending plan.`;
+      answer = `You received ${currency.format(monthIncome)} and spent ${currency.format(monthSpent)} in your ${activeMoneyCycleLabel} cycle. Your recorded net worth is ${currency.format(netWorth)}, and ${currency.format(Math.max(state.monthlyBudget - monthSpent, 0))} remains in your spending plan.`;
     } else if (/(balance|work|personal)/.test(lower)) {
       answer = `Your seven-day balance score is ${balanceScore}/100. You logged ${minutesLabel(weekWork)} of work and about ${minutesLabel(weekPersonal)} of personal time. ${todayInsight}`;
     } else if (/(list|open|attention|task)/.test(lower)) {
@@ -1955,6 +1986,30 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
             </button>
             <button className="money-import-shortcut" onClick={() => openMoneyEntry("expense", "pdf")}><FileText size={16} /> Import PDF</button>
           </section>
+          <section className="money-cycle-card" aria-label="Money cycle">
+            <div className="money-cycle-period">
+              <button className="icon-button" onClick={() => setMoneyCycleOffset((value) => value - 1)} aria-label="Previous money cycle">
+                <ChevronLeft size={18} />
+              </button>
+              <div>
+                <span className="eyebrow">Monthly cycle</span>
+                <strong>{activeMoneyCycleLabel}</strong>
+              </div>
+              <button className="icon-button" onClick={() => setMoneyCycleOffset((value) => Math.min(value + 1, 0))} disabled={moneyCycleOffset === 0} aria-label="Next money cycle">
+                <ChevronRight size={18} />
+              </button>
+            </div>
+            <label className="money-cycle-setting">
+              <CalendarDays size={17} />
+              <span>Cycle starts</span>
+              <select value={state.moneyCycleStartDay} onChange={(event) => changeMoneyCycleStartDay(event.target.value)} aria-label="Money cycle start day">
+                {Array.from({ length: 31 }, (_, index) => index + 1).map((day) => (
+                  <option key={day} value={day}>{ordinalDay(day)}</option>
+                ))}
+              </select>
+            </label>
+            <p>Choose your salary day. For shorter months, Asitra uses the last valid day automatically.</p>
+          </section>
           <div className="segment-row money-segments">
             <button className={moneyView === "budget" ? "active" : ""} onClick={() => setMoneyView("budget")}>Budget</button>
             <button className={moneyView === "cashflow" ? "active" : ""} onClick={() => setMoneyView("cashflow")}>Cash flow</button>
@@ -1970,7 +2025,7 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
                   <p>{currency.format(totalAssets)} owned − {currency.format(totalLiabilities)} owed</p>
                 </div>
                 <div className="position-pulse">
-                  <small>This month</small>
+                  <small>{activeMoneyCycleLabel}</small>
                   <strong>{netCashMovement >= 0 ? "+" : "−"}{currency.format(Math.abs(netCashMovement))}</strong>
                   <span>cash movement</span>
                 </div>
@@ -2004,7 +2059,7 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
                       ? "Balanced: income is fully spent, saved or invested."
                       : unallocated > 0
                         ? "Assign the remainder to saving or investing to reach zero."
-                        : "This month used existing cash or debt."}
+                        : "This cycle used existing cash or debt."}
                   </p>
                 </section>}
 
@@ -2042,7 +2097,7 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
             <>
               <div className="money-hero">
                 <div>
-                  <span className="eyebrow">Available this month</span>
+                  <span className="eyebrow">Available this cycle</span>
                   <strong>{currency.format(remaining)}</strong>
                   <p>{currency.format(monthSpent)} used from a {currency.format(state.monthlyBudget)} plan</p>
                 </div>
@@ -2309,7 +2364,7 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
             </section>
 
             <section className="context-section money-glance">
-              <div className="context-title"><div><WalletCards size={18} /><span>Money this month</span></div><button onClick={() => { setMoneyView("budget"); setSection("money"); }}>Open Money <ArrowRight size={14} /></button></div>
+              <div className="context-title"><div><WalletCards size={18} /><span>Money this cycle</span></div><button onClick={() => { setMoneyView("budget"); setSection("money"); }}>Open Money <ArrowRight size={14} /></button></div>
               <div className="money-glance-budget"><span>Budget remaining</span><strong>{currency.format(Math.max(financeViews.budgetRemaining, 0))}</strong></div>
               <div className="allocation-mini-grid">
                 {[

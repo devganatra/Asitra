@@ -144,6 +144,12 @@ export function validatePersistedState(value: unknown, options: ValidationOption
     priorityDay: optionalString(source.priorityDay, "priority day", 10) ?? "",
     todayPriorityIds: optionalArray(source.todayPriorityIds, "today priorities", 3).map(identifier),
     monthlyBudget: finiteNumber(source.monthlyBudget, "monthly budget", 0, 1_000_000_000),
+    moneyCycleStartDay: integer(
+      source.moneyCycleStartDay === undefined ? 1 : source.moneyCycleStartDay,
+      "money cycle start day",
+      1,
+      31,
+    ),
     savingsTarget: finiteNumber(source.savingsTarget, "savings target", 0, 1_000_000_000),
     savingsCurrent: finiteNumber(source.savingsCurrent, "savings amount", 0, 1_000_000_000),
     moneyEntries,
@@ -194,6 +200,12 @@ function finiteNumber(value: unknown, label: string, minimum: number, maximum: n
     throw new Error(`${label} is invalid.`);
   }
   return value;
+}
+
+function integer(value: unknown, label: string, minimum: number, maximum: number): number {
+  const result = finiteNumber(value, label, minimum, maximum);
+  if (!Number.isInteger(result)) throw new Error(`${label} is invalid.`);
+  return result;
 }
 
 function optionalFiniteNumber(value: unknown, minimum: number, maximum: number): number | undefined {

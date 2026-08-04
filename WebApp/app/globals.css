@@ -1406,6 +1406,66 @@ h3 {
   font-weight: 750;
 }
 
+.money-cycle-card {
+  display: grid;
+  grid-template-columns: minmax(250px, auto) auto minmax(200px, 1fr);
+  align-items: center;
+  gap: 18px;
+  margin: 0 0 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.money-cycle-period,
+.money-cycle-setting {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.money-cycle-period > div {
+  min-width: 150px;
+  text-align: center;
+}
+
+.money-cycle-period strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+}
+
+.money-cycle-setting {
+  padding-left: 18px;
+  border-left: 1px solid var(--line);
+  color: var(--sage);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.money-cycle-setting select {
+  min-height: 34px;
+  padding: 0 28px 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  color: var(--ink);
+  background: white;
+  font: inherit;
+}
+
+.money-cycle-card > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.money-cycle-card .icon-button:disabled {
+  cursor: default;
+  opacity: 0.32;
+}
+
 .money-position-hero {
   min-height: 190px;
   display: flex;
@@ -3563,6 +3623,22 @@ h3 {
 
   .money-capture-card {
     grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .money-cycle-card {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .money-cycle-setting {
+    justify-content: center;
+    padding: 12px 0 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .money-cycle-card > p {
+    text-align: center;
   }
 
   .money-import-shortcut {
