@@ -11,6 +11,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  release-policy:
+    name: Release number and branch history
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify synchronized release and feature trace
+        env:
+          RELEASE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          RELEASE_HEAD_BRANCH: ${{ github.head_ref }}
+          RELEASE_PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: npm run release:check
+
   web:
     name: Web contracts and integration
     runs-on: ubuntu-latest
