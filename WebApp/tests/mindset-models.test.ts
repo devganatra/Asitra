@@ -7,6 +7,7 @@ import {
   moneyCycleRange,
   personalFinancePerspectives,
   postponeDate,
+  tripBudgetSummary,
   validateTaskPlan,
 } from "../app/mindset-models";
 
@@ -93,4 +94,26 @@ test("builds salary-aligned monthly cycles and clamps short months", () => {
     [monthEndCycle.end.getMonth(), monthEndCycle.end.getDate()],
     [2, 31],
   );
+});
+
+test("builds a trip budget from the same linked expense ledger", () => {
+  const trip = { id: "heidelberg", budget: 250 };
+  const summary = tripBudgetSummary(trip, [
+    { tripId: "heidelberg", amount: 42.5 },
+    { tripId: "other-trip", amount: 90 },
+    { tripId: "heidelberg", amount: 75 },
+    { amount: 18 },
+  ]);
+  assert.deepEqual(summary, {
+    spent: 117.5,
+    remaining: 132.5,
+    over: 0,
+    progress: 47,
+    expenseCount: 2,
+  });
+
+  const overBudget = tripBudgetSummary(trip, [{ tripId: "heidelberg", amount: 300 }]);
+  assert.equal(overBudget.remaining, 0);
+  assert.equal(overBudget.over, 50);
+  assert.equal(overBudget.progress, 100);
 });

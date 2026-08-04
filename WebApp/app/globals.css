@@ -1784,38 +1784,146 @@ h3 {
   height: 8px;
 }
 
-.trip-panel {
-  display: grid;
-  grid-template-columns: 92px 1fr auto;
+.trip-planner-panel .section-heading {
   align-items: center;
-  gap: 17px;
 }
 
-.trip-visual {
-  height: 90px;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  padding: 11px;
-  border-radius: 14px;
-  color: white;
-  background: #a87455;
-}
-
-.trip-visual span {
-  font-size: 8px;
-  letter-spacing: 0.08em;
-}
-
-.trip-visual strong {
-  margin-top: 3px;
-  font-family: Georgia, serif;
-  font-size: 19px;
-}
-
-.trip-panel p {
-  margin: 4px 0 0;
+.trip-planner-intro {
+  margin: 9px 0 16px;
   color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.trip-empty {
+  width: 100%;
+  min-height: 128px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 6px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 16px;
+  color: var(--muted);
+  background: rgba(248, 250, 247, 0.7);
+  cursor: pointer;
+}
+
+.trip-empty > span {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  color: var(--sage);
+  background: var(--sage-soft);
+}
+
+.trip-empty strong { color: var(--ink); }
+
+.trip-budget-list {
+  display: grid;
+  gap: 12px;
+}
+
+.trip-budget-card {
+  padding: 16px;
+  border: 1px solid #dfe7df;
+  border-radius: 17px;
+  background: linear-gradient(145deg, rgba(239, 246, 240, 0.92), rgba(250, 247, 240, 0.82));
+}
+
+.trip-card-top {
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  align-items: center;
+  gap: 11px;
+}
+
+.trip-destination-mark {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  color: white;
+  background: #5f806d;
+}
+
+.trip-card-top span,
+.trip-card-top p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.trip-card-top h3 {
+  margin: 2px 0;
+  font: 500 18px/1.15 Georgia, "Times New Roman", serif;
+}
+
+.trip-card-menu {
+  display: flex;
+  gap: 2px;
+}
+
+.trip-card-menu button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 9px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.trip-card-menu button:hover { color: var(--sage); background: white; }
+.trip-card-menu button.delete:hover { color: #9d392f; background: #fff0ee; }
+
+.trip-numbers {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 17px 0 11px;
+}
+
+.trip-numbers span { display: grid; gap: 3px; }
+.trip-numbers small { color: var(--muted); font-size: 9px; }
+.trip-numbers strong { font-size: 13px; font-variant-numeric: tabular-nums; }
+.trip-numbers strong.over { color: #a44338; }
+
+.trip-progress {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: #dce5dc;
+}
+
+.trip-progress i {
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #658672, #8aa897);
+}
+
+.trip-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 13px;
+}
+
+.trip-card-footer > span {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.trip-card-footer .primary-button {
+  min-height: 34px;
+  padding: 0 12px;
   font-size: 10px;
 }
 
@@ -2286,7 +2394,8 @@ h3 {
 
 .edit-modal,
 .settings-modal,
-.money-entry-modal {
+.money-entry-modal,
+.trip-editor-modal {
   width: min(470px, 100%);
   position: relative;
   z-index: 1;
@@ -2301,6 +2410,17 @@ h3 {
   width: min(620px, 100%);
   max-height: min(780px, calc(100vh - 40px));
   overflow: hidden;
+}
+
+.trip-editor-modal {
+  width: min(520px, 100%);
+}
+
+.trip-editor-modal > p {
+  margin: 8px 0 20px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
 }
 
 .money-header-actions {
@@ -3665,10 +3785,6 @@ h3 {
     grid-template-columns: 8px 67px 1fr auto;
   }
 
-  .trip-panel {
-    grid-template-columns: 78px 1fr auto;
-  }
-
   .balance-hero {
     grid-template-columns: 1fr;
     justify-items: center;
@@ -3716,7 +3832,8 @@ h3 {
     flex: 1;
   }
 
-  .money-entry-modal {
+  .money-entry-modal,
+  .trip-editor-modal {
     align-self: end;
     width: 100%;
     max-height: calc(100vh - 16px);

@@ -56,6 +56,7 @@ export function validatePersistedState(value: unknown, options: ValidationOption
       note: optionalString(entry.note, "entry note", 10_000),
       source: optionalString(entry.source, "entry source", 200),
       photo,
+      tripId: entry.tripId == null ? undefined : identifier(entry.tripId),
     };
   });
 
@@ -135,6 +136,28 @@ export function validatePersistedState(value: unknown, options: ValidationOption
     };
   });
 
+  const trips = optionalArray(source.trips, "trips", 250).map((item, index) => {
+    const trip = record(item, `trips[${index}]`);
+    const startDate = shortString(trip.startDate, "trip start date", 64);
+    const endDate = shortString(trip.endDate, "trip end date", 64);
+    const createdAt = shortString(trip.createdAt, "trip creation date", 64);
+    const startTime = Date.parse(startDate);
+    const endTime = Date.parse(endDate);
+    if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime < startTime) {
+      throw new Error("A trip has an invalid date range.");
+    }
+    if (!Number.isFinite(Date.parse(createdAt))) throw new Error("A trip has an invalid creation date.");
+    return {
+      id: identifier(trip.id),
+      name: shortString(trip.name, "trip name", 200),
+      destination: shortString(trip.destination, "trip destination", 200),
+      budget: finiteNumber(trip.budget, "trip budget", 0.01, 1_000_000_000),
+      startDate,
+      endDate,
+      createdAt,
+    };
+  });
+
   return {
     onboardingCompleted:
       source.onboardingCompleted === undefined ? true : Boolean(source.onboardingCompleted),
@@ -154,6 +177,7 @@ export function validatePersistedState(value: unknown, options: ValidationOption
     savingsCurrent: finiteNumber(source.savingsCurrent, "savings amount", 0, 1_000_000_000),
     moneyEntries,
     balanceSheetItems,
+    trips,
   };
 }
 

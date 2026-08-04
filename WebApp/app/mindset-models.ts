@@ -142,3 +142,28 @@ export function personalFinancePerspectives(input: {
     isFullyAssigned: Math.abs(unassigned) < 0.01,
   };
 }
+
+export type TripBudget = {
+  id: string;
+  budget: number;
+};
+
+export type TripExpense = {
+  tripId?: string;
+  amount?: number;
+};
+
+export function tripBudgetSummary(trip: TripBudget, expenses: TripExpense[]) {
+  const linkedExpenses = expenses.filter(
+    (expense) => expense.tripId === trip.id && typeof expense.amount === "number",
+  );
+  const spent = linkedExpenses.reduce((sum, expense) => sum + (expense.amount ?? 0), 0);
+  const difference = trip.budget - spent;
+  return {
+    spent,
+    remaining: Math.max(difference, 0),
+    over: Math.max(-difference, 0),
+    progress: trip.budget <= 0 ? 0 : Math.min((spent / trip.budget) * 100, 100),
+    expenseCount: linkedExpenses.length,
+  };
+}

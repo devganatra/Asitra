@@ -23,6 +23,7 @@ import {
   ListChecks,
   Lock,
   LogOut,
+  MapPin,
   Menu,
   Mic,
   Moon,
@@ -55,7 +56,7 @@ import {
   type ParsedMoneyInstruction,
 } from "./money-import";
 import { type EntryKind, parseCapture } from "./capture-parser";
-import { finitePriorityView, initialPriorityIds, isInsideMoneyCycle, moneyCycleRange, personalFinancePerspectives, postponeDate, validateTaskPlan } from "./mindset-models";
+import { finitePriorityView, initialPriorityIds, isInsideMoneyCycle, moneyCycleRange, personalFinancePerspectives, postponeDate, tripBudgetSummary, validateTaskPlan } from "./mindset-models";
 import { validatePersistedState } from "./state-schema";
 
 type Section = "today" | "lists" | "track" | "money" | "balance" | "settings";
@@ -71,6 +72,7 @@ type Entry = {
   note?: string;
   source?: string;
   photo?: string;
+  tripId?: string;
 };
 
 type ListItem = {
@@ -123,6 +125,27 @@ type MoneyDraft = {
   note: string;
   balanceCategory: BalanceSheetCategory;
   existingBalanceID?: string;
+  tripId?: string;
+};
+
+type TripBudgetPlan = {
+  id: string;
+  name: string;
+  destination: string;
+  budget: number;
+  startDate: string;
+  endDate: string;
+  createdAt: string;
+};
+
+type TripDraft = {
+  id?: string;
+  name: string;
+  destination: string;
+  budget: string;
+  startDate: string;
+  endDate: string;
+  createdAt?: string;
 };
 
 type TaskEditorDraft = {
@@ -171,6 +194,7 @@ type PersistedState = {
   savingsCurrent: number;
   moneyEntries: MoneyEntry[];
   balanceSheetItems: BalanceSheetItem[];
+  trips: TripBudgetPlan[];
 };
 
 const LEGACY_STORAGE_KEY = "sakhya-web-v1";
@@ -207,6 +231,7 @@ const emptyState: PersistedState = {
   savingsCurrent: 0,
   moneyEntries: [],
   balanceSheetItems: [],
+  trips: [],
 };
 const currency = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
 const longDate = new Intl.DateTimeFormat("en", {
@@ -278,10 +303,10 @@ const seedState: PersistedState = {
     { id: "e4", title: "Lunch · lentil bowl", kind: "food", timestamp: atDayOffset(0, 12, 35) },
     { id: "e5", title: "Read Atomic Habits", kind: "book", timestamp: atDayOffset(-1, 21, 5), minutes: 24 },
     { id: "e6", title: "Felt calm after an evening without screens", kind: "mindset", timestamp: atDayOffset(-1, 21, 40) },
-    { id: "e7", title: "Dinner with friends", kind: "expense", timestamp: atDayOffset(-2, 19, 15), amount: 46.2 },
+    { id: "e7", title: "Dinner with friends", kind: "expense", timestamp: atDayOffset(-2, 19, 15), amount: 46.2, tripId: "trip1" },
     { id: "e8", title: "Strength training", kind: "movement", timestamp: atDayOffset(-2, 17, 50), minutes: 48, source: "WHOOP" },
     { id: "e9", title: "Slept well", kind: "sleep", timestamp: atDayOffset(-3, 7, 0), minutes: 448, source: "WHOOP" },
-    { id: "e10", title: "Monthly train pass", kind: "expense", timestamp: atDayOffset(-4, 8, 5), amount: 59 },
+    { id: "e10", title: "Train to Heidelberg", kind: "expense", timestamp: atDayOffset(-4, 8, 5), amount: 59, tripId: "trip1" },
   ],
   lists: [
     {
@@ -342,6 +367,17 @@ const seedState: PersistedState = {
     { id: "b1", name: "Main bank", balance: 7200, category: "cash", updatedAt: atDayOffset(0, 8) },
     { id: "b2", name: "Investment account", balance: 12400, category: "investments", updatedAt: atDayOffset(0, 8) },
     { id: "b3", name: "Credit card", balance: 450, category: "creditCard", updatedAt: atDayOffset(0, 8) },
+  ],
+  trips: [
+    {
+      id: "trip1",
+      name: "Heidelberg weekend",
+      destination: "Heidelberg, Germany",
+      budget: 320,
+      startDate: atDayOffset(-4, 0),
+      endDate: atDayOffset(1, 0),
+      createdAt: atDayOffset(-12, 10),
+    },
   ],
 };
 
@@ -498,6 +534,7 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
   const [editingMoneyRecord, setEditingMoneyRecord] = useState<EditingMoneyRecord>();
   const [moneyEntryMode, setMoneyEntryMode] = useState<"type" | "pdf" | "asitra">("asitra");
   const [moneyDraft, setMoneyDraft] = useState<MoneyDraft>(EMPTY_MONEY_DRAFT);
+  const [tripDraft, setTripDraft] = useState<TripDraft>();
   const [moneyInstruction, setMoneyInstruction] = useState("");
   const [moneyReview, setMoneyReview] = useState<ParsedMoneyInstruction>();
   const [moneyClassifying, setMoneyClassifying] = useState(false);
@@ -1274,9 +1311,9 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
     setNotice(`${tracker.name} check-in added to the timeline.`);
   }
 
-  function openMoneyEntry(kind: MoneyDraft["kind"] = "expense", mode: typeof moneyEntryMode = "asitra") {
+  function openMoneyEntry(kind: MoneyDraft["kind"] = "expense", mode: typeof moneyEntryMode = "asitra", tripId?: string) {
     setEditingMoneyRecord(undefined);
-    setMoneyDraft({ ...EMPTY_MONEY_DRAFT, kind, balanceCategory: kind === "liability" ? "creditCard" : "cash", date: localDateKey() });
+    setMoneyDraft({ ...EMPTY_MONEY_DRAFT, kind, balanceCategory: kind === "liability" ? "creditCard" : "cash", date: localDateKey(), tripId: kind === "expense" ? tripId : undefined });
     setMoneyEntryMode(mode);
     setMoneyInstruction("");
     setMoneyReview(undefined);
@@ -1285,7 +1322,7 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
     setMoneyEntryOpen(true);
   }
 
-  function storeMoneyRecord(kind: MoneyDraft["kind"], amount: number, date: string, note: string, balanceCategory?: BalanceSheetCategory, existingBalanceID?: string) {
+  function storeMoneyRecord(kind: MoneyDraft["kind"], amount: number, date: string, note: string, balanceCategory?: BalanceSheetCategory, existingBalanceID?: string, tripId?: string) {
     if (kind === "asset" || kind === "liability") {
       const category = balanceCategory ?? (kind === "asset" ? "cash" : "otherLiability");
       const next: BalanceSheetItem = {
@@ -1315,6 +1352,7 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
                 amount,
                 timestamp: date,
                 source: "Money",
+                tripId,
               },
               ...current.entries,
             ]
@@ -1340,7 +1378,7 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
       return;
     }
     if (!editingMoneyRecord) {
-      storeMoneyRecord(moneyDraft.kind, amount, date.toISOString(), moneyDraft.note.trim(), moneyDraft.balanceCategory, moneyDraft.existingBalanceID);
+      storeMoneyRecord(moneyDraft.kind, amount, date.toISOString(), moneyDraft.note.trim(), moneyDraft.balanceCategory, moneyDraft.existingBalanceID, moneyDraft.tripId);
     } else {
       const record = editingMoneyRecord;
       setState((current) => {
@@ -1351,7 +1389,7 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
         const moneyEntries = current.moneyEntries.filter((entry) => !(record.source === "money" && entry.id === record.id));
         const balanceSheetItems = current.balanceSheetItems.filter((item) => !(record.source === "balance" && item.id === record.id));
         if (moneyDraft.kind === "expense") {
-          entries.unshift({ id: record.id, title: moneyDraft.note.trim() || "Expense", kind: "expense", amount, timestamp: date.toISOString(), source: "Money" });
+          entries.unshift({ id: record.id, title: moneyDraft.note.trim() || "Expense", kind: "expense", amount, timestamp: date.toISOString(), source: "Money", tripId: moneyDraft.tripId });
         } else if (moneyDraft.kind === "asset" || moneyDraft.kind === "liability") {
           balanceSheetItems.push({ id: record.id, name: moneyDraft.note.trim() || (moneyDraft.kind === "asset" ? "Asset" : "Debt"), balance: amount, category: moneyDraft.balanceCategory, updatedAt: date.toISOString() });
         } else {
@@ -1376,7 +1414,7 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
     if (record.source === "expense") {
       const entry = state.entries.find((item) => item.id === record.id);
       if (!entry) return;
-      setMoneyDraft({ kind: "expense", amount: String(entry.amount ?? ""), date: localDateKey(new Date(entry.timestamp)), note: entry.title, balanceCategory: "cash" });
+      setMoneyDraft({ kind: "expense", amount: String(entry.amount ?? ""), date: localDateKey(new Date(entry.timestamp)), note: entry.title, balanceCategory: "cash", tripId: entry.tripId });
     } else if (record.source === "money") {
       const entry = state.moneyEntries.find((item) => item.id === record.id);
       if (!entry) return;
@@ -1408,6 +1446,76 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
     setMoneyEntryOpen(false);
     setEditingMoneyRecord(undefined);
     setNotice("Money activity deleted and all perspectives recalculated.");
+  }
+
+  function newTrip() {
+    setTripDraft({
+      name: "",
+      destination: "",
+      budget: "",
+      startDate: localDateKey(),
+      endDate: dateKeyAtOffset(3),
+    });
+  }
+
+  function editTrip(trip: TripBudgetPlan) {
+    setTripDraft({
+      id: trip.id,
+      name: trip.name,
+      destination: trip.destination,
+      budget: String(trip.budget),
+      startDate: localDateKey(new Date(trip.startDate)),
+      endDate: localDateKey(new Date(trip.endDate)),
+      createdAt: trip.createdAt,
+    });
+  }
+
+  function submitTrip(event: FormEvent) {
+    event.preventDefault();
+    if (!tripDraft) return;
+    const budget = Number(tripDraft.budget.replace(",", "."));
+    const startDate = new Date(`${tripDraft.startDate}T12:00:00`);
+    const endDate = new Date(`${tripDraft.endDate}T12:00:00`);
+    if (!tripDraft.name.trim() || !tripDraft.destination.trim()) {
+      setNotice("Add a trip name and destination.");
+      return;
+    }
+    if (!Number.isFinite(budget) || budget <= 0) {
+      setNotice("Enter a trip budget greater than zero.");
+      return;
+    }
+    if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime()) || endDate < startDate) {
+      setNotice("Choose an end date on or after the start date.");
+      return;
+    }
+    const trip: TripBudgetPlan = {
+      id: tripDraft.id ?? uid(),
+      name: tripDraft.name.trim(),
+      destination: tripDraft.destination.trim(),
+      budget,
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+      createdAt: tripDraft.createdAt ?? new Date().toISOString(),
+    };
+    setState((current) => ({
+      ...current,
+      trips: current.trips.some((item) => item.id === trip.id)
+        ? current.trips.map((item) => item.id === trip.id ? trip : item)
+        : [...current.trips, trip],
+    }));
+    setTripDraft(undefined);
+    setNotice(tripDraft.id ? "Trip plan updated. Linked expense totals were recalculated." : "Trip plan created. Add expenses from the trip card or the money entry form.");
+  }
+
+  function deleteTrip(trip: TripBudgetPlan) {
+    if (!window.confirm(`Delete ${trip.name}? Its expenses will stay in Money but will no longer be linked to this trip.`)) return;
+    setState((current) => ({
+      ...current,
+      trips: current.trips.filter((item) => item.id !== trip.id),
+      entries: current.entries.map((entry) => entry.tripId === trip.id ? { ...entry, tripId: undefined } : entry),
+    }));
+    setTripDraft(undefined);
+    setNotice("Trip plan deleted. Its expense records remain in your money ledger.");
   }
 
   function changeMoneyCycleStartDay(value: string) {
@@ -2126,10 +2234,48 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
                     <Plus size={16} /> Add contribution
                   </button>
                 </section>
-                <section className="panel trip-panel">
-                  <div className="trip-visual"><span>SEPT 12–15</span><strong>Lisbon</strong></div>
-                  <div><span className="eyebrow">Trip plan</span><h2>€420 left</h2><p>€280 spent from €700</p></div>
-                  <button className="icon-button" onClick={() => setNotice("Trip budgets are visible here; editable trip planning is scheduled for the next beta.")} aria-label="Trip plan information"><ArrowRight size={18} /></button>
+                <section className="panel trip-planner-panel">
+                  <div className="section-heading">
+                    <div><span className="eyebrow">Travel without surprises</span><h2>Trip plans</h2></div>
+                    <button className="secondary-button" onClick={newTrip}><Plus size={16} /> Plan a trip</button>
+                  </div>
+                  <p className="trip-planner-intro">Set one total budget, then link expenses as they happen. Each expense is entered once and also stays in your main money views.</p>
+                  {!state.trips.length ? (
+                    <button className="trip-empty" onClick={newTrip}>
+                      <span><MapPin size={21} /></span>
+                      <strong>No trip planned</strong>
+                      <small>Create a budget and dates before you travel.</small>
+                    </button>
+                  ) : (
+                    <div className="trip-budget-list">
+                      {state.trips.map((trip) => {
+                        const summary = tripBudgetSummary(trip, state.entries);
+                        const dateLabel = `${new Date(trip.startDate).toLocaleDateString("en", { day: "numeric", month: "short" })} – ${new Date(trip.endDate).toLocaleDateString("en", { day: "numeric", month: "short", year: "numeric" })}`;
+                        return (
+                          <article className="trip-budget-card" key={trip.id}>
+                            <div className="trip-card-top">
+                              <div className="trip-destination-mark"><MapPin size={18} /></div>
+                              <div><span>{dateLabel}</span><h3>{trip.name}</h3><p>{trip.destination}</p></div>
+                              <div className="trip-card-menu">
+                                <button onClick={() => editTrip(trip)} aria-label={`Edit ${trip.name}`}><Pencil size={15} /></button>
+                                <button className="delete" onClick={() => deleteTrip(trip)} aria-label={`Delete ${trip.name}`}><Trash2 size={15} /></button>
+                              </div>
+                            </div>
+                            <div className="trip-numbers">
+                              <span><small>Spent</small><strong>{currency.format(summary.spent)}</strong></span>
+                              <span><small>{summary.over > 0 ? "Over" : "Left"}</small><strong className={summary.over > 0 ? "over" : ""}>{currency.format(summary.over > 0 ? summary.over : summary.remaining)}</strong></span>
+                              <span><small>Plan</small><strong>{currency.format(trip.budget)}</strong></span>
+                            </div>
+                            <div className="trip-progress" aria-label={`${Math.round(summary.progress)} percent of trip budget used`}><i style={{ width: `${summary.progress}%` }} /></div>
+                            <div className="trip-card-footer">
+                              <span>{summary.expenseCount} {summary.expenseCount === 1 ? "expense" : "expenses"} linked</span>
+                              <button className="primary-button" onClick={() => openMoneyEntry("expense", "type", trip.id)}><Plus size={15} /> Add trip expense</button>
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  )}
                 </section>
               </div>
             </>
@@ -2758,12 +2904,13 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
             </div>}
             {moneyEntryMode === "type" && (
               <form className="money-entry-form" onSubmit={submitMoneyDraft}>
-                <label>What changed?<select value={moneyDraft.kind} onChange={(event) => { const kind = event.target.value as MoneyDraft["kind"]; setMoneyDraft({ ...moneyDraft, kind, balanceCategory: kind === "liability" ? "creditCard" : moneyDraft.balanceCategory }); }}><option value="expense">I spent money</option><option value="income">I received money</option><option value="saving">I set money aside</option><option value="investment">I invested money</option><option value="asset">An asset balance changed</option><option value="liability">A debt balance changed</option></select></label>
+                <label>What changed?<select value={moneyDraft.kind} onChange={(event) => { const kind = event.target.value as MoneyDraft["kind"]; setMoneyDraft({ ...moneyDraft, kind, balanceCategory: kind === "liability" ? "creditCard" : moneyDraft.balanceCategory, tripId: kind === "expense" ? moneyDraft.tripId : undefined }); }}><option value="expense">I spent money</option><option value="income">I received money</option><option value="saving">I set money aside</option><option value="investment">I invested money</option><option value="asset">An asset balance changed</option><option value="liability">A debt balance changed</option></select></label>
                 <div className="money-form-row">
                   <label>Amount (€)<input autoFocus inputMode="decimal" value={moneyDraft.amount} onChange={(event) => setMoneyDraft({ ...moneyDraft, amount: event.target.value })} placeholder="0.00" /></label>
                   <label>Date<input type="date" value={moneyDraft.date} onChange={(event) => setMoneyDraft({ ...moneyDraft, date: event.target.value })} /></label>
                 </div>
                 {(moneyDraft.kind === "asset" || moneyDraft.kind === "liability") && <label>Balance type<select value={moneyDraft.balanceCategory} onChange={(event) => setMoneyDraft({ ...moneyDraft, balanceCategory: event.target.value as BalanceSheetCategory })}>{moneyDraft.kind === "asset" ? <><option value="cash">Cash &amp; bank</option><option value="investments">Investments</option><option value="property">Property &amp; valuables</option><option value="otherAsset">Other asset</option></> : <><option value="creditCard">Credit card</option><option value="loan">Loan</option><option value="otherLiability">Other debt</option></>}</select></label>}
+                {moneyDraft.kind === "expense" && !!state.trips.length && <label>Trip plan<select value={moneyDraft.tripId ?? ""} onChange={(event) => setMoneyDraft({ ...moneyDraft, tripId: event.target.value || undefined })}><option value="">Not linked to a trip</option>{state.trips.map((trip) => <option value={trip.id} key={trip.id}>{trip.name} · {trip.destination}</option>)}</select></label>}
                 <label>{moneyDraft.kind === "income" ? "Source" : moneyDraft.kind === "asset" || moneyDraft.kind === "liability" ? "Account or balance name" : "What was it for?"}<input value={moneyDraft.note} onChange={(event) => setMoneyDraft({ ...moneyDraft, note: event.target.value })} placeholder={moneyDraft.kind === "income" ? "Salary, freelance…" : moneyDraft.kind === "asset" ? "Main bank account…" : moneyDraft.kind === "liability" ? "Credit card…" : "Groceries, rent…"} /></label>
                 <div className="modal-actions">
                   {editingMoneyRecord ? <button type="button" className="danger-button" onClick={() => deleteMoneyActivity(editingMoneyRecord)}>Delete</button> : <span />}
@@ -2815,6 +2962,31 @@ export default function AsitraWebApp({ userName, logoutPath }: { userName: strin
                 )}
               </div>
             )}
+          </section>
+        </div>
+      )}
+      {tripDraft && (
+        <div className="modal-layer" role="dialog" aria-modal="true" aria-label={tripDraft.id ? "Edit trip plan" : "Plan a trip"}>
+          <button className="modal-backdrop" onClick={() => setTripDraft(undefined)} aria-label="Close trip planner" />
+          <section className="trip-editor-modal">
+            <div className="section-heading">
+              <div><span className="eyebrow">One travel budget</span><h2>{tripDraft.id ? "Edit trip plan" : "Plan a trip"}</h2></div>
+              <button type="button" className="icon-button" onClick={() => setTripDraft(undefined)} aria-label="Close"><X size={18} /></button>
+            </div>
+            <p>Choose the total once. Linked expenses will update the trip and your normal money views together.</p>
+            <form className="money-entry-form" onSubmit={submitTrip}>
+              <label>Trip name<input autoFocus value={tripDraft.name} onChange={(event) => setTripDraft({ ...tripDraft, name: event.target.value })} placeholder="Heidelberg weekend" /></label>
+              <label>Destination<input value={tripDraft.destination} onChange={(event) => setTripDraft({ ...tripDraft, destination: event.target.value })} placeholder="Heidelberg, Germany" /></label>
+              <label>Total budget (€)<input inputMode="decimal" value={tripDraft.budget} onChange={(event) => setTripDraft({ ...tripDraft, budget: event.target.value })} placeholder="350" /></label>
+              <div className="money-form-row">
+                <label>Starts<input type="date" value={tripDraft.startDate} onChange={(event) => setTripDraft({ ...tripDraft, startDate: event.target.value, endDate: event.target.value > tripDraft.endDate ? event.target.value : tripDraft.endDate })} /></label>
+                <label>Ends<input type="date" min={tripDraft.startDate} value={tripDraft.endDate} onChange={(event) => setTripDraft({ ...tripDraft, endDate: event.target.value })} /></label>
+              </div>
+              <div className="modal-actions">
+                {tripDraft.id ? <button type="button" className="danger-button" onClick={() => { const trip = state.trips.find((item) => item.id === tripDraft.id); if (trip) deleteTrip(trip); }}>Delete trip</button> : <span />}
+                <button className="primary-button" disabled={!tripDraft.name.trim() || !tripDraft.destination.trim() || !tripDraft.budget.trim()}>{tripDraft.id ? "Save changes" : "Create trip plan"}</button>
+              </div>
+            </form>
           </section>
         </div>
       )}

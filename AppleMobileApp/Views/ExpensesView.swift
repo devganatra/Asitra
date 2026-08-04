@@ -13,7 +13,8 @@ struct ExpensesView: View {
     @State private var expenseTripID: UUID?
     @State private var showingSavingPlan = false
     @State private var contributionPlan: SavingPlan?
-    @State private var showingTrip = false
+    @State private var tripDraft: TripBudgetPlan?
+    @State private var tripPendingDeletion: TripBudgetPlan?
     @State private var showingWalletRequirements = false
     @State private var financeEntryDraft: UnifiedFinanceDraft?
     @State private var importingStatement = false
@@ -129,8 +130,8 @@ struct ExpensesView: View {
                 systemFeature.addSavingContribution(planID: plan.id, amount: amount, note: note)
             }
         }
-        .sheet(isPresented: $showingTrip) {
-            NewTripSheet { systemFeature.addTrip($0) }
+        .sheet(item: $tripDraft) { trip in
+            TripSheet(trip: trip) { systemFeature.upsertTrip($0) }
         }
         .sheet(item: $financeEntryDraft) { draft in
             UnifiedFinanceEntrySheet(draft: draft) { entry in
@@ -149,6 +150,22 @@ struct ExpensesView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text("Asitra uses Apple FinanceKit—not unrestricted Apple Pay history. It works on supported iPhones after Apple grants Asitra the managed FinanceKit entitlement, and you choose which eligible Wallet accounts and date range to share.")
+        }
+        .alert(
+            "Delete trip plan?",
+            isPresented: Binding(
+                get: { tripPendingDeletion != nil },
+                set: { if !$0 { tripPendingDeletion = nil } }
+            ),
+            presenting: tripPendingDeletion
+        ) { trip in
+            Button("Delete \(trip.name)", role: .destructive) {
+                systemFeature.deleteTrip(trip.id)
+                tripPendingDeletion = nil
+            }
+            Button("Cancel", role: .cancel) { tripPendingDeletion = nil }
+        } message: { _ in
+            Text("The trip plan will be removed. Its expense records will remain in Money.")
         }
         .alert(
             "Statement could not be imported",
@@ -986,11 +1003,11 @@ struct ExpensesView: View {
                 title: "Trip budgets",
                 subtitle: "Plan the total first, then record each trip expense as it happens.",
                 button: "Plan a trip",
-                action: { showingTrip = true }
+                action: { tripDraft = newTripDraft() }
             )
             if finance.trips.isEmpty {
                 friendlyEmpty(title: "No trip planned", message: "Create a simple budget before you travel.", icon: "airplane") {
-                    showingTrip = true
+                    tripDraft = newTripDraft()
                 }
             } else {
                 ForEach(finance.trips) { trip in
@@ -1017,6 +1034,14 @@ struct ExpensesView: View {
                     showingExpense = true
                 }
                 .buttonStyle(.borderedProminent)
+                Menu {
+                    Button("Edit trip", systemImage: "pencil") { tripDraft = trip }
+                    Button("Delete trip", systemImage: "trash", role: .destructive) { tripPendingDeletion = trip }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .frame(width: 28, height: 28)
+                }
+                .menuStyle(.borderlessButton)
             }
             HStack(spacing: 20) {
                 moneyMetric("Spent", spent)
@@ -1030,6 +1055,16 @@ struct ExpensesView: View {
         }
         .padding(18)
         .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    private func newTripDraft() -> TripBudgetPlan {
+        TripBudgetPlan(
+            name: "",
+            destination: "",
+            budget: 0,
+            startDate: .now,
+            endDate: Calendar.current.date(byAdding: .day, value: 3, to: .now) ?? .now
+        )
     }
 
     private func moneyMetric(_ title: String, _ amount: Double) -> some View {
@@ -1489,26 +1524,58 @@ private struct SavingContributionSheet: View {
     }
 }
 
-private struct NewTripSheet: View {
+private struct TripSheet: View {
     @Environment(\.dismiss) private var dismiss
+    let trip: TripBudgetPlan
     let onSave: (TripBudgetPlan) -> Void
-    @State private var name = ""
-    @State private var destination = ""
-    @State private var budget = ""
-    @State private var start = Date.now
-    @State private var end = Calendar.current.date(byAdding: .day, value: 5, to: .now) ?? .now
+    @State private var name: String
+    @State private var destination: String
+    @State private var budget: String
+    @State private var start: Date
+    @State private var end: Date
+
+    init(trip: TripBudgetPlan, onSave: @escaping (TripBudgetPlan) -> Void) {
+        self.trip = trip
+        self.onSave = onSave
+        _name = State(initialValue: trip.name)
+        _destination = State(initialValue: trip.destination)
+        _budget = State(initialValue: trip.budget > 0 ? String(format: "%.2f", trip.budget) : "")
+        _start = State(initialValue: trip.startDate)
+        _end = State(initialValue: trip.endDate)
+    }
+
     var body: some View {
-        MoneyFormShell(title: "Plan a trip", explanation: "Set one total amount first. Asitra will show how much remains as you spend.") {
+        MoneyFormShell(title: trip.name.isEmpty ? "Plan a trip" : "Edit trip", explanation: "Set one total amount first. Linked expenses update this trip and the rest of Money from the same records.") {
             TextField("Trip name", text: $name)
             TextField("Destination", text: $destination)
             TextField("Total budget", text: $budget)
             DatePicker("Starts", selection: $start, displayedComponents: .date)
             DatePicker("Ends", selection: $end, in: start..., displayedComponents: .date)
+            if !isValid {
+                Text("Add a name, destination, positive budget, and valid date range.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         } save: {
-            guard let value = Double(budget.replacingOccurrences(of: ",", with: ".")), value > 0 else { return }
-            onSave(TripBudgetPlan(name: name, destination: destination, budget: value, startDate: start, endDate: end))
+            guard isValid,
+                  let value = Double(budget.replacingOccurrences(of: ",", with: ".")) else { return }
+            var updated = trip
+            updated.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            updated.destination = destination.trimmingCharacters(in: .whitespacesAndNewlines)
+            updated.budget = value
+            updated.startDate = start
+            updated.endDate = end
+            onSave(updated)
             dismiss()
         }
+    }
+
+    private var isValid: Bool {
+        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !destination.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let value = Double(budget.replacingOccurrences(of: ",", with: ".")),
+              value > 0 else { return false }
+        return end >= start
     }
 }
 
