@@ -7,7 +7,7 @@ struct ExpensesView: View {
     @Environment(AppModel.self) private var model
     @Environment(SystemFeatureModel.self) private var systemFeature
     @State private var section: MoneySection = .budget
-    @State private var selectedMonth = Calendar.current.dateInterval(of: .month, for: .now)?.start ?? .now
+    @State private var selectedMonth = Date.now
     @State private var showingBudget = false
     @State private var showingExpense = false
     @State private var expenseTripID: UUID?
@@ -23,8 +23,7 @@ struct ExpensesView: View {
     private var currencyCode: String { Locale.current.currency?.identifier ?? "EUR" }
     private var finance: FinanceWorkspace { systemFeature.financeWorkspace }
     private var monthInterval: DateInterval {
-        Calendar.current.dateInterval(of: .month, for: selectedMonth)
-            ?? DateInterval(start: selectedMonth, duration: 2_592_000)
+        MoneyCyclePeriod.interval(containing: selectedMonth, startDay: finance.moneyCycleStartDay)
     }
     private var monthlyExpenses: [LogEntry] {
         model.entries.filter { $0.category == .expense && monthInterval.contains($0.timestamp) }
@@ -96,7 +95,14 @@ struct ExpensesView: View {
         }
         .navigationTitle("Money")
         .sheet(isPresented: $showingBudget) {
-            MonthlyBudgetSheet(current: finance.monthlyBudget) { systemFeature.setMonthlyBudget($0) }
+            MonthlyBudgetSheet(
+                current: finance.monthlyBudget,
+                cycleStartDay: finance.moneyCycleStartDay
+            ) { amount, cycleStartDay in
+                systemFeature.setMonthlyBudget(amount)
+                systemFeature.setMoneyCycleStartDay(cycleStartDay)
+                selectedMonth = .now
+            }
         }
         .sheet(isPresented: $showingExpense, onDismiss: { expenseTripID = nil }) {
             AddExpenseSheet(trip: finance.trips.first { $0.id == expenseTripID }) { title, amount, date in
@@ -522,7 +528,7 @@ struct ExpensesView: View {
             statementHeading(
                 eyebrow: "Personal P&L",
                 title: "Monthly allocation",
-                subtitle: "Give every euro of your monthly surplus a purpose.",
+                subtitle: "Give every euro of this cycle’s surplus a purpose.",
                 icon: "equal.circle"
             )
             statementRow("Income", amount: monthlyIncome)
@@ -539,7 +545,7 @@ struct ExpensesView: View {
             Label(
                 isBalanced ? "Balanced: income has been fully spent, saved or invested." :
                     remainder > 0 ? "Assign the remainder to a saving goal or investment to reach zero." :
-                    "Spending and allocations exceed this month’s income; the difference came from existing cash or debt.",
+                    "Spending and allocations exceed this cycle’s income; the difference came from existing cash or debt.",
                 systemImage: isBalanced ? "checkmark.circle.fill" : "lightbulb"
             )
             .font(.caption.weight(.semibold))
@@ -752,12 +758,23 @@ struct ExpensesView: View {
         HStack {
             Button { moveMonth(-1) } label: { Image(systemName: "chevron.left") }
                 .buttonStyle(.plain)
-            Text(selectedMonth.formatted(.dateTime.month(.wide).year()))
-                .font(.title2.bold())
+            VStack(alignment: .leading, spacing: 2) {
+                Text(moneyCycleLabel)
+                    .font(.title2.bold())
+                Text("Monthly cycle · starts on the \(ordinalDay(finance.moneyCycleStartDay))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Button { moveMonth(1) } label: { Image(systemName: "chevron.right") }
                 .buttonStyle(.plain)
                 .disabled(Calendar.current.isDate(selectedMonth, equalTo: .now, toGranularity: .month))
             Spacer()
+            Button {
+                showingBudget = true
+            } label: {
+                Label("Change cycle", systemImage: "calendar.badge.clock")
+            }
+            .buttonStyle(.bordered)
             Text("\(monthlyExpenses.count) \(monthlyExpenses.count == 1 ? "expense" : "expenses")")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
@@ -771,7 +788,7 @@ struct ExpensesView: View {
         return VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("SPENT THIS MONTH")
+                    Text("SPENT THIS CYCLE")
                         .font(.caption.bold())
                         .tracking(1)
                         .foregroundStyle(.secondary)
@@ -784,7 +801,7 @@ struct ExpensesView: View {
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(left >= 0 ? .green : .red)
                     } else {
-                        Text("Set a monthly plan to see how much is left.")
+                        Text("Set a cycle plan to see how much is left.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -1047,6 +1064,25 @@ struct ExpensesView: View {
 
     private func moveMonth(_ value: Int) {
         if let date = Calendar.current.date(byAdding: .month, value: value, to: selectedMonth) { selectedMonth = date }
+    }
+
+    private var moneyCycleLabel: String {
+        let calendar = Calendar.current
+        let inclusiveEnd = calendar.date(byAdding: .day, value: -1, to: monthInterval.end) ?? monthInterval.end
+        let start = monthInterval.start.formatted(.dateTime.day().month(.abbreviated))
+        let end = inclusiveEnd.formatted(.dateTime.day().month(.abbreviated).year())
+        return "\(start) – \(end)"
+    }
+
+    private func ordinalDay(_ day: Int) -> String {
+        let remainder = day % 100
+        if (11...13).contains(remainder) { return "\(day)th" }
+        switch day % 10 {
+        case 1: return "\(day)st"
+        case 2: return "\(day)nd"
+        case 3: return "\(day)rd"
+        default: return "\(day)th"
+        }
     }
 
     private func friendlyBudgetMessage(progress: Double) -> String {
@@ -1358,17 +1394,38 @@ private struct StatementImportReviewSheet: View {
 private struct MonthlyBudgetSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var amount: String
-    let onSave: (Double?) -> Void
-    init(current: Double?, onSave: @escaping (Double?) -> Void) {
+    @State private var cycleStartDay: Int
+    let onSave: (Double?, Int) -> Void
+    init(current: Double?, cycleStartDay: Int, onSave: @escaping (Double?, Int) -> Void) {
         _amount = State(initialValue: current.map { String(format: "%.2f", $0) } ?? "")
+        _cycleStartDay = State(initialValue: cycleStartDay)
         self.onSave = onSave
     }
     var body: some View {
-        MoneyFormShell(title: "Monthly spending plan", explanation: "Choose an amount you feel comfortable spending this month. You can change it anytime.") {
+        MoneyFormShell(title: "Monthly money cycle", explanation: "Match your plan to when your salary arrives. Your budget and money views will use the same cycle.") {
             TextField("Example: 800", text: $amount)
+            Picker("Cycle starts", selection: $cycleStartDay) {
+                ForEach(1...31, id: \.self) { day in
+                    Text(Self.ordinalDay(day)).tag(day)
+                }
+            }
+            Text("If that date does not exist in a shorter month, Asitra uses the month’s last day.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         } save: {
-            onSave(Double(amount.replacingOccurrences(of: ",", with: ".")))
+            onSave(Double(amount.replacingOccurrences(of: ",", with: ".")), cycleStartDay)
             dismiss()
+        }
+    }
+
+    private static func ordinalDay(_ day: Int) -> String {
+        let remainder = day % 100
+        if (11...13).contains(remainder) { return "\(day)th" }
+        switch day % 10 {
+        case 1: return "\(day)st"
+        case 2: return "\(day)nd"
+        case 3: return "\(day)rd"
+        default: return "\(day)th"
         }
     }
 }

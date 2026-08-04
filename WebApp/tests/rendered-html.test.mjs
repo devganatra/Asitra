@@ -118,8 +118,8 @@ test("shows independent public sign-in without exposing provider secrets", async
   assert.equal(login.status, 200);
   const loginHTML = await login.text();
   assert.match(loginHTML, /Welcome to Asitra/);
-  assert.match(loginHTML, /Release 0\.2\.0-beta\.1/);
-  assert.match(loginHTML, /name="asitra-release" content="0\.2\.0-beta\.1"/);
+  assert.match(loginHTML, /Release 0\.2\.0-beta\.2/);
+  assert.match(loginHTML, /name="asitra-release" content="0\.2\.0-beta\.2"/);
 
   const providers = await integrationFetch("/api/auth/providers");
   assert.equal(providers.status, 200);
@@ -144,7 +144,7 @@ test("publishes one traceable release number", async () => {
   assert.deepEqual(await response.json(), {
     status: "ok",
     service: "asitra-web",
-    version: "0.2.0-beta.1",
+    version: "0.2.0-beta.2",
   });
 
   const [releaseSource, healthSource, clientSource, loginSource] = await Promise.all([
@@ -153,7 +153,7 @@ test("publishes one traceable release number", async () => {
     readFile(new URL("../app/AsitraWebApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/login/LoginPage.tsx", import.meta.url), "utf8"),
   ]);
-  assert.match(releaseSource, /ASITRA_RELEASE = "0\.2\.0-beta\.1"/);
+  assert.match(releaseSource, /ASITRA_RELEASE = "0\.2\.0-beta\.2"/);
   assert.match(healthSource, /version: ASITRA_RELEASE/);
   assert.match(clientSource, /ASITRA_RELEASE_LABEL/);
   assert.match(loginSource, /ASITRA_RELEASE_LABEL/);

@@ -3,6 +3,8 @@ import test from "node:test";
 import {
   finitePriorityView,
   initialPriorityIds,
+  isInsideMoneyCycle,
+  moneyCycleRange,
   personalFinancePerspectives,
   postponeDate,
   validateTaskPlan,
@@ -67,4 +69,28 @@ test("validates exact blocks and flexible windows, then postpones the whole plan
   assert.equal(validateTaskPlan({ mode: "window", startTime: "13:00", endTime: "17:00", durationMinutes: 90 }).valid, true);
   assert.equal(validateTaskPlan({ mode: "window", startTime: "13:00", endTime: "14:00", durationMinutes: 90 }).valid, false);
   assert.equal(postponeDate("2026-08-31"), "2026-09-01");
+});
+
+test("builds salary-aligned monthly cycles and clamps short months", () => {
+  const salaryCycle = moneyCycleRange(new Date(2026, 7, 4, 12), 25);
+  assert.deepEqual(
+    [salaryCycle.start.getFullYear(), salaryCycle.start.getMonth(), salaryCycle.start.getDate()],
+    [2026, 6, 25],
+  );
+  assert.deepEqual(
+    [salaryCycle.end.getFullYear(), salaryCycle.end.getMonth(), salaryCycle.end.getDate()],
+    [2026, 7, 25],
+  );
+  assert.equal(isInsideMoneyCycle(new Date(2026, 6, 25, 0), salaryCycle), true);
+  assert.equal(isInsideMoneyCycle(new Date(2026, 7, 25, 0), salaryCycle), false);
+
+  const monthEndCycle = moneyCycleRange(new Date(2026, 2, 15, 12), 31);
+  assert.deepEqual(
+    [monthEndCycle.start.getMonth(), monthEndCycle.start.getDate()],
+    [1, 28],
+  );
+  assert.deepEqual(
+    [monthEndCycle.end.getMonth(), monthEndCycle.end.getDate()],
+    [2, 31],
+  );
 });
